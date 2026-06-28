@@ -1,12 +1,11 @@
+require('dotenv').config();
 const axios = require('axios');
 const crypto = require('crypto');
 
-// این ثابت‌ها فقط به عنوان "سرور پیش‌فرض" (ایتالیا) نگه داشته میشن 
-// تا کانفیگ‌های قدیمی همچنان بدون مشکل کار کنن
-const DEFAULT_PANEL_URL = 'http://216.106.191.213:7275';
-const DEFAULT_WEB_BASE_PATH = '/znuwjha'; 
-const DEFAULT_API_TOKEN = 'bM41sxxSuvXHexMz4EVj4i1m6xui7ZxtjJuddtz81mCyXdgY';
-const DEFAULT_INBOUND_ID = 1;
+const DEFAULT_PANEL_URL = process.env.DEFAULT_PANEL_URL || '';
+const DEFAULT_WEB_BASE_PATH = process.env.DEFAULT_PANEL_WEB_BASE_PATH || '/';
+const DEFAULT_API_TOKEN = process.env.DEFAULT_PANEL_API_TOKEN || '';
+const DEFAULT_INBOUND_ID = Number(process.env.DEFAULT_PANEL_INBOUND_ID || 1);
 
 // تابع ساخت کلاینت داینامیک برای هر سرور
 function getApiClient(server) {

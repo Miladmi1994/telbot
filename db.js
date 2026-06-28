@@ -1,20 +1,24 @@
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+const { MongoClient } = require('mongodb');
+
+const STATE_ID = 'main';
 const dbPath = path.join(__dirname, 'db.json');
 
-const defaultDb = { 
+const defaultDb = {
     totalIncome: 0,
     successfulSales: 0,
     testUsers: [],
     bannedUsers: [],
     users: {},
-    userStats: {}, // ذخیره دائمی سوابق هر کاربر (ارزش طول عمر)
+    userStats: {},
     stats: {
-        abandonedCarts: 0,     // سبدهای رها شده
-        testToBuyConversion: 0 // تبدیل تست به خرید
+        abandonedCarts: 0,
+        testToBuyConversion: 0
     },
-    settings: { 
-        salesOpen: true, 
+    settings: {
+        salesOpen: true,
         maintenance: false,
         plans: [
             { id: '30', name: '30 گیگ یک ماهه', gb: 30, days: 30, price: 180000, btnText: '📦 30 گیگ - 1 ماهه (180,000 تومان)', sold: 0 },
@@ -24,19 +28,17 @@ const defaultDb = {
     }
 };
 
-function readDb() {
-    if (!fs.existsSync(dbPath)) { 
-        fs.writeFileSync(dbPath, JSON.stringify(defaultDb, null, 2)); 
-        return defaultDb; 
-    }
-    
-    let data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+let cache = null;
+let collection = null;
+let client = null;
+let initPromise = null;
+
+function normalizeDb(data) {
     let needsUpdate = false;
 
     if (!data.settings) { data.settings = { salesOpen: true, maintenance: false }; needsUpdate = true; }
     if (!data.settings.plans) { data.settings.plans = defaultDb.settings.plans; needsUpdate = true; }
-    
-    // آپدیت پکیج‌های قدیمی
+
     data.settings.plans.forEach(plan => {
         if (plan.sold === undefined) { plan.sold = 0; needsUpdate = true; }
     });
@@ -46,8 +48,7 @@ function readDb() {
     if (!data.userStats) { data.userStats = {}; needsUpdate = true; }
     if (!data.stats) { data.stats = { abandonedCarts: 0, testToBuyConversion: 0 }; needsUpdate = true; }
     if (data.settings && data.settings.usdRate) { delete data.settings.usdRate; needsUpdate = true; }
-    
-    // آپدیت کاربران قدیمی و ساخت پروفایل آماری براشون
+
     for (const userId in data.users) {
         if (!data.userStats[userId]) {
             data.userStats[userId] = { totalSpent: 0, renewCount: 0, buyCount: 0 };
@@ -61,13 +62,58 @@ function readDb() {
             needsUpdate = true;
         }
     }
-    
-    if (needsUpdate) writeDb(data);
-    return data;
+
+    return { data, needsUpdate };
 }
 
-function writeDb(data) { 
-    fs.writeFileSync(dbPath, JSON.stringify(data, null, 2)); 
+async function persistDb(data) {
+    await collection.replaceOne(
+        { _id: STATE_ID },
+        { _id: STATE_ID, ...data },
+        { upsert: true }
+    );
 }
 
-module.exports = { readDb, writeDb };
+async function initDb() {
+    if (initPromise) return initPromise;
+
+    initPromise = (async () => {
+        const uri = process.env.MONGODB_URI;
+        if (!uri) throw new Error('MONGODB_URI is not set in .env');
+
+        const dbName = process.env.MONGODB_DB || 'telbot';
+        client = new MongoClient(uri);
+        await client.connect();
+        collection = client.db(dbName).collection('state');
+
+        let doc = await collection.findOne({ _id: STATE_ID });
+        if (!doc && fs.existsSync(dbPath)) {
+            doc = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+        }
+        if (!doc) {
+            doc = { ...defaultDb };
+        } else {
+            delete doc._id;
+        }
+
+        const { data, needsUpdate } = normalizeDb(doc);
+        cache = data;
+        if (needsUpdate) await persistDb(data);
+
+        console.log('Database connected (MongoDB)');
+    })();
+
+    return initPromise;
+}
+
+function readDb() {
+    if (!cache) throw new Error('Database not initialized. Call initDb() first.');
+    return cache;
+}
+
+function writeDb(data) {
+    cache = data;
+    persistDb(data).catch(err => console.error('Failed to write to MongoDB:', err.message));
+}
+
+module.exports = { initDb, readDb, writeDb };
