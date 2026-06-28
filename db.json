@@ -1,0 +1,1401 @@
+{
+  "totalIncome": 4283157,
+  "successfulSales": 24,
+  "settings": {
+    "salesOpen": true,
+    "maintenance": false,
+    "plans": [
+      {
+        "id": "5",
+        "name": "5 گیگ",
+        "gb": 5,
+        "days": 30,
+        "price": 45000,
+        "order": 1,
+        "showInNew": true,
+        "showInRenew": true,
+        "targetUserId": null,
+        "btnText": "📦 5 گیگ - 1 ماهه (45,000 تومان)",
+        "sold": 2
+      },
+      {
+        "id": "10",
+        "name": "10 گیگ",
+        "gb": 10,
+        "days": 30,
+        "price": 75000,
+        "order": 2,
+        "showInNew": true,
+        "showInRenew": true,
+        "targetUserId": null,
+        "btnText": "📦 10 گیگ - 1 ماهه (75,000 تومان)",
+        "sold": 4
+      },
+      {
+        "id": "30",
+        "name": "30 گیگ یک ماهه",
+        "gb": 30,
+        "days": 30,
+        "price": 180000,
+        "btnText": "📦 30 گیگ - 1 ماهه (180,000 تومان)",
+        "sold": 11
+      },
+      {
+        "id": "50",
+        "name": "50 گیگ یک ماهه",
+        "gb": 50,
+        "days": 30,
+        "price": 275000,
+        "btnText": "📦 50 گیگ - 1 ماهه (275,000 تومان)",
+        "sold": 1
+      },
+      {
+        "id": "100",
+        "name": "100 گیگ دو ماهه",
+        "gb": 100,
+        "days": 60,
+        "price": 500000,
+        "btnText": "📦 100 گیگ - 2 ماهه (500,000 تومان)",
+        "sold": 2
+      }
+    ],
+    "activeServerId": "srv_363974",
+    "activeVipServerId": "srv_580584"
+  },
+  "testUsers": [
+    6393498217,
+    256916057,
+    6141009305,
+    134760960,
+    138823338,
+    1391712694,
+    474957203,
+    767729756,
+    337875410,
+    490508860,
+    107560627,
+    50372395,
+    278963307,
+    1410058759,
+    859149687,
+    657748751,
+    6521047201,
+    6268981262,
+    5188167668,
+    1695672824,
+    1517439032,
+    7019617546,
+    664679257,
+    7064402208,
+    7102202196,
+    1927832191,
+    5058140845,
+    700038082,
+    6101445708,
+    5579225607,
+    275304233
+  ],
+  "vipUsers": [
+    "134760960",
+    "205090521",
+    "138823338",
+    "256916057",
+    "1391712694",
+    "474957203",
+    "767729756",
+    "337875410",
+    "490508860",
+    "107560627",
+    "859149687",
+    "341317667",
+    "593639913",
+    "535124241",
+    "648633420",
+    "1695672824",
+    "709495550",
+    "278963307",
+    "315221252"
+  ],
+  "users": {
+    "50372395": [
+      {
+        "email": "Test_50372395_1781507766841",
+        "uuid": "6ee0acad-3bdd-4052-aa2d-6f836141c77f",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_580584"
+      }
+    ],
+    "107560627": [
+      {
+        "email": "Kimiya1️⃣🇮🇹",
+        "uuid": "be7aac81-5611-4688-a623-9cfdfdff791a",
+        "name": "Kimiya1️⃣🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 107374182400,
+          "used": 49981869178,
+          "expiry": 1783150528041,
+          "email": "Kimiya1️⃣🇮🇹"
+        }
+      },
+      {
+        "email": "Kimiya2️⃣🇮🇹",
+        "uuid": "6e119e3e-0266-424e-bd0a-5a1f2a477be4",
+        "name": "Kimiya2️⃣🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 107374182400,
+          "used": 26986600914,
+          "expiry": 1783319583018,
+          "email": "Kimiya2️⃣🇮🇹"
+        }
+      }
+    ],
+    "134760960": [
+      {
+        "email": "User_134760960_Ord402603_1781804809119",
+        "uuid": "b41e7afb-0336-46a3-a96b-27ac5317059d",
+        "name": "MohammadBagher🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "orderId": "402603",
+        "panelStats": {
+          "total": 107943265567,
+          "used": 42660293303,
+          "expiry": 1784366700000,
+          "email": "User_134760960_Ord402603_1781804809119"
+        }
+      }
+    ],
+    "138823338": [
+      {
+        "email": "HNS🇮🇹",
+        "uuid": "30e8cbf2-c225-4c30-b249-2677d6fd3e96",
+        "name": "HNS🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 107374182400,
+          "used": 39851842539,
+          "expiry": 1783024794000,
+          "email": "HNS🇮🇹"
+        }
+      }
+    ],
+    "188616290": [
+      {
+        "email": "User_188616290_Ord981184_1781638081479",
+        "uuid": "f3e79ae6-6109-4aa5-b664-a4334396b2b4",
+        "name": "Ev 🇳🇱",
+        "orderId": "981184",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 2660645322,
+          "expiry": 1784230081479,
+          "email": "User_188616290_Ord981184_1781638081479"
+        }
+      }
+    ],
+    "205090521": [
+      {
+        "email": "Hesam🇮🇹",
+        "uuid": "c73af899-209b-4d40-9485-6c70097c705d",
+        "name": "Hesam🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 0,
+          "used": 99845172540,
+          "expiry": 0,
+          "email": "Hesam🇮🇹"
+        }
+      },
+      {
+        "email": "User_205090521_Ord361772_1781286640594",
+        "uuid": "65fc252a-1326-42e1-95f1-1ef2205ec6c6",
+        "name": "بدون اسم",
+        "orderId": "361772",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584"
+      },
+      {
+        "email": "User_205090521_Ord625743_1781532968770",
+        "uuid": "11fb992f-e9a5-4ca8-89ed-8609a7706b97",
+        "name": "Hesam🚀🇳🇱 🇳🇱",
+        "orderId": "625743",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 161061273600,
+          "used": 9296904128,
+          "expiry": 1788185768700,
+          "email": "User_205090521_Ord625743_1781532968770"
+        }
+      },
+      {
+        "email": "User_205090521_Ord467868_1781534648850",
+        "uuid": "7965e933-2bf6-401b-818b-910d021f1e4a",
+        "name": "EreoG 🇳🇱",
+        "orderId": "467868",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": true
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 24778512550,
+          "expiry": 1784126648850,
+          "email": "User_205090521_Ord467868_1781534648850"
+        }
+      },
+      {
+        "email": "User_205090521_Ord685658_1782037231377",
+        "uuid": "bbdd5121-3f5c-492a-a668-160d1b04a408",
+        "name": "Amoghli 🇳🇱",
+        "orderId": "685658",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 2978378468,
+          "expiry": 1784629231377,
+          "email": "User_205090521_Ord685658_1782037231377"
+        }
+      }
+    ],
+    "224019386": [
+      {
+        "email": "User_224019386_Ord162629_1782218537315",
+        "uuid": "f5e104bf-2af5-42ab-98ad-15056d89c84f",
+        "name": "Sa 🇳🇱",
+        "orderId": "162629",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 5368709120,
+          "used": 1973355555,
+          "expiry": 1784810537316,
+          "email": "User_224019386_Ord162629_1782218537315"
+        }
+      }
+    ],
+    "256916057": [
+      {
+        "email": "Test_256916057_1781095909315",
+        "uuid": "79ca4787-3c79-4b8c-9149-e6f74b7b33ae",
+        "name": "Test - اکانت تست",
+        "notified": {
+          "days3": false,
+          "gb1": false
+        },
+        "serverId": "srv_580584"
+      },
+      {
+        "email": "HosseinGh🇮🇹",
+        "uuid": "ed5fe6e0-7fd0-4c94-8a7f-5987ef5db5ad",
+        "name": "HosseinGh🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 107374182400,
+          "used": 62325580671,
+          "expiry": 1782990549000,
+          "email": "HosseinGh🇮🇹"
+        }
+      }
+    ],
+    "275304233": [
+      {
+        "email": "Test_275304233_1782425305511",
+        "uuid": "d02cf7b6-a82e-4c3d-9d96-3e207a3ce7d7",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      },
+      {
+        "email": "User_275304233_Ord803499_1782426647268",
+        "uuid": "89178eac-0463-4f08-8e2e-b170bae70fe9",
+        "name": "برای درس 🇳🇱",
+        "orderId": "803499",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 10737418240,
+          "used": 117305574,
+          "expiry": 1785018647269,
+          "email": "User_275304233_Ord803499_1782426647268"
+        }
+      }
+    ],
+    "278963307": [
+      {
+        "email": "User_278963307_Ord499454_1781270743935",
+        "uuid": "776e8875-0153-4d51-bb23-9afd47b2f5ff",
+        "name": "سایفر 1",
+        "orderId": "499454",
+        "isVip": false,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584"
+      },
+      {
+        "email": "Milad",
+        "uuid": "3ed9f21d-c6cd-441c-8bd1-916e40104095",
+        "name": "Milad (VIP)",
+        "isVip": false,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584"
+      },
+      {
+        "email": "Milad",
+        "uuid": "3ed9f21d-c6cd-441c-8bd1-916e40104095",
+        "name": "Milad (VIP)",
+        "isVip": false,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584"
+      },
+      {
+        "email": "User_278963307_Ord826983_1781423756959",
+        "uuid": "e8cdadb0-0b6e-4a49-a9ca-081bbd838b82",
+        "name": "سایفر 2 🇮🇹",
+        "orderId": "826983",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "isVip": false,
+        "serverId": "srv_580584"
+      },
+      {
+        "email": "Test_278963307_1781355910714",
+        "uuid": "b55d105b-3e80-4ab5-8633-2850cd7c8013",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_580584",
+        "isVip": false
+      },
+      {
+        "email": "User_278963307_Ord456789_1781439080488",
+        "uuid": "9c97a325-5b28-4c28-82eb-152f4a18283d",
+        "name": "Jafar",
+        "orderId": "456789",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "isVip": false
+      },
+      {
+        "email": "User_278963307_Ord275023_1781526880964",
+        "uuid": "0d36c233-a34e-421f-ba73-e2b30af97eb2",
+        "name": "هلند 🇳🇱",
+        "orderId": "275023",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "isVip": false
+      },
+      {
+        "email": "User_278963307_Ord765799_1782504924935",
+        "uuid": "c21e14ac-ef50-4c5d-bc74-d5a628e17d53",
+        "name": "Milad 🇳🇱",
+        "orderId": "765799",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb85": false
+        },
+        "isVip": false,
+        "panelStats": {
+          "total": 272136316451,
+          "used": 6612549127,
+          "expiry": 1797192925443,
+          "email": "User_278963307_Ord765799_1782504924935"
+        }
+      },
+      {
+        "email": "Test_278963307_1781535023858",
+        "uuid": "10fa18d7-175d-40cf-9754-eab3584e25c9",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974",
+        "isVip": false
+      },
+      {
+        "email": "User_278963307_Ord262929_1782504415313",
+        "uuid": "ebb2da89-b807-4c92-8265-178961f117a5",
+        "name": "Milad (VIP) 🇮🇹",
+        "orderId": "262929",
+        "serverId": "srv_580584",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 107374182400,
+          "used": 0,
+          "expiry": 1785096415876,
+          "email": "User_278963307_Ord262929_1782504415313"
+        }
+      }
+    ],
+    "290390622": [
+      {
+        "email": "User_290390622_Ord722785_1781712189799",
+        "uuid": "3851da9e-483c-4115-97a6-13efa3eeda9d",
+        "name": "Maede 🇳🇱",
+        "orderId": "722785",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 53687091200,
+          "used": 26518408811,
+          "expiry": 1784304189800,
+          "email": "User_290390622_Ord722785_1781712189799"
+        }
+      }
+    ],
+    "315221252": [
+      {
+        "email": "Sadra🇮🇹",
+        "uuid": "59893509-14b0-42fc-83b1-7708955d8501",
+        "name": "Sadra🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        }
+      }
+    ],
+    "337875410": [
+      {
+        "email": "Mehdi🇮🇹",
+        "uuid": "edc242be-b0d9-4bcf-af88-5dc321102f7f",
+        "name": "Mehdi🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 107374182400,
+          "used": 17428996553,
+          "expiry": 1783369800000,
+          "email": "Mehdi🇮🇹"
+        }
+      }
+    ],
+    "341317667": [
+      {
+        "email": "User_341317667_Ord680299_1781615626077",
+        "uuid": "0b425cc8-d83f-48ce-9add-bfcd8163473f",
+        "name": "بدون اسم (VIP) 🇮🇹",
+        "orderId": "680299",
+        "serverId": "srv_580584",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        }
+      }
+    ],
+    "430639890": [
+      {
+        "email": "User_430639890_Ord755675_1781549673366",
+        "uuid": "c4e3f29a-d948-4758-b334-6912b23ec381",
+        "name": "سایفر 1 🇳🇱",
+        "orderId": "755675",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 5731790,
+          "expiry": 1784141673366,
+          "email": "User_430639890_Ord755675_1781549673366"
+        }
+      }
+    ],
+    "474957203": [
+      {
+        "email": "Armita🇮🇹",
+        "uuid": "ae133b0a-97b4-4f60-ace4-dce47b1bdae6",
+        "name": "Armita🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": true
+        },
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 107374182400,
+          "used": 87720271194,
+          "expiry": 1783222253039,
+          "email": "Armita🇮🇹"
+        }
+      }
+    ],
+    "490508860": [
+      {
+        "email": "Mahvash🇮🇹",
+        "uuid": "2a2c26a4-1578-4420-a1f9-1134fd9c4238",
+        "name": "Mahvash🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 107374182400,
+          "used": 28695072026,
+          "expiry": 1782992429000,
+          "email": "Mahvash🇮🇹"
+        }
+      }
+    ],
+    "496805242": [
+      {
+        "email": "User_496805242_Ord418590_1782071750756",
+        "uuid": "2da8065a-2c0c-4ca8-82c2-3f03917b82f5",
+        "name": "سایفر 1 🇳🇱",
+        "orderId": "418590",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 10737418240,
+          "used": 481636083,
+          "expiry": 1784663750757,
+          "email": "User_496805242_Ord418590_1782071750756"
+        }
+      }
+    ],
+    "535124241": [
+      {
+        "email": "Jalal🇮🇹",
+        "uuid": "504db9a6-095a-456a-a84f-85f2727c2a3c",
+        "name": "Jalal🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        }
+      },
+      {
+        "email": "User_535124241_Ord513089_1782382387670",
+        "uuid": "e7487bf2-e388-45e6-a009-6f83f21d7e16",
+        "name": "جلال ۲ 🇳🇱",
+        "orderId": "513089",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 10737418240,
+          "used": 1152900313,
+          "expiry": 1784974387670,
+          "email": "User_535124241_Ord513089_1782382387670"
+        }
+      }
+    ],
+    "593639913": [
+      {
+        "email": "User_593639913_Ord800350_1782529340631",
+        "uuid": "854e057a-4cd7-432a-bc48-b8874e476d2c",
+        "name": "Elman🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb85": false
+        },
+        "orderId": "800350",
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 107374182400,
+          "used": 263925,
+          "expiry": 1785121340698,
+          "email": "User_593639913_Ord800350_1782529340631"
+        }
+      }
+    ],
+    "648633420": [
+      {
+        "email": "Alireza🇮🇹",
+        "uuid": "a7dfc573-02a7-43c5-80d8-9a1c22794b7a",
+        "name": "Alireza🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        }
+      }
+    ],
+    "657748751": [
+      {
+        "email": "Test_657748751_1781583227380",
+        "uuid": "4125d492-553c-4767-b439-448f17af1ef1",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      },
+      {
+        "email": "User_657748751_Ord888595_1781613811336",
+        "uuid": "06ddda3b-4703-4a45-8a94-eba35dc5f32c",
+        "name": "پابجی 🇳🇱",
+        "orderId": "888595",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 12207026599,
+          "expiry": 1784205811337,
+          "email": "User_657748751_Ord888595_1781613811336"
+        }
+      }
+    ],
+    "664679257": [
+      {
+        "email": "Test_664679257_1781850172495",
+        "uuid": "980ee4e4-4672-4953-8df1-a01f6631acbf",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      },
+      {
+        "email": "User_664679257_Ord288215_1782301667346",
+        "uuid": "338d714e-8e07-492f-8b75-f0a32ecf9874",
+        "name": "Marjan98 🇳🇱",
+        "orderId": "288215",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 10737418240,
+          "used": 1274204301,
+          "expiry": 1784893667347,
+          "email": "User_664679257_Ord288215_1782301667346"
+        }
+      }
+    ],
+    "700038082": [
+      {
+        "email": "Test_700038082_1782035152854",
+        "uuid": "7d5bec76-6721-4693-b186-e497c8d714ca",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "709495550": [
+      {
+        "email": "Matin🇮🇹",
+        "uuid": "a058d914-b35b-4c36-abcd-1053cef731c1",
+        "name": "Matin🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        }
+      }
+    ],
+    "767729756": [
+      {
+        "email": "User_767729756_Ord652132_1782426311515",
+        "uuid": "ea2fdb38-a519-428b-bf8e-b996cfd3f5d4",
+        "name": "Mahdi🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 107374182400,
+          "used": 198338323,
+          "expiry": 1785572144000,
+          "email": "User_767729756_Ord652132_1782426311515"
+        },
+        "orderId": "652132"
+      }
+    ],
+    "859149687": [
+      {
+        "email": "Test_859149687_1781549331202",
+        "uuid": "53e8d9f9-1a45-4e51-b0a9-a5dde99c7755",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      },
+      {
+        "email": "User_859149687_Ord918455_1782579540912",
+        "uuid": "a464016e-7d75-46d9-8606-ba28dee4d992",
+        "name": "Behnam 🇳🇱",
+        "orderId": "918455",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 487876,
+          "expiry": 1785171540914,
+          "email": "User_859149687_Ord918455_1782579540912"
+        }
+      }
+    ],
+    "1391712694": [
+      {
+        "email": "Tina🇮🇹",
+        "uuid": "56cfbfee-a54d-40f0-9051-2da196ea18bf",
+        "name": "Tina🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584",
+        "panelStats": {
+          "total": 107374182400,
+          "used": 13771071213,
+          "expiry": 1783014404000,
+          "email": "Tina🇮🇹"
+        }
+      }
+    ],
+    "1410058759": [
+      {
+        "email": "Test_1410058759_1781547105682",
+        "uuid": "6522b946-c343-4671-b6fc-e7fb745563d9",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "1517439032": [
+      {
+        "email": "Test_1517439032_1781786202619",
+        "uuid": "be1750c5-05d5-4cec-af9d-bb58604fa38c",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "1607542998": [
+      {
+        "email": "User_1607542998_Ord111111_1782237097097",
+        "uuid": "ad1690fd-4ffd-40e8-abfa-9121f156e5c6",
+        "name": "N.C",
+        "orderId": "111111",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        }
+      }
+    ],
+    "1695672824": [
+      {
+        "email": "Soheila🇮🇹",
+        "uuid": "81260724-8f15-46a3-90c6-b984aa4dc084",
+        "name": "Soheila🇮🇹 (VIP)",
+        "isVip": true,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        }
+      },
+      {
+        "email": "Test_1695672824_1781779074632",
+        "uuid": "4e08685c-427d-44f5-b726-9d125e07c018",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "1927832191": [
+      {
+        "email": "Test_1927832191_1781939157331",
+        "uuid": "7c84e8d5-29b8-4884-813c-5e88929a737e",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "6393498217": [
+      {
+        "email": "Test_6393498217_1781091990185",
+        "uuid": "ba029c1b-eb39-4ba3-b71e-26e01f74680d",
+        "name": "سرویس قبلی",
+        "isVip": false,
+        "serverId": "srv_580584"
+      },
+      {
+        "email": "User_6393498217_1781093514814",
+        "uuid": "141a6a4a-e575-469e-87b8-0ba251270b1b",
+        "name": "محیا",
+        "isVip": false,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584"
+      },
+      {
+        "email": "Test_6393498217_1781093605406",
+        "uuid": "0ff214f6-5646-4fc7-8db9-812ec6e58e4d",
+        "name": "اکانت تست",
+        "isVip": false,
+        "serverId": "srv_580584"
+      },
+      {
+        "email": "Test_6393498217_1781094262759",
+        "uuid": "28b0beef-af91-4e86-9af2-86fc637dadfd",
+        "name": "اکانت تست",
+        "isVip": false,
+        "serverId": "srv_580584"
+      },
+      {
+        "email": "User_6393498217_Ord580493_1781276649172",
+        "uuid": "a13c22f6-d624-428e-8a34-9d9625048b25",
+        "name": "سایفر 1",
+        "orderId": "580493",
+        "isVip": false,
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "serverId": "srv_580584"
+      }
+    ],
+    "5582567894": [
+      {
+        "email": "User_5582567894_Ord563065_1781548795506",
+        "uuid": "a6724078-cddf-4f23-8ffa-0ded16283b4f",
+        "name": "Samira 🇳🇱",
+        "orderId": "563065",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 5599452522,
+          "expiry": 1784140795509,
+          "email": "User_5582567894_Ord563065_1781548795506"
+        }
+      }
+    ],
+    "6521047201": [
+      {
+        "email": "User_6521047201_Ord123189_1781583196000",
+        "uuid": "573844ba-636d-4bd5-bc73-154177f9833a",
+        "name": "Nerguli 🇳🇱",
+        "orderId": "123189",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 17262696539,
+          "expiry": 1784175196000,
+          "email": "User_6521047201_Ord123189_1781583196000"
+        }
+      },
+      {
+        "email": "Test_6521047201_1781583222633",
+        "uuid": "a8b4cfcf-deff-45e6-8255-c5ebe3812edd",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      },
+      {
+        "email": "User_6521047201_Ord292483_1782125487425",
+        "uuid": "fe7a70b0-c07d-486d-addc-5cac4fcd9a73",
+        "name": "Mastane 🇳🇱",
+        "orderId": "292483",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 4226739325,
+          "expiry": 1784717487426,
+          "email": "User_6521047201_Ord292483_1782125487425"
+        }
+      }
+    ],
+    "6268981262": [
+      {
+        "email": "Test_6268981262_1781583224560",
+        "uuid": "c686196b-f83b-4ba7-91df-4a6c96aa38af",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "5188167668": [
+      {
+        "email": "Test_5188167668_1781625727689",
+        "uuid": "28877450-82ee-46e1-8c8a-c6b96e6f2bc1",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "7019617546": [
+      {
+        "email": "Test_7019617546_1781787527394",
+        "uuid": "718ffd67-ed49-4fd7-8e6b-ec8d8b257061",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "7064402208": [
+      {
+        "email": "Test_7064402208_1781858233078",
+        "uuid": "d678d7d3-cbc1-4ddc-a7cf-daae08b26d56",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "7102202196": [
+      {
+        "email": "Test_7102202196_1781858695363",
+        "uuid": "d1a043f6-1469-47da-8870-e0c3ec151571",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "5478430784": [
+      {
+        "email": "User_5478430784_Ord476778_1781949198280",
+        "uuid": "f042730a-3e9b-42e1-893b-f57bdac83678",
+        "name": "She 🇳🇱",
+        "orderId": "476778",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 21816172,
+          "expiry": 1784541198282,
+          "email": "User_5478430784_Ord476778_1781949198280"
+        }
+      }
+    ],
+    "5058140845": [
+      {
+        "email": "Test_5058140845_1781961187968",
+        "uuid": "45f9e17e-3f6c-4b39-aa21-d6e9ca7f1956",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "6101445708": [
+      {
+        "email": "Test_6101445708_1782045047312",
+        "uuid": "069c8815-68b5-4eb6-85cf-d28ab8d040a8",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      }
+    ],
+    "5579225607": [
+      {
+        "email": "Test_5579225607_1782219199386",
+        "uuid": "e72b34fe-e906-42fb-b4a2-6821bcfa9de0",
+        "name": "Test - اکانت تست",
+        "serverId": "srv_363974"
+      },
+      {
+        "email": "User_5579225607_Ord446321_1782309216037",
+        "uuid": "156f32d2-ef4e-45e3-a4bc-dc54147ae2c6",
+        "name": "Mlbb 🇳🇱",
+        "orderId": "446321",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb1": false,
+          "gb85": false
+        },
+        "panelStats": {
+          "total": 5368709120,
+          "used": 474356054,
+          "expiry": 1784901216037,
+          "email": "User_5579225607_Ord446321_1782309216037"
+        }
+      }
+    ]
+  },
+  "bannedUsers": [
+    "341317667"
+  ],
+  "payments": {},
+  "admins": [
+    {
+      "id": "205090521",
+      "name": "Hesam"
+    }
+  ],
+  "servers": [
+    {
+      "id": "srv_580584",
+      "name": "سرور ایتالیا",
+      "panelUrl": "http://216.106.191.213:7275",
+      "webBasePath": "/znuwjha",
+      "apiToken": "bM41sxxSuvXHexMz4EVj4i1m6xui7ZxtjJuddtz81mCyXdgY",
+      "inboundId": 1,
+      "domain": "ns.crrc.ir",
+      "sni": "css.2net.ir",
+      "path": "/Cypher_Net"
+    },
+    {
+      "id": "srv_363974",
+      "name": "سرور هلند",
+      "panelUrl": "http://89.125.66.193:2053",
+      "webBasePath": "",
+      "apiToken": "3lw4zAa3DzAJmZ5LsER8wQLtFChxVIhJtAW4PQSUCzlIVAFY",
+      "inboundId": 1,
+      "domain": "ns.crrc.ir",
+      "sni": "auth.apk-co.ir",
+      "path": "/Cypher_Net"
+    }
+  ],
+  "userStats": {
+    "50372395": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "107560627": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "134760960": {
+      "totalSpent": 157805,
+      "renewCount": 1,
+      "buyCount": 0
+    },
+    "138823338": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "188616290": {
+      "totalSpent": 180000,
+      "buyCount": 1,
+      "renewCount": 0
+    },
+    "205090521": {
+      "totalSpent": 860000,
+      "renewCount": 0,
+      "buyCount": 3
+    },
+    "224019386": {
+      "totalSpent": 45000,
+      "buyCount": 1,
+      "renewCount": 0
+    },
+    "256916057": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "275304233": {
+      "totalSpent": 75000,
+      "renewCount": 0,
+      "buyCount": 1
+    },
+    "278963307": {
+      "totalSpent": 845000,
+      "renewCount": 0,
+      "buyCount": 3
+    },
+    "290390622": {
+      "totalSpent": 275000,
+      "buyCount": 1,
+      "renewCount": 0
+    },
+    "315221252": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "337875410": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "341317667": {
+      "totalSpent": 157209,
+      "buyCount": 1,
+      "renewCount": 0
+    },
+    "430639890": {
+      "totalSpent": 180000,
+      "buyCount": 1,
+      "renewCount": 0
+    },
+    "474957203": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "490508860": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "496805242": {
+      "totalSpent": 75000,
+      "buyCount": 1,
+      "renewCount": 0
+    },
+    "535124241": {
+      "totalSpent": 75000,
+      "renewCount": 0,
+      "buyCount": 1
+    },
+    "593639913": {
+      "totalSpent": 168603,
+      "renewCount": 1,
+      "buyCount": 0
+    },
+    "648633420": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "657748751": {
+      "totalSpent": 180000,
+      "renewCount": 0,
+      "buyCount": 1
+    },
+    "664679257": {
+      "totalSpent": 75000,
+      "renewCount": 0,
+      "buyCount": 1
+    },
+    "700038082": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "709495550": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "767729756": {
+      "totalSpent": 169540,
+      "renewCount": 1,
+      "buyCount": 0
+    },
+    "859149687": {
+      "totalSpent": 180000,
+      "renewCount": 0,
+      "buyCount": 1
+    },
+    "1391712694": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "1410058759": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "1517439032": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "1607542998": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "1695672824": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "1927832191": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "6393498217": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "5582567894": {
+      "totalSpent": 180000,
+      "buyCount": 1,
+      "renewCount": 0
+    },
+    "6521047201": {
+      "totalSpent": 360000,
+      "buyCount": 2,
+      "renewCount": 0
+    },
+    "6268981262": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "5188167668": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "7019617546": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "7064402208": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "7102202196": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "5478430784": {
+      "totalSpent": 180000,
+      "buyCount": 1,
+      "renewCount": 0
+    },
+    "5058140845": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "6101445708": {
+      "totalSpent": 0,
+      "renewCount": 0,
+      "buyCount": 0
+    },
+    "5579225607": {
+      "totalSpent": 45000,
+      "renewCount": 0,
+      "buyCount": 1
+    }
+  },
+  "stats": {
+    "abandonedCarts": 18,
+    "testToBuyConversion": 0
+  }
+}
