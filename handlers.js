@@ -2318,8 +2318,7 @@ bot.command('fixdb', (ctx) => {
         }
     }, 60 * 60 * 1000);
 
-    // --- سیستم پاکسازی خودکار اکانت‌های منقضی شده (هر ۱۲ ساعت) ---
-    // --- سیستم پاکسازی خودکار اکانت‌های منقضی شده (هر ۱۲ ساعت) ---
+// --- سیستم پاکسازی خودکار اکانت‌های منقضی شده (هر ۳ ساعت) ---
     setInterval(async () => {
         try {
             const db = readDb();
@@ -2368,9 +2367,9 @@ bot.command('fixdb', (ctx) => {
         } catch (error) {
             console.error("خطا در سیستم پاکسازی خودکار:", error.message);
         }
-    }, 12 * 60 * 60 * 1000);
+    }, 3 * 60 * 60 * 1000);
 
-    setInterval(async () => {
+setInterval(async () => {
         try {
             const db = readDb();
             let dbChanged = false;
@@ -2389,8 +2388,16 @@ bot.command('fixdb', (ctx) => {
                         updatedConfigs.push(conf);
                         continue;
                     }
-                    if (!conf.notified) { conf.notified = { days3: false, gb85: false }; dbChanged = true; }
-                    else if (conf.notified.gb85 === undefined) { conf.notified.gb85 = conf.notified.gb1 || false; dbChanged = true; }
+                    
+                    // تنظیمات اولیه هشدارها با اضافه شدن gb1
+                    if (!conf.notified) { 
+                        conf.notified = { days3: false, gb85: false, gb1: false }; 
+                        dbChanged = true; 
+                    } else {
+                        if (conf.notified.gb85 === undefined) { conf.notified.gb85 = false; dbChanged = true; }
+                        if (conf.notified.gb1 === undefined) { conf.notified.gb1 = false; dbChanged = true; }
+                        if (conf.notified.days3 === undefined) { conf.notified.days3 = false; dbChanged = true; }
+                    }
 
                     const targetServer = db.servers?.find(s => s.id === conf.serverId);
                     const traffic = await getClientTraffic(conf.email, targetServer);
@@ -2401,23 +2408,17 @@ bot.command('fixdb', (ctx) => {
 
                     // حذف اکانت‌های منقضی شده بالای ۳۰ روز از دیتابیس
                     if (traffic.expiryTime > 0) {
-                    const diffDays = (now - traffic.expiryTime) / (1000 * 60 * 60 * 24);
-                    
-                    // بررسی اینکه آیا اکانت تست است یا خیر
-                    const isTestAccount = traffic.email?.startsWith('Test_') || traffic.planId === 'test' || traffic.name?.includes('تست');
+                        const diffDays = (now - traffic.expiryTime) / (1000 * 60 * 60 * 24);
+                        const isTestAccount = traffic.email?.startsWith('Test_') || traffic.planId === 'test' || traffic.name?.includes('تست');
 
-                    // اگر بیش از ۳۰ روز گذشته بود و اکانت تست "نبود"
-                    if (diffDays > 30 && !isTestAccount) {
-                        
-                        // بررسی و حذف کاربر از لیست VIP دیتابیس
-                        if (db.vipUsers && db.vipUsers.includes(String(userId))) {
-                            db.vipUsers = db.vipUsers.filter(id => String(id) !== String(userId));
+                        if (diffDays > 30 && !isTestAccount) {
+                            if (db.vipUsers && db.vipUsers.includes(String(userId))) {
+                                db.vipUsers = db.vipUsers.filter(id => String(id) !== String(userId));
+                            }
+                            dbChanged = true;
+                            continue; 
                         }
-                        
-                        dbChanged = true;
-                        continue; // کانفیگ از دیتابیس پاک میشه
                     }
-                }
 
                     updatedConfigs.push(conf);
 
@@ -2431,26 +2432,39 @@ bot.command('fixdb', (ctx) => {
                         remainDays = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 0;
                     }
 
-                    let shouldNotify = false, reason = "";
+                    // ۱. هشدار زمان (۳ روز مانده)
                     if (remainDays <= 3 && remainDays > 0 && !conf.notified.days3) {
-                        shouldNotify = true; conf.notified.days3 = true;
-                        reason = `⏳ فقط <b>${remainDays} روز</b> از اعتبار سرویس شما (<b>${conf.name}</b>) باقی مانده است.`;
-                    } else if (traffic.total > 0 && (usedGB / totalGB) >= 0.85 && remainGB > 0 && !conf.notified.gb85) {
-                        shouldNotify = true; conf.notified.gb85 = true;
-                        reason = `📉 <b>۸۵٪</b> از حجم سرویس شما (<b>${conf.name}</b>) مصرف شده است و تنها <b>${remainGB.toFixed(2)} گیگابایت</b> باقی مانده است.\n\nلطفاً برای جلوگیری از قطعی، نسبت به تمدید یا خرید بسته جدید اقدام کنید.`;
-                    }
-
-                    if (shouldNotify) {
+                        conf.notified.days3 = true;
                         dbChanged = true;
-                        await bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n\n${reason}\n\nقبل از قطع شدن سرویس، می‌توانی از دکمه زیر اقدام به تمدید آنلاین کنی:`, {
+                        await bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n\n⏳ فقط <b>${remainDays} روز</b> از اعتبار سرویس شما (<b>${conf.name}</b>) باقی مانده است.`, {
                             parse_mode: 'HTML',
-                            ...Markup.inlineKeyboard([[Markup.button.callback('🔄 تمدید آنلاین اکانت', `init_renew_${conf.email}`)], [Markup.button.callback('❌ لغو', 'close_menu')]])
+                            ...Markup.inlineKeyboard([[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)], [Markup.button.callback('❌ لغو', 'close_menu')]])
                         });
                     }
+
+                    // ۲. هشدار مصرف ۸۵ درصد (به شرطی که بیشتر از ۱ گیگ مانده باشد تا تداخل نکند)
+                    if (traffic.total > 0 && (usedGB / totalGB) >= 0.85 && remainGB > 1 && !conf.notified.gb85) {
+                        conf.notified.gb85 = true;
+                        dbChanged = true;
+                        await bot.telegram.sendMessage(userId, `⚠️ <b>هشدار مصرف حجم</b>\n\n📉 <b>۸۵٪</b> از حجم سرویس شما (<b>${conf.name}</b>) مصرف شده است و تنها <b>${remainGB.toFixed(2)} گیگابایت</b> باقی مانده است.`, {
+                            parse_mode: 'HTML',
+                            ...Markup.inlineKeyboard([[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)], [Markup.button.callback('❌ لغو', 'close_menu')]])
+                        });
+                    }
+
+                    // ۳. هشدار کمتر از ۱ گیگابایت
+                    if (traffic.total > 0 && remainGB <= 1 && remainGB > 0 && !conf.notified.gb1) {
+                        conf.notified.gb1 = true;
+                        dbChanged = true;
+                        await bot.telegram.sendMessage(userId, `⚠️ <b>هشدار اتمام حجم</b>\n\n📉 کمتر از <b>۱ گیگابایت</b> (${remainGB.toFixed(2)} GB) از حجم سرویس شما (<b>${conf.name}</b>) باقی مانده است. لطفاً برای جلوگیری از قطعی اقدام کنید.`, {
+                            parse_mode: 'HTML',
+                            ...Markup.inlineKeyboard([[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)], [Markup.button.callback('❌ لغو', 'close_menu')]])
+                        });
+                    }
+
                     await new Promise(r => setTimeout(r, 50));
                 }
                 
-                // جایگزین کردن لیست آپدیت شده (بدون اونایی که حذف شدن)
                 if (db.users[userId].length !== updatedConfigs.length) {
                     db.users[userId] = updatedConfigs;
                     dbChanged = true;
