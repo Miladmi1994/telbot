@@ -1,6 +1,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { Telegraf } = require('telegraf');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const setupHandlers = require('./handlers');
 
 if (!process.env.BOT_TOKEN) {
@@ -8,7 +9,15 @@ if (!process.env.BOT_TOKEN) {
     process.exit(1);
 }
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
+const telegrafOptions = process.env.PROXY_URL
+    ? { telegram: { agent: new HttpsProxyAgent(process.env.PROXY_URL) } }
+    : undefined;
+
+if (process.env.PROXY_URL) {
+    console.log('Using proxy for Telegram API:', process.env.PROXY_URL);
+}
+
+const bot = new Telegraf(process.env.BOT_TOKEN, telegrafOptions);
 
 // اتصال هندلرها (منطق‌ها) به ربات
 setupHandlers(bot);
