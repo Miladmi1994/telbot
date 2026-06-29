@@ -5,7 +5,7 @@ const TOPIC_TEST = process.env.TOPIC_TEST;
 const TOPIC_PAYMENT = process.env.TOPIC_PAYMENT;
 const TOPIC_ERROR = process.env.TOPIC_ERROR;
 const TOPIC_SUPPORT = process.env.TOPIC_SUPPORT;
-const ADMIN_IDS = ['278963307'] // آیدی عددی شما به عنوان ادمین
+const ADMIN_IDS = [process.env.ADMIN_ID || '278963307'];
 
 const userSteps = new Map();
 const adminSteps = new Map(); 
