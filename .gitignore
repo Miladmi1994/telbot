@@ -1,16 +1,2 @@
-# Secrets and local data
-.env
-.env.*
-!.env.example
-db.json
-
-# Dependencies
 node_modules/
-
-# Logs and runtime
-*.log
-npm-debug.log*
-
-# OS
-.DS_Store
-Thumbs.db
+db.json

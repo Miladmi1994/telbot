@@ -1,10 +1,9 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { MongoClient } = require('mongodb');
-
-const STATE_ID = 'main';
-const dbPath = path.join(__dirname, 'db.json');
+const dbPath = process.env.DB_PATH
+    ? path.resolve(process.env.DB_PATH)
+    : path.join(__dirname, 'db.json');
 
 const defaultDb = {
     totalIncome: 0,
