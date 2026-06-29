@@ -1,6 +1,6 @@
 {
-  "totalIncome": 4283157,
-  "successfulSales": 24,
+  "totalIncome": 4711761,
+  "successfulSales": 27,
   "settings": {
     "salesOpen": true,
     "maintenance": false,
@@ -38,7 +38,7 @@
         "days": 30,
         "price": 180000,
         "btnText": "📦 30 گیگ - 1 ماهه (180,000 تومان)",
-        "sold": 11
+        "sold": 12
       },
       {
         "id": "50",
@@ -123,6 +123,26 @@
         "uuid": "6ee0acad-3bdd-4052-aa2d-6f836141c77f",
         "name": "Test - اکانت تست",
         "serverId": "srv_580584"
+      }
+    ],
+    "96934233": [
+      {
+        "email": "User_96934233_Ord336132_1782711949986",
+        "uuid": "bef4d56c-e56a-4d3e-b25f-d5f1e5922a2d",
+        "name": "سایفر 1 🇳🇱",
+        "orderId": "336132",
+        "serverId": "srv_363974",
+        "notified": {
+          "days3": false,
+          "gb85": false,
+          "gb1": false
+        },
+        "panelStats": {
+          "total": 32212254720,
+          "used": 119074368,
+          "expiry": 1785303949987,
+          "email": "User_96934233_Ord336132_1782711949986"
+        }
       }
     ],
     "107560627": [
@@ -281,7 +301,7 @@
         "serverId": "srv_363974",
         "notified": {
           "days3": false,
-          "gb1": false,
+          "gb1": true,
           "gb85": true
         },
         "panelStats": {
@@ -312,21 +332,21 @@
     ],
     "224019386": [
       {
-        "email": "User_224019386_Ord162629_1782218537315",
+        "email": "User_224019386_Ord652413_1782719311090",
         "uuid": "f5e104bf-2af5-42ab-98ad-15056d89c84f",
         "name": "Sa 🇳🇱",
-        "orderId": "162629",
+        "orderId": "652413",
         "serverId": "srv_363974",
         "notified": {
           "days3": false,
-          "gb1": false,
-          "gb85": false
+          "gb85": false,
+          "gb1": false
         },
         "panelStats": {
-          "total": 5368709120,
-          "used": 1973355555,
-          "expiry": 1784810537316,
-          "email": "User_224019386_Ord162629_1782218537315"
+          "total": 11787710561,
+          "used": 568726,
+          "expiry": 1787471311242,
+          "email": "User_224019386_Ord652413_1782719311090"
         }
       }
     ],
@@ -375,7 +395,8 @@
         "serverId": "srv_363974",
         "notified": {
           "days3": false,
-          "gb85": false
+          "gb85": false,
+          "gb1": false
         },
         "panelStats": {
           "total": 10737418240,
@@ -477,7 +498,8 @@
         "serverId": "srv_363974",
         "notified": {
           "days3": false,
-          "gb85": false
+          "gb85": false,
+          "gb1": false
         },
         "isVip": false,
         "panelStats": {
@@ -503,7 +525,8 @@
         "isVip": true,
         "notified": {
           "days3": false,
-          "gb85": false
+          "gb85": false,
+          "gb1": false
         },
         "panelStats": {
           "total": 107374182400,
@@ -540,7 +563,7 @@
         "name": "Sadra🇮🇹 (VIP)",
         "isVip": true,
         "notified": {
-          "days3": false,
+          "days3": true,
           "gb1": false,
           "gb85": false
         }
@@ -603,22 +626,23 @@
     ],
     "474957203": [
       {
-        "email": "Armita🇮🇹",
+        "email": "User_474957203_Ord790344_1782711576577",
         "uuid": "ae133b0a-97b4-4f60-ace4-dce47b1bdae6",
         "name": "Armita🇮🇹 (VIP)",
         "isVip": true,
         "notified": {
           "days3": false,
-          "gb1": false,
-          "gb85": true
+          "gb85": false,
+          "gb1": false
         },
         "serverId": "srv_580584",
         "panelStats": {
           "total": 107374182400,
-          "used": 87720271194,
-          "expiry": 1783222253039,
-          "email": "Armita🇮🇹"
-        }
+          "used": 613974911,
+          "expiry": 1785303576619,
+          "email": "User_474957203_Ord790344_1782711576577"
+        },
+        "orderId": "790344"
       }
     ],
     "490508860": [
@@ -668,7 +692,7 @@
         "name": "Jalal🇮🇹 (VIP)",
         "isVip": true,
         "notified": {
-          "days3": false,
+          "days3": true,
           "gb1": false,
           "gb85": false
         }
@@ -681,7 +705,8 @@
         "serverId": "srv_363974",
         "notified": {
           "days3": false,
-          "gb85": false
+          "gb85": false,
+          "gb1": false
         },
         "panelStats": {
           "total": 10737418240,
@@ -699,7 +724,8 @@
         "isVip": true,
         "notified": {
           "days3": false,
-          "gb85": false
+          "gb85": false,
+          "gb1": false
         },
         "orderId": "800350",
         "serverId": "srv_580584",
@@ -805,7 +831,8 @@
         "isVip": true,
         "notified": {
           "days3": false,
-          "gb85": false
+          "gb85": false,
+          "gb1": false
         },
         "serverId": "srv_580584",
         "panelStats": {
@@ -832,7 +859,8 @@
         "serverId": "srv_363974",
         "notified": {
           "days3": false,
-          "gb85": false
+          "gb85": false,
+          "gb1": false
         },
         "panelStats": {
           "total": 32212254720,
@@ -1173,6 +1201,11 @@
       "renewCount": 0,
       "buyCount": 0
     },
+    "96934233": {
+      "totalSpent": 180000,
+      "buyCount": 1,
+      "renewCount": 0
+    },
     "107560627": {
       "totalSpent": 0,
       "renewCount": 0,
@@ -1199,9 +1232,9 @@
       "buyCount": 3
     },
     "224019386": {
-      "totalSpent": 45000,
+      "totalSpent": 120000,
       "buyCount": 1,
-      "renewCount": 0
+      "renewCount": 1
     },
     "256916057": {
       "totalSpent": 0,
@@ -1244,8 +1277,8 @@
       "renewCount": 0
     },
     "474957203": {
-      "totalSpent": 0,
-      "renewCount": 0,
+      "totalSpent": 173604,
+      "renewCount": 1,
       "buyCount": 0
     },
     "490508860": {
@@ -1395,7 +1428,7 @@
     }
   },
   "stats": {
-    "abandonedCarts": 18,
+    "abandonedCarts": 20,
     "testToBuyConversion": 0
   }
 }
