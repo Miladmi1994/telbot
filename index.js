@@ -1,24 +1,40 @@
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+require('dotenv').config();
 const { Telegraf } = require('telegraf');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const { agent } = require('./config');
 const setupHandlers = require('./handlers');
 const { initDb } = require('./db');
 
-const bot = new Telegraf(
-    process.env.BOT_TOKEN,
-    process.env.PROXY_URL
-        ? { telegram: { agent: new HttpsProxyAgent(process.env.PROXY_URL) } }
-        : undefined
-);
+function validateEnv() {
+    const required = ['BOT_TOKEN', 'MONGODB_URI', 'GROUP_ID'];
+    const missing = required.filter(key => !process.env[key]);
+    if (missing.length) {
+        throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+    }
+    if (!process.env.ADMIN_ID && !process.env.ADMIN_IDS) {
+        throw new Error('Missing required environment variable: ADMIN_ID or ADMIN_IDS');
+    }
+}
 
-setupHandlers(bot);
+const bot = new Telegraf(process.env.BOT_TOKEN);
 
-bot.catch((err, ctx) => {
-    console.error(`⚠️ خطای محافظت شده در پردازش آپدیت:`, err.message);
+async function start() {
+    validateEnv();
+    await initDb();
+
+    setupHandlers(bot);
+
+    bot.catch((err, ctx) => {
+        console.error(`⚠️ خطای محافظت شده در پردازش آپدیت:`, err.message);
+    });
+
+    await bot.launch({ dropPendingUpdates: true });
+    console.log('ربات کامل ران شد!');
+}
+
+start().catch(err => {
+    console.error('Failed to start bot:', err.message);
+    process.exit(1);
 });
-
-bot.launch({ dropPendingUpdates: true }).then(() => console.log('ربات کامل ران شد!'));
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));

@@ -1,5 +1,4 @@
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+require('dotenv').config();
 
 const GROUP_ID = process.env.GROUP_ID;
 const TOPIC_TEST = process.env.TOPIC_TEST;
