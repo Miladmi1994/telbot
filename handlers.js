@@ -12,7 +12,6 @@ async function fetchGithubLatest(repo, keyword) {
     const cacheKey = `${repo}_${keyword}`;
     const now = Date.now();
 
-    // اگر لینک را کمتر از ۳ ساعت پیش دریافت کرده‌ایم، مستقیماً همان را استفاده کن
     if (fetchCache[cacheKey] && (now - fetchCache[cacheKey].time < 3 * 60 * 60 * 1000)) {
         return fetchCache[cacheKey].url;
     }
