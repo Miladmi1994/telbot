@@ -4,32 +4,20 @@ const { Telegraf } = require('telegraf');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const setupHandlers = require('./handlers');
 
-if (!process.env.BOT_TOKEN) {
-    console.error('BOT_TOKEN is missing. Check that .env exists in:', __dirname);
-    process.exit(1);
-}
+const bot = new Telegraf(
+    process.env.BOT_TOKEN,
+    process.env.PROXY_URL
+        ? { telegram: { agent: new HttpsProxyAgent(process.env.PROXY_URL) } }
+        : undefined
+);
 
-const telegrafOptions = process.env.PROXY_URL
-    ? { telegram: { agent: new HttpsProxyAgent(process.env.PROXY_URL) } }
-    : undefined;
-
-if (process.env.PROXY_URL) {
-    console.log('Using proxy for Telegram API:', process.env.PROXY_URL);
-}
-
-const bot = new Telegraf(process.env.BOT_TOKEN, telegrafOptions);
-
-// اتصال هندلرها (منطق‌ها) به ربات
 setupHandlers(bot);
 
-// مدیریت خطاهای سراسری برای جلوگیری از توقف ربات
 bot.catch((err, ctx) => {
     console.error(`⚠️ خطای محافظت شده در پردازش آپدیت:`, err.message);
 });
 
-// اجرای ربات همراه با پاک کردن آپدیت‌های قدیمی و گیر کرده
 bot.launch({ dropPendingUpdates: true }).then(() => console.log('ربات کامل ران شد!'));
 
-// بستن امن پروسه
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
