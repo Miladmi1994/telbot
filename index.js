@@ -21,4 +21,3 @@ bot.launch({ dropPendingUpdates: true }).then(() => console.log('ربات کام
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
