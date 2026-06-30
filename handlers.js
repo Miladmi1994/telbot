@@ -330,7 +330,7 @@ bot.action('back_admin', (ctx) => {
             parse_mode: 'HTML', 
             reply_markup: {
                 inline_keyboard: [
-                    [Markup.button.callback('➖ حذف سرور', 'admin_remove_server'), Markup.button.callback('➕ افزودن سرور', 'admin_add_server')],
+                    [Markup.button.callback('➖ حذف', 'admin_remove_server'), Markup.button.callback('✏️ ویرایش', 'admin_edit_server'), Markup.button.callback('➕ افزودن', 'admin_add_server')],
                     [Markup.button.callback('📋 لیست سرورها', 'admin_list_servers')],
                     [Markup.button.callback('✅ سرور عادی', 'admin_set_active_server'), Markup.button.callback('👑 سرور VIP', 'admin_set_vip_server')],
                     [Markup.button.callback('🧳 مدیریت وضعیت تخلیه', 'admin_migration_menu')],
@@ -389,6 +389,35 @@ bot.action('back_admin', (ctx) => {
         `دامنه: ns.crrc.ir\n` +
         `اس‌ان‌آی: css.2net.ir\n` +
         `مسیر کانفیگ: /Cypher_Net`);
+        ctx.answerCbQuery();
+    });
+
+    bot.action('admin_edit_server', (ctx) => {
+        const db = readDb();
+        const servers = db.servers || [];
+        if (servers.length === 0) return ctx.answerCbQuery('سروری وجود ندارد.', {show_alert:true});
+        
+        const buttons = servers.map(s => {
+            return [Markup.button.callback(`✏️ ${s.name}`, `select_edit_srv_${s.id}`)];
+        });
+        
+        buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_servers_menu')]);
+        ctx.editMessageText('✏️ <b>کدام سرور را می‌خواهید ویرایش کنید؟</b>\n(با این کار شناسه سرور تغییر نمی‌کند و کاربران قطع نمی‌شوند)', { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
+    });
+
+    bot.action(/select_edit_srv_(.*)/, (ctx) => {
+        const srvId = ctx.match[1];
+        adminSteps.set(ctx.from.id, { step: 'EDIT_SERVER_FORMAT', serverId: srvId });
+        ctx.reply(`برای ویرایش سرور، اطلاعات جدید رو دقیقاً با فرمت زیر بفرست:\n\n` +
+        `نام: سرور آلمان\n` +
+        `آدرس: http://1.2.3.4:54321\n` +
+        `مسیر پنل: /znuwjha\n` +
+        `توکن: XXXXXX\n` +
+        `اینباند: 1\n` +
+        `دامنه: ns.crrc.ir\n` +
+        `اس‌ان‌آی: css.2net.ir\n` +
+        `مسیر کانفیگ: /Cypher_Net\n\n` +
+        `⚠️ <b>نکته:</b> مسیر پنل اگر خالی است، جلوی آن چیزی ننویسید.`);
         ctx.answerCbQuery();
     });
 
@@ -1553,7 +1582,8 @@ bot.command('fixdb', (ctx) => {
                     if (extractedUrl && !extractedUrl.startsWith('http')) {
                         extractedUrl = 'http://' + extractedUrl;
                     }
-
+            
+                    
                     const newServer = {
                         id: 'srv_' + Math.floor(Math.random() * 900000),
                         name: extract('نام'),
@@ -1578,6 +1608,63 @@ bot.command('fixdb', (ctx) => {
                         writeDb(freshDb);
                         
                         ctx.reply(`✅ سرور ${newServer.name} با موفقیت اضافه شد.`);
+                    });
+                    
+                } catch (e) {
+                    ctx.reply('❌ خطا در پردازش فرمت.');
+                }
+                adminSteps.delete(ctx.from.id);
+                return;
+            }
+
+            if (adminState.step === 'EDIT_SERVER_FORMAT') {
+                try {
+                    const lines = input.split('\n');
+                    const extract = (key) => {
+                        const line = lines.find(l => l.includes(key));
+                        if (!line) return '';
+                        return line.replace(new RegExp(`^.*?${key}\\s*[:：]`), '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+                    };
+
+                    let extractedUrl = extract('آدرس');
+                    if (extractedUrl && !extractedUrl.startsWith('http')) {
+                        extractedUrl = 'http://' + extractedUrl;
+                    }
+
+                    const db = readDb();
+                    const serverIndex = db.servers.findIndex(s => s.id === adminState.serverId);
+                    
+                    if (serverIndex === -1) {
+                        ctx.reply('❌ سرور یافت نشد.');
+                        adminSteps.delete(ctx.from.id);
+                        return;
+                    }
+
+                    const updatedServer = {
+                        id: adminState.serverId, // شناسه اصلی دست‌نخورده می‌ماند
+                        name: extract('نام') || db.servers[serverIndex].name,
+                        panelUrl: extractedUrl || db.servers[serverIndex].panelUrl,
+                        webBasePath: extract('مسیر پنل'),
+                        apiToken: extract('توکن') || db.servers[serverIndex].apiToken,
+                        inboundId: parseInt(extract('اینباند')) || db.servers[serverIndex].inboundId,
+                        domain: extract('دامنه') || db.servers[serverIndex].domain,
+                        sni: extract('اس‌ان‌آی') || db.servers[serverIndex].sni,
+                        path: extract('مسیر کانفیگ') || db.servers[serverIndex].path,
+                        isMigrating: db.servers[serverIndex].isMigrating // حفظ وضعیت تخلیه
+                    };
+
+                    ctx.reply(`🔍 در حال تست لاگین با اطلاعات جدید...\nآدرس نهایی: [${updatedServer.panelUrl}]\nمسیر: [${updatedServer.webBasePath}]`);
+
+                    testServerConnection(updatedServer.panelUrl, updatedServer.webBasePath, updatedServer.apiToken).then(test => {
+                        if (!test.success) return ctx.reply(`❌ اتصال برقرار نشد: ${test.msg}\nتغییرات ذخیره نشد.`);
+                        
+                        const freshDb = readDb(); 
+                        const sIndex = freshDb.servers.findIndex(s => s.id === adminState.serverId);
+                        if(sIndex > -1) {
+                            freshDb.servers[sIndex] = updatedServer;
+                            writeDb(freshDb);
+                            ctx.reply(`✅ اطلاعات سرور ${updatedServer.name} با موفقیت ویرایش و جایگزین شد.`);
+                        }
                     });
                     
                 } catch (e) {
