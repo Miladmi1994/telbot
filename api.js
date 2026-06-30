@@ -3,7 +3,7 @@ const crypto = require('crypto');
 
 // این ثابت‌ها فقط به عنوان "سرور پیش‌فرض" (ایتالیا) نگه داشته میشن 
 // تا کانفیگ‌های قدیمی همچنان بدون مشکل کار کنن
-const DEFAULT_PANEL_URL = 'http://216.106.191.213:7275';
+const DEFAULT_PANEL_URL = 'http://216.106.191.213:2053';
 const DEFAULT_WEB_BASE_PATH = '/znuwjha'; 
 const DEFAULT_API_TOKEN = 'bM41sxxSuvXHexMz4EVj4i1m6xui7ZxtjJuddtz81mCyXdgY';
 const DEFAULT_INBOUND_ID = 1;
