@@ -1,2 +1,6 @@
 node_modules/
 db.json
+db.staging.json
+*.db
+*.db-wal
+*.db-shm

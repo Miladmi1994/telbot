@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "db:migrate": "node db/migrate-from-json.js"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +15,6 @@
     "axios": "^1.17.0",
     "dotenv": "^17.4.2",
     "https-proxy-agent": "^9.0.0",
-    "mongodb": "^7.4.0",
     "telegraf": "^4.16.3",
     "ws": "^8.21.0"
   }
