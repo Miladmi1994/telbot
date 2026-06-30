@@ -16,7 +16,7 @@ fi
 
 git fetch origin
 git checkout "$BRANCH"
-git pull origin "$BRANCH"
+git reset --hard "origin/$BRANCH"
 
 npm install
 
