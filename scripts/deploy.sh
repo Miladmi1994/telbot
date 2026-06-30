@@ -10,6 +10,10 @@ echo "==> Deploying $BRANCH to $APP_DIR"
 
 cd "$APP_DIR"
 
+if [ -f scripts/backup-db.js ]; then
+  node scripts/backup-db.js || echo "Warning: pre-deploy backup failed"
+fi
+
 git fetch origin
 git checkout "$BRANCH"
 git pull origin "$BRANCH"
