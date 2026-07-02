@@ -14,4 +14,9 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          script: bash /root/telbot-test/scripts/deploy.sh
+          script: |
+            cd /root/telbot-test
+            git fetch origin
+            git checkout develop
+            git reset --hard origin/develop
+            bash scripts/deploy.sh
