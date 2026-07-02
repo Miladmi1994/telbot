@@ -64,9 +64,11 @@ async function checkMembership(ctx, userId) {
 // تابع فوروارد پیام کاربر به ادمین در تاپیک پشتیبانی
 // تابع فوروارد پیام کاربر به ادمین در تاپیک پشتیبانی
 async function forwardToAdmin(ctx, state) {
+    state.lastUserMsgId = ctx.message.message_id;
     const userId = ctx.from.id;
     const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
     const topicId = parseInt(state.step === 'CHAT_ERROR' ? TOPIC_ERROR : TOPIC_SUPPORT);
+    
     
     const kb = Markup.inlineKeyboard([
         [Markup.button.callback('🔒 بستن تیکت', `close_ticket_${userId}`), Markup.button.callback('🚫 مسدود کردن', `ban_ticket_${userId}`)]
@@ -211,45 +213,33 @@ function setupHandlers(bot) {
             if (ctx.message.reply_to_message && ctx.message.reply_to_message.from.id === ctx.botInfo.id) {
                 const repliedText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption || '';
                 const userMatch = repliedText.match(/#User_(\d+)/);
-                const msgIdMatch = repliedText.match(/#Msg_(\d+)/);
                 
                 if (userMatch) {
                     const targetUserId = userMatch[1];
-                    const targetMsgId = msgIdMatch ? parseInt(msgIdMatch[1]) : null;
                     try {
-                        let currentState = userSteps.get(Number(targetUserId)) || {};
-                        currentState.lastAdminMsgId = ctx.message.message_id;
+                        // 1. بازگرداندن کاربر به محیط چت
+                        let state = userSteps.get(Number(targetUserId)) || { step: 'CHAT_SUPPORT' };
+                        state.step = 'CHAT_SUPPORT';
+                        state.lastAdminMsgId = ctx.message.message_id; // برای زنجیره ریپلای
+                        state.ts = Date.now();
+                        userSteps.set(Number(targetUserId), state);
                         
-                        let extraOptions = {};
-                        if (targetMsgId) extraOptions.reply_to_message_id = targetMsgId;
-                        
-                        let alertUser = false;
-                        if (currentState.step !== 'CHAT_SUPPORT' && currentState.step !== 'CHAT_ERROR') {
-                            currentState.step = 'CHAT_SUPPORT';
-                            alertUser = true;
-                        }
-                        currentState.ts = Date.now();
-                        userSteps.set(Number(targetUserId), currentState);
-                        
-                        const adminText = ctx.message.text;
-                        if (adminText) {
-                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>\n\n${adminText}`, { parse_mode: 'HTML', ...extraOptions });
+                        // 2. ارسال پاسخ به کاربر
+                        const adminText = ctx.message.text || ctx.message.caption || '';
+                        const extraOptions = { parse_mode: 'HTML', reply_to_message_id: (userSteps.get(Number(targetUserId))?.lastUserMsgId || undefined) };
+
+                        if (ctx.message.text) {
+                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>\n\n${adminText}`, { parse_mode: 'HTML' });
                         } else {
-                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b> 👇`, { parse_mode: 'HTML', ...extraOptions });
+                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>`, { parse_mode: 'HTML' });
                             await ctx.telegram.copyMessage(targetUserId, ctx.chat.id, ctx.message.message_id);
                         }
-                        
-                        // بازگرداندن کاربر به محیط چت (اگر خارج شده بود)
-                        if (alertUser) {
-                            await ctx.telegram.sendMessage(targetUserId, '💬 شما به محیط چت با پشتیبانی برگشتید. می‌توانید مستقیماً پاسخ خود را بنویسید.', chatKeyboard);
-                        }
-                        
-                        // پیام تایید و حذف اتوماتیک بعد از ۵ ثانیه
-                        const sentAlert = await ctx.telegram.sendMessage(GROUP_ID, '✅ پاسخ ارسال شد.', { reply_to_message_id: ctx.message.message_id });
-                        setTimeout(() => { ctx.telegram.deleteMessage(GROUP_ID, sentAlert.message_id).catch(() => {}); }, 5000);
+
+                        // 3. پاک کردن پیام تایید ادمین
+                        const sentAlert = await ctx.reply('✅ ارسال شد.', { reply_to_message_id: ctx.message.message_id });
+                        setTimeout(() => { ctx.deleteMessage(sentAlert.message_id).catch(() => {}); }, 3000);
                     } catch (err) {
-                        const failAlert = await ctx.telegram.sendMessage(GROUP_ID, '❌ ارسال ناموفق! (کاربر مسدود کرده)', { reply_to_message_id: ctx.message.message_id });
-                        setTimeout(() => { ctx.telegram.deleteMessage(GROUP_ID, failAlert.message_id).catch(() => {}); }, 5000);
+                        ctx.reply('❌ ارسال نشد (کاربر بلاک کرده).');
                     }
                 }
             }
@@ -2104,47 +2094,24 @@ function setupHandlers(bot) {
         }
     });
     
-    // --- مدیریت دکمه‌های بستن تیکت و نظرسنجی ---
-    bot.action(/close_ticket_(\d+)/, async (ctx) => { 
-        const userId = Number(ctx.match[1]);
-        userSteps.delete(userId); 
-        
-        await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
-        await ctx.reply(`🔒 چت با کاربر #User_${userId} بسته شد.`);
-        
-        try {
-            await ctx.telegram.sendMessage(userId, '🔒 <b>پشتیبانی به پایان رسید و مکالمه بسته شد.</b>\nآیا مشکل شما برطرف شد؟', {
-                parse_mode: 'HTML',
-                reply_markup: {
-                    inline_keyboard: [
-                        [Markup.button.callback('✅ بله، مشکل حل شد', `feedback_yes_${userId}`)],
-                        [Markup.button.callback('❌ خیر، حل نشد', `feedback_no_${userId}`)]
-                    ]
-                }
-            });
-        } catch (e) {}
-        
-        ctx.answerCbQuery('تیکت بسته شد.'); 
-    });
-
+    // --- مدیریت دکمه‌های تیکت (بستن و مسدود کردن) ---
     bot.action(/close_ticket_(\d+)/, async (ctx) => { 
         const userId = Number(ctx.match[1]);
         userSteps.delete(userId); 
         await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
         await ctx.reply(`🔒 چت با کاربر #User_${userId} بسته شد.`);
+        
         try {
-            await ctx.telegram.sendMessage(userId, '🔒 <b>پشتیبانی به پایان رسید و مکالمه بسته شد.</b>\nآیا مشکل شما برطرف شد؟', {
+            await ctx.telegram.sendMessage(userId, '🔒 <b>پشتیبانی به پایان رسید.</b>\nآیا مشکل شما برطرف شد؟', {
                 parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [
-                        [Markup.button.callback('✅ بله، مشکل حل شد', `feedback_yes_${userId}`)],
-                        [Markup.button.callback('❌ خیر، حل نشد', `feedback_no_${userId}`)]
+                        [Markup.button.callback('✅ بله', `feedback_yes_${userId}`), Markup.button.callback('❌ خیر', `feedback_no_${userId}`)]
                     ]
                 }
             });
-            await ctx.telegram.sendMessage(userId, 'به منوی اصلی برگشتیم:', mainKeyboard);
         } catch (e) {}
-        ctx.answerCbQuery('تیکت بسته شد.'); 
+        ctx.answerCbQuery(); 
     });
 
     bot.action(/ban_ticket_(\d+)/, async (ctx) => {
@@ -2159,6 +2126,7 @@ function setupHandlers(bot) {
         try { await ctx.telegram.sendMessage(userId, '🚫 <b>دسترسی شما به ربات مسدود شد.</b>', { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } }); } catch (e) {}
         ctx.answerCbQuery('کاربر مسدود شد.');
     });
+
 
     bot.action(/feedback_(yes|no)_(\d+)/, async (ctx) => { 
         await ctx.editMessageText(`ممنون از بازخوردت 🌻.`); 
