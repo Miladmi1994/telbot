@@ -206,51 +206,61 @@ function setupHandlers(bot) {
             return ctx.reply(`✅ ارسال همگانی به پایان رسید.\n\n🟢 موفق: ${successCount}\n🔴 ناموفق (بلاک کرده‌اند): ${failCount}`);
         }
 
-        // --- 2. سیستم ریپلای مستقیم پشتیبانی ادمین در گروه ---
-        // --- 2. سیستم ریپلای مستقیم پشتیبانی ادمین در گروه ---
-        if (ctx.chat && ctx.chat.id.toString() === GROUP_ID) {
+        // --- 1. سیستم ریپلای مستقیم ادمین به کاربر در گروه ---
+        if (ctx.chat.id.toString() === GROUP_ID) {
             if (ctx.message.reply_to_message && ctx.message.reply_to_message.from.id === ctx.botInfo.id) {
                 const repliedText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption || '';
                 const userMatch = repliedText.match(/#User_(\d+)/);
-                const msgIdMatch = repliedText.match(/#MsgId_(\d+)/);
+                const msgIdMatch = repliedText.match(/#Msg_(\d+)/);
                 
                 if (userMatch) {
                     const targetUserId = userMatch[1];
                     const targetMsgId = msgIdMatch ? parseInt(msgIdMatch[1]) : null;
-                    
                     try {
-                        // الف) برگرداندن اتوماتیک کاربر به محیط چت
-                        userSteps.set(Number(targetUserId), { step: 'CHAT_SUPPORT', ts: Date.now() });
+                        let currentState = userSteps.get(Number(targetUserId)) || {};
+                        currentState.lastAdminMsgId = ctx.message.message_id;
                         
-                        // ب) تنظیمات برای ریپلای خوردن روی پیام خود کاربر
                         let extraOptions = {};
-                        if (targetMsgId) {
-                            extraOptions.reply_to_message_id = targetMsgId;
-                        }
+                        if (targetMsgId) extraOptions.reply_to_message_id = targetMsgId;
                         
-                        // ج) اضافه کردن سربرگ پشتیبانی
+                        let alertUser = false;
+                        if (currentState.step !== 'CHAT_SUPPORT' && currentState.step !== 'CHAT_ERROR') {
+                            currentState.step = 'CHAT_SUPPORT';
+                            alertUser = true;
+                        }
+                        currentState.ts = Date.now();
+                        userSteps.set(Number(targetUserId), currentState);
+                        
                         const adminText = ctx.message.text;
                         if (adminText) {
-                            // ارسال متن با سربرگ
-                            const finalMsg = `👨‍💻 <b>پاسخ پشتیبانی:</b>\n\n${adminText}`;
-                            await ctx.telegram.sendMessage(targetUserId, finalMsg, { parse_mode: 'HTML', ...extraOptions });
+                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>\n\n${adminText}`, { parse_mode: 'HTML', ...extraOptions });
                         } else {
-                            // ارسال فایل/عکس: اول یه سربرگ متنی ریپلای میشه، بعد مدیا فرستاده میشه
                             await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b> 👇`, { parse_mode: 'HTML', ...extraOptions });
                             await ctx.telegram.copyMessage(targetUserId, ctx.chat.id, ctx.message.message_id);
                         }
-
-                        await ctx.telegram.sendMessage(GROUP_ID, '✅ پاسخ ارسال شد و کاربر به محیط چت برگشت.', { reply_to_message_id: ctx.message.message_id });
+                        
+                        // بازگرداندن کاربر به محیط چت (اگر خارج شده بود)
+                        if (alertUser) {
+                            await ctx.telegram.sendMessage(targetUserId, '💬 شما به محیط چت با پشتیبانی برگشتید. می‌توانید مستقیماً پاسخ خود را بنویسید.', chatKeyboard);
+                        }
+                        
+                        // پیام تایید و حذف اتوماتیک بعد از ۵ ثانیه
+                        const sentAlert = await ctx.telegram.sendMessage(GROUP_ID, '✅ پاسخ ارسال شد.', { reply_to_message_id: ctx.message.message_id });
+                        setTimeout(() => { ctx.telegram.deleteMessage(GROUP_ID, sentAlert.message_id).catch(() => {}); }, 5000);
                     } catch (err) {
-                        await ctx.telegram.sendMessage(GROUP_ID, '❌ ارسال ناموفق! (کاربر ربات را بلاک کرده است)', { reply_to_message_id: ctx.message.message_id });
+                        const failAlert = await ctx.telegram.sendMessage(GROUP_ID, '❌ ارسال ناموفق! (کاربر مسدود کرده)', { reply_to_message_id: ctx.message.message_id });
+                        setTimeout(() => { ctx.telegram.deleteMessage(GROUP_ID, failAlert.message_id).catch(() => {}); }, 5000);
                     }
                 }
             }
-            return next(); // <--- تغییر مهم: با این کار دستور /admin در گروه هم کار می‌کند
+            return next();
         }
-        
-        return next();
-    });
+
+        // --- 2. ارسال پیام کاربر به گروه ---
+        if (state && (state.step === 'CHAT_ERROR' || state.step === 'CHAT_SUPPORT')) {
+            await forwardToAdmin(ctx, state);
+            return;
+        }
 
     bot.command('admin', (ctx) => {
         const userId = ctx.from?.id?.toString();
@@ -1499,17 +1509,19 @@ function setupHandlers(bot) {
     }
 
     bot.hears('🛠 پشتیبانی و گزارش خطا', (ctx) => { userSteps.set(ctx.from.id, { step: 'SUPPORT_MENU', ts: Date.now() }); ctx.reply('موضوع پیامت چیه؟', supportMenuKeyboard); });
-    bot.action('support_general', (ctx) => { ctx.answerCbQuery('❌ بخش استرداد وجه فعلاً غیرفعال است.', { show_alert: true }); });
-    bot.action('support_error', (ctx) => { ctx.answerCbQuery(); userSteps.set(ctx.from.id, { step: 'CHAT_ERROR', ts: Date.now() }); ctx.deleteMessage().catch(()=> {}); ctx.reply('وارد چت پشتیبانی شدی. پیامت رو بفرست:\n(می‌توانی متن، عکس، ویس و ویدیو بفرستی)', chatKeyboard); });
+    bot.action('support_error', (ctx) => { 
+        ctx.answerCbQuery(); 
+        userSteps.set(ctx.from.id, { step: 'CHAT_ERROR', ts: Date.now() }); 
+        ctx.deleteMessage().catch(()=> {}); 
+        ctx.reply('وارد چت پشتیبانی شدی. پیامت رو بفرست:\n(متن، عکس، ویس یا ویدیو)', chatKeyboard); 
+    });
     
     bot.hears('❌ خروج از چت پشتیبانی', async (ctx) => { 
         const state = userSteps.get(ctx.from.id); 
         if (state && (state.step === 'CHAT_ERROR' || state.step === 'CHAT_SUPPORT')) {
             const topicId = parseInt(state.step === 'CHAT_ERROR' ? TOPIC_ERROR : TOPIC_SUPPORT);
-            try {
-                await ctx.telegram.sendMessage(GROUP_ID, `🚪 کاربر #User_${ctx.from.id} از حالت پشتیبانی خارج شد.`, { message_thread_id: topicId });
-            } catch(e) {}
-        }
+            try { await ctx.telegram.sendMessage(GROUP_ID, `🚪 کاربر #User_${ctx.from.id} از چت خارج شد.`, { message_thread_id: topicId }); } catch(e) {} 
+        } 
         userSteps.delete(ctx.from.id); 
         ctx.reply('از حالت پشتیبانی خارج شدی. به منوی اصلی برگشتیم:', mainKeyboard); 
     });
@@ -2115,9 +2127,42 @@ function setupHandlers(bot) {
         ctx.answerCbQuery('تیکت بسته شد.'); 
     });
 
+    bot.action(/close_ticket_(\d+)/, async (ctx) => { 
+        const userId = Number(ctx.match[1]);
+        userSteps.delete(userId); 
+        await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+        await ctx.reply(`🔒 چت با کاربر #User_${userId} بسته شد.`);
+        try {
+            await ctx.telegram.sendMessage(userId, '🔒 <b>پشتیبانی به پایان رسید و مکالمه بسته شد.</b>\nآیا مشکل شما برطرف شد؟', {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [
+                        [Markup.button.callback('✅ بله، مشکل حل شد', `feedback_yes_${userId}`)],
+                        [Markup.button.callback('❌ خیر، حل نشد', `feedback_no_${userId}`)]
+                    ]
+                }
+            });
+            await ctx.telegram.sendMessage(userId, 'به منوی اصلی برگشتیم:', mainKeyboard);
+        } catch (e) {}
+        ctx.answerCbQuery('تیکت بسته شد.'); 
+    });
+
+    bot.action(/ban_ticket_(\d+)/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const userId = ctx.match[1];
+        const db = readDb();
+        if (!db.bannedUsers) db.bannedUsers = [];
+        if (!db.bannedUsers.includes(userId)) { db.bannedUsers.push(userId); writeDb(db); }
+        userSteps.delete(Number(userId));
+        await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+        await ctx.reply(`🚫 کاربر #User_${userId} مسدود شد.`);
+        try { await ctx.telegram.sendMessage(userId, '🚫 <b>دسترسی شما به ربات مسدود شد.</b>', { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } }); } catch (e) {}
+        ctx.answerCbQuery('کاربر مسدود شد.');
+    });
+
     bot.action(/feedback_(yes|no)_(\d+)/, async (ctx) => { 
         await ctx.editMessageText(`ممنون از بازخوردت 🌻.`); 
-        ctx.telegram.sendMessage(GROUP_ID, `📊 بازخورد پشتیبانی کاربر #User_${ctx.match[2]}:\n${ctx.match[1] === 'yes' ? '✅ مشکلش حل شد.' : '❌ مشکلش حل نشد.'}`); 
+        ctx.telegram.sendMessage(GROUP_ID, `📊 بازخورد کاربر #User_${ctx.match[2]}: ${ctx.match[1] === 'yes' ? '✅ حل شد' : '❌ حل نشد'}`); 
     });
 
     bot.action(/confnew_(.+)/, async (ctx) => {
