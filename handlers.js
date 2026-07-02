@@ -60,8 +60,6 @@ async function checkMembership(ctx, userId) {
         return false;
     }
 }
-
-// تابع فوروارد پیام کاربر به ادمین در تاپیک پشتیبانی
 // تابع فوروارد پیام کاربر به ادمین در تاپیک پشتیبانی
 async function forwardToAdmin(ctx, state) {
     const userId = ctx.from.id;
@@ -69,17 +67,13 @@ async function forwardToAdmin(ctx, state) {
     const topicId = parseInt(state.step === 'CHAT_ERROR' ? TOPIC_ERROR : TOPIC_SUPPORT);
     
     const kb = Markup.inlineKeyboard([
-        [Markup.button.callback('🔒 بستن تیکت', `close_ticket_${userId}`), Markup.button.callback('🚫 مسدود کردن', `ban_ticket_${userId}`)]
+        [Markup.button.callback('🔒 بستن چت', `close_ticket_${userId}`), Markup.button.callback('🚫 مسدود کردن', `ban_ticket_${userId}`)]
     ]);
 
     try {
         let extraOptions = { parse_mode: 'HTML', message_thread_id: topicId, ...kb };
         let isThread = !!state.lastAdminMsgId;
-        
-        // اگر قبلا ادمین جوابی داده، پیام جدید کاربر به همون جواب ریپلای بشه
-        if (isThread) {
-            extraOptions.reply_to_message_id = state.lastAdminMsgId;
-        }
+        if (isThread) extraOptions.reply_to_message_id = state.lastAdminMsgId;
 
         if (ctx.message.text) {
             const safeText = ctx.message.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -87,26 +81,18 @@ async function forwardToAdmin(ctx, state) {
                 ? `💬 <b>پیام جدید</b> | 👤 #User_${userId} | 🔖 #Msg_${ctx.message.message_id}` 
                 : `📩 <b>تیکت جدید</b>\n👤 #User_${userId}\n🆔 ${username}\n🔖 #Msg_${ctx.message.message_id}`;
             const text = `${header}\n\n<blockquote>${safeText}</blockquote>`;
-            
             await ctx.telegram.sendMessage(GROUP_ID, text, extraOptions);
         } else {
             let originalCaption = ctx.message.caption || '';
             if (originalCaption.length > 800) originalCaption = originalCaption.substring(0, 800) + '...';
             originalCaption = originalCaption.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            
             const header = isThread 
                 ? `💬 <b>پیام جدید</b> | 👤 #User_${userId} | 🔖 #Msg_${ctx.message.message_id}` 
                 : `📩 <b>تیکت جدید</b>\n👤 #User_${userId}\n🆔 ${username}\n🔖 #Msg_${ctx.message.message_id}`;
             const newCaption = `${header}\n\n<blockquote>${originalCaption}</blockquote>`;
-            
-            await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
-                ...extraOptions,
-                caption: newCaption
-            });
+            await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, { ...extraOptions, caption: newCaption });
         }
-    } catch (err) {
-        console.error("Error forwarding support message:", err);
-    }
+    } catch (err) {}
 }
 
 function setupHandlers(bot) {
