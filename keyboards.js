@@ -45,7 +45,7 @@ const receiptKeyboard = Markup.inlineKeyboard([
 ]);
 
 const supportMenuKeyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔌 گزارش وصل نشدن', 'support_error')],
+    [Markup.button.callback('🔌 پشتیبانی و گزارش مشکل', 'support_error')],
     [cancelBtn]
 ]);
 

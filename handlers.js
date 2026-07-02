@@ -71,14 +71,16 @@ async function forwardToAdmin(ctx, state) {
     try {
         if (ctx.message.text) {
             const safeText = ctx.message.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const text = `📩 <b>پیام جدید کاربر:</b>\n👤 #User_${userId}\n🆔 یوزرنیم: ${username}\n\n${safeText}`;
+            // اینجا تگ #MsgId_ اضافه شد
+            const text = `📩 <b>پیام جدید کاربر:</b>\n👤 #User_${userId}\n🆔 یوزرنیم: ${username}\n🔖 #MsgId_${ctx.message.message_id}\n\n${safeText}`;
             await ctx.telegram.sendMessage(GROUP_ID, text, { parse_mode: 'HTML', message_thread_id: topicId, ...kb });
         } else {
             let originalCaption = ctx.message.caption || '';
             if (originalCaption.length > 800) originalCaption = originalCaption.substring(0, 800) + '...';
             originalCaption = originalCaption.replace(/</g, '&lt;').replace(/>/g, '&gt;');
             
-            const newCaption = `${originalCaption}\n\n👤 #User_${userId}\n🆔 یوزرنیم: ${username}`;
+            // اینجا هم تگ #MsgId_ اضافه شد
+            const newCaption = `${originalCaption}\n\n👤 #User_${userId}\n🆔 یوزرنیم: ${username}\n🔖 #MsgId_${ctx.message.message_id}`;
             await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
                 message_thread_id: topicId,
                 caption: newCaption,
@@ -189,21 +191,46 @@ function setupHandlers(bot) {
         }
 
         // --- 2. سیستم ریپلای مستقیم پشتیبانی ادمین در گروه ---
+        // --- 2. سیستم ریپلای مستقیم پشتیبانی ادمین در گروه ---
         if (ctx.chat && ctx.chat.id.toString() === GROUP_ID) {
             if (ctx.message.reply_to_message && ctx.message.reply_to_message.from.id === ctx.botInfo.id) {
                 const repliedText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption || '';
-                const match = repliedText.match(/#User_(\d+)/);
-                if (match) {
-                    const targetUserId = match[1];
+                const userMatch = repliedText.match(/#User_(\d+)/);
+                const msgIdMatch = repliedText.match(/#MsgId_(\d+)/);
+                
+                if (userMatch) {
+                    const targetUserId = userMatch[1];
+                    const targetMsgId = msgIdMatch ? parseInt(msgIdMatch[1]) : null;
+                    
                     try {
-                        await ctx.telegram.copyMessage(targetUserId, ctx.chat.id, ctx.message.message_id);
-                        await ctx.telegram.sendMessage(GROUP_ID, '✅ پاسخ شما برای کاربر ارسال شد.', { reply_to_message_id: ctx.message.message_id });
+                        // الف) برگرداندن اتوماتیک کاربر به محیط چت
+                        userSteps.set(Number(targetUserId), { step: 'CHAT_SUPPORT', ts: Date.now() });
+                        
+                        // ب) تنظیمات برای ریپلای خوردن روی پیام خود کاربر
+                        let extraOptions = {};
+                        if (targetMsgId) {
+                            extraOptions.reply_to_message_id = targetMsgId;
+                        }
+                        
+                        // ج) اضافه کردن سربرگ پشتیبانی
+                        const adminText = ctx.message.text;
+                        if (adminText) {
+                            // ارسال متن با سربرگ
+                            const finalMsg = `👨‍💻 <b>پاسخ پشتیبانی:</b>\n\n${adminText}`;
+                            await ctx.telegram.sendMessage(targetUserId, finalMsg, { parse_mode: 'HTML', ...extraOptions });
+                        } else {
+                            // ارسال فایل/عکس: اول یه سربرگ متنی ریپلای میشه، بعد مدیا فرستاده میشه
+                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b> 👇`, { parse_mode: 'HTML', ...extraOptions });
+                            await ctx.telegram.copyMessage(targetUserId, ctx.chat.id, ctx.message.message_id);
+                        }
+
+                        await ctx.telegram.sendMessage(GROUP_ID, '✅ پاسخ ارسال شد و کاربر به محیط چت برگشت.', { reply_to_message_id: ctx.message.message_id });
                     } catch (err) {
-                        await ctx.telegram.sendMessage(GROUP_ID, '❌ ارسال ناموفق! (احتمالاً کاربر ربات را بلاک کرده است)', { reply_to_message_id: ctx.message.message_id });
+                        await ctx.telegram.sendMessage(GROUP_ID, '❌ ارسال ناموفق! (کاربر ربات را بلاک کرده است)', { reply_to_message_id: ctx.message.message_id });
                     }
                 }
             }
-            return; // توقف پردازش سایر هندلرها در گروه
+            return next(); // <--- تغییر مهم: با این کار دستور /admin در گروه هم کار می‌کند
         }
         
         return next();
