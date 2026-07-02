@@ -246,14 +246,6 @@ function setupHandlers(bot) {
             return next();
         }
 
-        // --- 2. ارسال پیام کاربر به گروه ---
-        const state = userSteps.get(ctx.from.id);
-        
-       if (state && (state.step === 'CHAT_ERROR' || state.step === 'CHAT_SUPPORT')) {
-            await forwardToAdmin(ctx, state);
-            return;
-        }
-
         return next();
     });
 
