@@ -1,7 +1,9 @@
 const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, userSteps, adminSteps } = require('./config');
-const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, adminMarketingMenu } = require('./keyboards');const { readDb, writeDb } = require('./db');
+const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, adminMarketingMenu } = require('./keyboards');
+const { readDb, writeDb } = require('./db');
 const { createClient, deleteClient, renewClient, getClientTraffic, generateMciConfig, generateMtnConfig, getUsdtRate, testServerConnection } = require('./api');
+
 function generateOrderId() {
     return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -20,7 +22,6 @@ async function fetchGithubLatest(repo, keyword) {
         const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`);
         const data = await response.json();
         
-        // بررسی وجود assets (اگر لیمیت شده باشیم، این بخش وجود ندارد)
         if (data && data.assets) {
             const asset = data.assets.find(a => a.name.toLowerCase().includes(keyword.toLowerCase()));
             if (asset) {
@@ -28,8 +29,6 @@ async function fetchGithubLatest(repo, keyword) {
                 return asset.browser_download_url;
             }
         }
-        
-        // در صورت عدم یافتن فایل، لینک کش شده قبلی را بده (اگر موجود بود)
         return fetchCache[cacheKey] ? fetchCache[cacheKey].url : `https://github.com/${repo}/releases/latest`;
     } catch (error) {
         return fetchCache[cacheKey] ? fetchCache[cacheKey].url : `https://github.com/${repo}/releases/latest`;
@@ -44,7 +43,7 @@ function getServerFlag(serverName) {
     if (serverName.includes('فرانسه')) return '🇫🇷';
     if (serverName.includes('انگلیس') || serverName.includes('بریتانیا')) return '🇬🇧';
     if (serverName.includes('ترکیه')) return '🇹🇷';
-    return '🌍'; // پرچم پیش‌فرض
+    return '🌍'; 
 }
 
 function isUserAdmin(userId) {
@@ -56,11 +55,39 @@ function isUserAdmin(userId) {
 async function checkMembership(ctx, userId) {
     try {
         const member = await ctx.telegram.getChatMember('@cyphernett', userId);
-        // وضعیت‌های مجاز: ممبر عادی، ادمین، یا سازنده کانال
         return ['member', 'creator', 'administrator'].includes(member.status);
     } catch (e) {
-        console.error("خطا در بررسی عضویت کانال:", e.message);
         return false;
+    }
+}
+
+// تابع فوروارد پیام کاربر به ادمین در تاپیک پشتیبانی
+async function forwardToAdmin(ctx, state) {
+    const userId = ctx.from.id;
+    const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
+    const topicId = parseInt(state.step === 'CHAT_ERROR' ? TOPIC_ERROR : TOPIC_SUPPORT);
+    const kb = Markup.inlineKeyboard([[Markup.button.callback('🔒 بستن تیکت', `close_ticket_${userId}`)]]);
+
+    try {
+        if (ctx.message.text) {
+            const safeText = ctx.message.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const text = `📩 <b>پیام جدید کاربر:</b>\n👤 #User_${userId}\n🆔 یوزرنیم: ${username}\n\n${safeText}`;
+            await ctx.telegram.sendMessage(GROUP_ID, text, { parse_mode: 'HTML', message_thread_id: topicId, ...kb });
+        } else {
+            let originalCaption = ctx.message.caption || '';
+            if (originalCaption.length > 800) originalCaption = originalCaption.substring(0, 800) + '...';
+            originalCaption = originalCaption.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            
+            const newCaption = `${originalCaption}\n\n👤 #User_${userId}\n🆔 یوزرنیم: ${username}`;
+            await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
+                message_thread_id: topicId,
+                caption: newCaption,
+                parse_mode: 'HTML',
+                ...kb
+            });
+        }
+    } catch (err) {
+        console.error("Error forwarding support message:", err);
     }
 }
 
@@ -71,24 +98,19 @@ function setupHandlers(bot) {
         const userId = ctx.from?.id?.toString();
         if (!userId) return next();
 
-        // بررسی کاربران مسدود شده
         if (!db.bannedUsers) db.bannedUsers = [];
         if (db.bannedUsers.includes(userId)) {
             return ctx.reply('❌ شما توسط مدیریت مسدود شده‌اید و دسترسی شما به ربات قطع است.');
         }
 
-        // بررسی حالت آپدیت (مِینتِنَنس)
         if (db.settings.maintenance && !isUserAdmin(userId) && ctx.chat?.type === 'private') {
             return ctx.reply('🛠 <b>ربات در حال بروزرسانی است...</b>\nلطفاً دقایقی دیگر تلاش کنید.', { parse_mode: 'HTML' });
         }
 
-        // --- سیستم عضویت اجباری برای تمام تعاملات ---
-        // اجازه می‌دهیم دکمه بررسی عضویت کار کند
         if (ctx.callbackQuery && ctx.callbackQuery.data === 'check_channel_join') {
             return next();
         }
 
-        // بررسی عضویت برای کاربران عادی (ادمین‌ها مستثنی هستند)
         if (!isUserAdmin(userId) && ctx.chat?.type === 'private') {
             const isMember = await checkMembership(ctx, userId);
             if (!isMember) {
@@ -100,19 +122,14 @@ function setupHandlers(bot) {
                     ]
                 };
                 
-                // اگر کاربر روی دکمه شیشه‌ای کلیک کرد
                 if (ctx.callbackQuery) {
                     await ctx.answerCbQuery('❌ ابتدا در کانال عضو شوید!', { show_alert: true });
                     return ctx.reply(joinMsg, { reply_markup: joinMarkup });
-                } 
-                // اگر کاربر پیام متنی فرستاد
-                else {
+                } else {
                     return ctx.reply(joinMsg, { reply_markup: joinMarkup });
                 }
             }
         }
-        // ------------------------------------------
-
         return next();
     });
 
@@ -139,6 +156,8 @@ function setupHandlers(bot) {
 
     bot.on('message', async (ctx, next) => {
         const adminState = adminSteps.get(ctx.from?.id);
+        
+        // --- 1. سیستم برودکست ---
         if (isUserAdmin(ctx.from?.id?.toString()) && adminState && adminState.step === 'WAITING_BROADCAST_MESSAGE') {
             if (ctx.message.text === 'لغو' || ctx.message.text === '/cancel') {
                 adminSteps.delete(ctx.from.id);
@@ -162,44 +181,58 @@ function setupHandlers(bot) {
                     await ctx.telegram.copyMessage(userId, ctx.chat.id, ctx.message.message_id);
                     successCount++;
                 } catch (e) {
-                    failCount++; // کاربرانی که ربات را مسدود کرده‌اند
+                    failCount++; 
                 }
-                // وقفه کوتاه برای جلوگیری از مسدود شدن ربات توسط تلگرام (Flood Limit)
                 await new Promise(r => setTimeout(r, 50)); 
             }
-            
             return ctx.reply(`✅ ارسال همگانی به پایان رسید.\n\n🟢 موفق: ${successCount}\n🔴 ناموفق (بلاک کرده‌اند): ${failCount}`);
         }
+
+        // --- 2. سیستم ریپلای مستقیم پشتیبانی ادمین در گروه ---
+        if (ctx.chat && ctx.chat.id.toString() === GROUP_ID) {
+            if (ctx.message.reply_to_message && ctx.message.reply_to_message.from.id === ctx.botInfo.id) {
+                const repliedText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption || '';
+                const match = repliedText.match(/#User_(\d+)/);
+                if (match) {
+                    const targetUserId = match[1];
+                    try {
+                        await ctx.telegram.copyMessage(targetUserId, ctx.chat.id, ctx.message.message_id);
+                        await ctx.telegram.sendMessage(GROUP_ID, '✅ پاسخ شما برای کاربر ارسال شد.', { reply_to_message_id: ctx.message.message_id });
+                    } catch (err) {
+                        await ctx.telegram.sendMessage(GROUP_ID, '❌ ارسال ناموفق! (احتمالاً کاربر ربات را بلاک کرده است)', { reply_to_message_id: ctx.message.message_id });
+                    }
+                }
+            }
+            return; // توقف پردازش سایر هندلرها در گروه
+        }
+        
         return next();
     });
 
-    // منوی مدیریت
-    // جایگزین بخش دستور ادمین
-bot.command('admin', (ctx) => {
-    const userId = ctx.from?.id?.toString();
-    const adminState = adminSteps.get(ctx.from.id);
-    if (isUserAdmin(userId) && adminState && adminState.step) return;
-    if (!isUserAdmin(userId)) return;
-    
-    adminSteps.delete(ctx.from.id); 
-    const db = readDb();
-    const income = (db.totalIncome || 0).toLocaleString('fa-IR');
-    const sales = (db.successfulSales || 0).toLocaleString('fa-IR');
+    bot.command('admin', (ctx) => {
+        const userId = ctx.from?.id?.toString();
+        const adminState = adminSteps.get(ctx.from.id);
+        if (isUserAdmin(userId) && adminState && adminState.step) return;
+        if (!isUserAdmin(userId)) return;
+        
+        adminSteps.delete(ctx.from.id); 
+        const db = readDb();
+        const income = (db.totalIncome || 0).toLocaleString('fa-IR');
+        const sales = (db.successfulSales || 0).toLocaleString('fa-IR');
 
-    ctx.reply(`⚙️ <b>پنل مدیریت ربات</b>\n\n📊 <b>آمار مالی ربات:</b>\n💰 کل درآمد: <b>${income} تومان</b>\n🛍 تعداد فروش موفق: <b>${sales} عدد</b>`, { parse_mode: 'HTML', ...getAdminKeyboard(db) });
-});
+        ctx.reply(`⚙️ <b>پنل مدیریت ربات</b>\n\n📊 <b>آمار مالی ربات:</b>\n💰 کل درآمد: <b>${income} تومان</b>\n🛍 تعداد فروش موفق: <b>${sales} عدد</b>`, { parse_mode: 'HTML', ...getAdminKeyboard(db) });
+    });
 
-// جایگزین بخش دکمه بازگشت به منوی ادمین
-bot.action('back_admin', (ctx) => {
-    if (!isUserAdmin(ctx.from.id.toString())) return;
-    adminSteps.delete(ctx.from.id);
-    const db = readDb();
-    const income = (db.totalIncome || 0).toLocaleString('fa-IR');
-    const sales = (db.successfulSales || 0).toLocaleString('fa-IR');
+    bot.action('back_admin', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        adminSteps.delete(ctx.from.id);
+        const db = readDb();
+        const income = (db.totalIncome || 0).toLocaleString('fa-IR');
+        const sales = (db.successfulSales || 0).toLocaleString('fa-IR');
 
-    ctx.editMessageText(`⚙️ <b>پنل مدیریت ربات</b>\n\n📊 <b>آمار مالی ربات:</b>\n💰 کل درآمد: <b>${income} تومان</b>\n🛍 تعداد فروش موفق: <b>${sales} عدد</b>`, { parse_mode: 'HTML', ...getAdminKeyboard(db) });
-    ctx.answerCbQuery();
-});
+        ctx.editMessageText(`⚙️ <b>پنل مدیریت ربات</b>\n\n📊 <b>آمار مالی ربات:</b>\n💰 کل درآمد: <b>${income} تومان</b>\n🛍 تعداد فروش موفق: <b>${sales} عدد</b>`, { parse_mode: 'HTML', ...getAdminKeyboard(db) });
+        ctx.answerCbQuery();
+    });
 
     bot.action('admin_add_admin', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
@@ -209,13 +242,12 @@ bot.action('back_admin', (ctx) => {
     });
 
     bot.action('admin_remove_admin', (ctx) => {
-    if (!isUserAdmin(ctx.from.id.toString())) return;
-    adminSteps.set(ctx.from.id, { step: 'REMOVE_ADMIN' });
-    ctx.reply('➖ لطفاً آیدی عددی کاربری که می‌خواهید دسترسی ادمینش لغو شود را بفرستید:');
-    ctx.answerCbQuery();
-});
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        adminSteps.set(ctx.from.id, { step: 'REMOVE_ADMIN' });
+        ctx.reply('➖ لطفاً آیدی عددی کاربری که می‌خواهید دسترسی ادمینش لغو شود را بفرستید:');
+        ctx.answerCbQuery();
+    });
 
-// --- مارکتینگ و آمار ---
     bot.action('admin_marketing_menu', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.editMessageText('📊 <b>پنل آمار و مارکتینگ</b>\nکدوم بخش رو می‌خوای بررسی کنی؟', {
@@ -323,8 +355,7 @@ bot.action('back_admin', (ctx) => {
         ctx.answerCbQuery();
     });
 
-// --- مدیریت سرورها ---
-   bot.action('admin_servers_menu', (ctx) => {
+    bot.action('admin_servers_menu', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.editMessageText('🖥 <b>مدیریت سرورها</b>\nاز اینجا می‌تونی سرورها رو مدیریت کنی و مقصدهای پیش‌فرض رو تعیین کنی:', { 
             parse_mode: 'HTML', 
@@ -366,7 +397,6 @@ bot.action('back_admin', (ctx) => {
             writeDb(db);
             ctx.answerCbQuery(`وضعیت تخلیه برای سرور تغییر کرد.`, {show_alert: false});
             
-            // رفرش کردن منو بعد از تغییر وضعیت
             const buttons = db.servers.map(s => {
                 const label = s.isMigrating ? `🧳 در حال تخلیه: ${s.name}` : `🟢 سالم: ${s.name}`;
                 return [Markup.button.callback(label, `toggle_migration_srv_${s.id}`)];
@@ -426,7 +456,6 @@ bot.action('back_admin', (ctx) => {
         const servers = db.servers || [];
         if (servers.length === 0) return ctx.answerCbQuery('هیچ سروری ثبت نشده.', {show_alert:true});
         
-        // محاسبه تعداد کاربران روی هر سرور
         const userCounts = {};
         Object.values(db.users || {}).forEach(userConfigs => {
             userConfigs.forEach(conf => {
@@ -456,7 +485,6 @@ bot.action('back_admin', (ctx) => {
         if (servers.length === 0) return ctx.answerCbQuery('سروری وجود ندارد.', {show_alert:true});
         
         const buttons = servers.map(s => {
-            // اگر این سرور عادیِ فعلی هست، تیک سبز بخوره
             const label = s.id === db.settings.activeServerId ? `✅ ${s.name}` : s.name;
             return [Markup.button.callback(label, `set_normal_srv_${s.id}`)];
         });
@@ -471,7 +499,6 @@ bot.action('back_admin', (ctx) => {
         if (servers.length === 0) return ctx.answerCbQuery('سروری وجود ندارد.', {show_alert:true});
         
         const buttons = servers.map(s => {
-            // اگر این سرور VIPِ فعلی هست، تاج بخوره
             const label = s.id === db.settings.activeVipServerId ? `👑 ${s.name}` : s.name;
             return [Markup.button.callback(label, `set_vip_srv_${s.id}`)];
         });
@@ -563,62 +590,69 @@ bot.action('back_admin', (ctx) => {
         ctx.answerCbQuery();
     });
 
-    bot.action('back_admin', (ctx) => {
-        if (!isUserAdmin(ctx.from.id.toString())) return;
-        const db = readDb();
-        ctx.editMessageText('⚙️ <b>پنل مدیریت ربات</b>', { parse_mode: 'HTML', ...getAdminKeyboard(db) });
-        ctx.answerCbQuery();
-    });
-
     bot.action('admin_users_menu', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.editMessageText('👥 <b>مدیریت کاربران</b>\nیک گزینه رو انتخاب کن:', { 
             parse_mode: 'HTML', 
-            reply_markup: adminUsersMenu.reply_markup 
+            reply_markup: {
+                inline_keyboard: [
+                    [Markup.button.callback('🔍 جستجوی کاربر', 'marketing_search')],
+                    [Markup.button.callback('💬 ارسال پیام (DM)', 'admin_send_dm')],
+                    [Markup.button.callback('🚫 مسدود کردن', 'admin_ban_user'), Markup.button.callback('✅ رفع مسدودی', 'admin_unban_user')],
+                    [Markup.button.callback('🗑 ریست کاربر', 'admin_reset_user'), Markup.button.callback('🧹 پاک کردن تست', 'admin_clear_test')],
+                    [Markup.button.callback('📋 لیست ادمین‌ها', 'admin_list_admins')],
+                    [Markup.button.callback('🔙 بازگشت', 'back_admin')]
+                ]
+            }
         });
         ctx.answerCbQuery();
     });
 
-
-bot.action('admin_list_admins', (ctx) => {
-    if (!isUserAdmin(ctx.from.id.toString())) return;
-    const db = readDb();
-    let text = '📋 <b>لیست ادمین‌های ربات:</b>\n\n';
-    text += '👑 <b>ادمین‌های اصلی (Super Admins):</b>\n';
-    ADMIN_IDS.forEach(id => {
-        text += `👤 <code>${id}</code>\n`;
+    bot.action('admin_send_dm', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        adminSteps.set(ctx.from.id, { step: 'DM_GET_USER' });
+        ctx.reply('🆔 لطفاً آیدی عددی کاربری که می‌خواهید برایش پیام بفرستید را ارسال کنید:');
+        ctx.answerCbQuery();
     });
-    
-    text += '\n👥 <b>ادمین‌های اضافه شده:</b>\n';
-    if (db.admins && db.admins.length > 0) {
-        db.admins.forEach(admin => {
-            text += `🔹 ${admin.name} (<code>${admin.id}</code>)\n`;
-        });
-    } else {
-        text += 'هیچ ادمین جدیدی اضافه نشده است.\n';
-    }
-    
-    ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: adminUsersMenu.reply_markup });
-    ctx.answerCbQuery();
-});
 
-bot.command('fixdb', (ctx) => {
-    if (!isUserAdmin(ctx.from.id.toString())) return;
-    const db = readDb();
-    let count = 0;
-    
-    for (const userId in db.users) {
-        db.users[userId].forEach(conf => {
-            // اگه سرورش رو پیدا نکرده بود یا همون آیدی‌های قبلی بود، بندازش رو آیدی درست ایتالیا
-            if (!conf.serverId || conf.serverId === 'srv_11528' || conf.serverId === 'default') {
-                conf.serverId = 'srv_580584'; // آیدی جدید و درست سرور ایتالیای شما
-                count++;
-            }
+    bot.action('admin_list_admins', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        let text = '📋 <b>لیست ادمین‌های ربات:</b>\n\n';
+        text += '👑 <b>ادمین‌های اصلی (Super Admins):</b>\n';
+        ADMIN_IDS.forEach(id => {
+            text += `👤 <code>${id}</code>\n`;
         });
-    }
-    writeDb(db);
-    ctx.reply(`✅ دیتابیس اصلاح شد! ${count} کانفیگ قدیمی، با موفقیت به سرور ایتالیا وصل شدن.`);
-});
+        
+        text += '\n👥 <b>ادمین‌های اضافه شده:</b>\n';
+        if (db.admins && db.admins.length > 0) {
+            db.admins.forEach(admin => {
+                text += `🔹 ${admin.name} (<code>${admin.id}</code>)\n`;
+            });
+        } else {
+            text += 'هیچ ادمین جدیدی اضافه نشده است.\n';
+        }
+        
+        ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: adminUsersMenu.reply_markup });
+        ctx.answerCbQuery();
+    });
+
+    bot.command('fixdb', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        let count = 0;
+        
+        for (const userId in db.users) {
+            db.users[userId].forEach(conf => {
+                if (!conf.serverId || conf.serverId === 'srv_11528' || conf.serverId === 'default') {
+                    conf.serverId = 'srv_580584'; 
+                    count++;
+                }
+            });
+        }
+        writeDb(db);
+        ctx.reply(`✅ دیتابیس اصلاح شد! ${count} کانفیگ قدیمی، با موفقیت به سرور ایتالیا وصل شدن.`);
+    });
 
     bot.action('admin_finance_menu', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
@@ -641,7 +675,6 @@ bot.command('fixdb', (ctx) => {
             }
         });
     });
-
 
     bot.action('add_vip_new', (ctx) => {
         adminSteps.set(ctx.from.id, { step: 'ADD_VIP_NEW_USER' });
@@ -756,22 +789,12 @@ bot.command('fixdb', (ctx) => {
         ctx.answerCbQuery();
     });
 
-    const sendFeedbackPrompt = async (ctx, userId, ticketMsgId) => {
-        try {
-            await ctx.telegram.sendMessage(userId, '🔒 مکالمه بسته شد.\nآیا مشکل شما برطرف شد؟', {
-                reply_markup: { inline_keyboard: [[Markup.button.callback('✅ بله، مشکل حل شد', `feedback_yes_${ticketMsgId}`)], [Markup.button.callback('❌ خیر، حل نشد', `feedback_no_${ticketMsgId}`)]] }
-            });
-        } catch (e) {}
-    };
-
-    // هندلر دکمه بررسی عضویت
     bot.action('check_channel_join', async (ctx) => {
         const isMember = await checkMembership(ctx, ctx.from.id);
         if (isMember) {
             await ctx.answerCbQuery('✅ عضویت شما تایید شد. خوش آمدید!', { show_alert: true });
             await ctx.deleteMessage().catch(() => {});
             
-            // نمایش پیام اصلی استارت
             userSteps.delete(ctx.from.id);
             const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
             ctx.reply(`سلام! خوش اومدی 🌹\n\n👤 <b>آیدی تلگرام:</b> ${username}\n🆔 <b>کد یکتای شما:</b> <code>${ctx.from.id}</code>\n\n👇 لطفاً یک گزینه رو انتخاب کن:`, { parse_mode: 'HTML', ...mainKeyboard });
@@ -780,7 +803,6 @@ bot.command('fixdb', (ctx) => {
         }
     });
 
-    // تغییر دستور استارت
     bot.start(async (ctx) => {
         const isMember = await checkMembership(ctx, ctx.from.id);
         
@@ -795,7 +817,6 @@ bot.command('fixdb', (ctx) => {
             });
         }
 
-        // اگر کاربر از قبل عضو بود، پیام عادی را می‌بیند
         userSteps.delete(ctx.from.id);
         const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
         ctx.reply(`سلام! خوش اومدی 🌹\n\n👤 <b>آیدی تلگرام:</b> ${username}\n🆔 <b>کد یکتای شما:</b> <code>${ctx.from.id}</code>\n\n👇 لطفاً یک گزینه رو انتخاب کن:`, { parse_mode: 'HTML', ...mainKeyboard });
@@ -821,7 +842,6 @@ bot.command('fixdb', (ctx) => {
     ]);
  
     bot.hears('👤 داشبورد من', async (ctx) => {
-        // چون چک کردن وضعیت اکانت‌ها از سرور ممکنه چند ثانیه طول بکشه، اول یه پیام لودینگ میدیم
         const msgWait = await ctx.reply('⏳ در حال دریافت اطلاعات از سرور...');
         
         const results = await fetchUserConfigsStatus(ctx.from.id);
@@ -871,19 +891,6 @@ bot.command('fixdb', (ctx) => {
         });
     });
 
-    bot.action('dash_main', async (ctx) => {
-        await ctx.answerCbQuery();
-        const msg = `به داشبورد کاربری خوش آمدید.\nلطفا یک بخش را انتخاب کنید:`;
-        await ctx.editMessageText(msg, {
-            reply_markup: {
-                inline_keyboard: [
-                    [Markup.button.callback('🟢 اکانت‌های فعال', 'dash_active')],
-                    [Markup.button.callback('🔴 اکانت‌های منقضی شده', 'dash_expired')]
-                ]
-            }
-        });
-    });
-
     async function fetchUserConfigsStatus(userId) {
         const db = readDb();
         let userConfigs = [...(db.users[userId] || [])];
@@ -896,10 +903,8 @@ bot.command('fixdb', (ctx) => {
         });
 
         return await Promise.all(userConfigs.map(async (conf) => {
-            // --- تغییر مهم: پیدا کردن سرور اختصاصی این کانفیگ ---
             const targetServer = db.servers?.find(s => s.id === conf.serverId);
             const traffic = await getClientTraffic(conf.email, targetServer);
-            // ----------------------------------------------------
             
             if (!traffic) return { conf, status: 'deleted', remainDays: -999 };
             
@@ -1004,17 +1009,17 @@ bot.command('fixdb', (ctx) => {
     });
 
     bot.action(/dash_getconf_(.+)/, async (ctx) => {
-    const uuid = ctx.match[1];
-    ctx.editMessageText(`کدام کانفیگ را می‌خواهید؟\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را امتحان کنید. در صورت بروز مشکل و عدم اتصال، از کانفیگ ۲ استفاده کنید.`, {
-        parse_mode: 'HTML',
-        reply_markup: {
-            inline_keyboard: [
-                [Markup.button.callback('🟡 کانفیگ ۱', `getconf_1_${uuid}`), Markup.button.callback('🔵 کانفیگ ۲', `getconf_2_${uuid}`)],
-                [Markup.button.callback('🔙 بازگشت به جزئیات', `dash_detail_${uuid}`)]
-            ]
-        }
+        const uuid = ctx.match[1];
+        ctx.editMessageText(`کدام کانفیگ را می‌خواهید؟\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را امتحان کنید. در صورت بروز مشکل و عدم اتصال، از کانفیگ ۲ استفاده کنید.`, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [Markup.button.callback('🟡 کانفیگ ۱', `getconf_1_${uuid}`), Markup.button.callback('🔵 کانفیگ ۲', `getconf_2_${uuid}`)],
+                    [Markup.button.callback('🔙 بازگشت به جزئیات', `dash_detail_${uuid}`)]
+                ]
+            }
+        });
     });
-});
 
     bot.hears('🔄 تمدید سرویس', async (ctx) => {
         userSteps.delete(ctx.from.id);
@@ -1022,7 +1027,6 @@ bot.command('fixdb', (ctx) => {
         const statusMsg = await ctx.reply('⏳ در حال بررسی وضعیت اکانت‌ها...');
         const results = await fetchUserConfigsStatus(ctx.from.id);
         
-        // فیلتر کردن اکانت‌های تستی، سرویس قبلی و منقضی‌های بالای ۵ روز
         const eligibleConfigs = results.filter(r => {
             if (r.conf.name === 'سرویس قبلی' || r.conf.email.startsWith('Test_')) return false;
             if (r.status === 'deleted') return false; 
@@ -1127,14 +1131,11 @@ bot.command('fixdb', (ctx) => {
         });
     });
 
-    // هندلر برای بروزرسانی خودکار کیبورد کاربران قدیمی
     bot.hears('📚 آموزش‌ها', (ctx) => {
         ctx.reply('✅ منوی کاربری شما به نسخه جدید بروزرسانی شد.\nلطفاً برای مشاهده آموزش‌ها، دوباره روی دکمه «📥 اپلیکیشن و آموزش» در پایین صفحه ضربه بزنید.', mainKeyboard);
     });
 
     bot.hears('📥 اپلیکیشن و آموزش', (ctx) => {
-        // userSteps.delete(ctx.from.id); // اگه تو پروژه‌ات داری فعالش کن
-        
         ctx.reply('📚 <b>پنل دانلود و آموزش</b>\n\n⚠️ <b>نکته خیلی مهم:</b> برای اینکه کانفیگ‌ها بدون مشکل وصل بشن، حتماً باید آخرین نسخه اپلیکیشن رو نصب داشته باشی.\n\n👇 سیستم‌عامل دستگاهت رو انتخاب کن:', {
             parse_mode: 'HTML',
             reply_markup: {
@@ -1163,7 +1164,6 @@ bot.command('fixdb', (ctx) => {
         });
     });
 
-    // --- اندروید ---
     bot.action('panel_tut_android', async (ctx) => {
         await ctx.answerCbQuery('در حال دریافت اطلاعات...', { show_alert: false });
         const v2rayLink = await fetchGithubLatest('2dust/v2rayNG', 'universal.apk');
@@ -1183,9 +1183,9 @@ bot.command('fixdb', (ctx) => {
     });
 
     bot.action('dl_and_incy', async (ctx) => {
-    await ctx.answerCbQuery();
-    const githubLink = await fetchGithubLatest('INCY-DEV/incy-platforms', 'Incy.apk');
-    const playLink = 'https://play.google.com/store/apps/details?id=llc.itdev.incy&pcampaignid=web_share';
+        await ctx.answerCbQuery();
+        const githubLink = await fetchGithubLatest('INCY-DEV/incy-platforms', 'Incy.apk');
+        const playLink = 'https://play.google.com/store/apps/details?id=llc.itdev.incy&pcampaignid=web_share';
 
         ctx.editMessageText('🤖 <b>دانلود Incy (اندروید)</b>\n\nلطفاً منبع دانلود را انتخاب کنید:', {
             parse_mode: 'HTML',
@@ -1201,7 +1201,6 @@ bot.command('fixdb', (ctx) => {
 
     bot.action('dl_and_happ', async (ctx) => {
         await ctx.answerCbQuery('در حال دریافت لینک...', { show_alert: false });
-        // دریافت آخرین فایل با کلیدواژه دقیق
         const githubLink = await fetchGithubLatest('Happ-proxy/happ-android', 'Happ.apk');
         const playLink = 'https://play.google.com/store/apps/details?id=com.happproxy&hl=en';
 
@@ -1217,11 +1216,8 @@ bot.command('fixdb', (ctx) => {
         });
     });
 
-    // --- ویندوز ---
     bot.action('panel_tut_win', async (ctx) => {
         await ctx.answerCbQuery('در حال دریافت لینک...', { show_alert: false });
-        
-        // دریافت آخرین فایل با کلیدواژه دقیق
         const v2raynLink = await fetchGithubLatest('2dust/v2rayN', 'windows-64.zip');
         const incyExe = 'https://github.com/INCY-DEV/incy-platforms/releases/download/desktop-v3.2.3/incy-windows-setup.exe';
 
@@ -1251,7 +1247,7 @@ bot.command('fixdb', (ctx) => {
             }
         });
     });
-    // عملکرد دکمه بستن منوها
+
     bot.action('close_menu', (ctx) => {
         ctx.answerCbQuery();
         ctx.deleteMessage().catch(() => {});
@@ -1273,18 +1269,15 @@ bot.command('fixdb', (ctx) => {
         const userId = ctx.match[1];
         await ctx.answerCbQuery('در حال ساخت...', { show_alert: false });
         
-        // پیدا کردن سرور عادیِ فعال از دیتابیس
         const db = readDb();
         const targetServerId = db.settings.activeServerId || 'srv_11528';
         const targetServer = db.servers?.find(s => s.id === targetServerId);
 
         const email = `Test_${userId}_${Date.now()}`;
-        // پاس دادن سرور به تابع ساخت
         const uuid = await createClient(email, 0.2, 1, targetServer || null); 
         if (!uuid) return ctx.reply('❌ خطا در ارتباط با سرور.');
 
         if (!db.users[userId]) db.users[userId] = [];
-        // ذخیره آیدی سرور برای این تست
         db.users[userId].push({ email, uuid, name: 'Test - اکانت تست', serverId: targetServerId });
         writeDb(db);
 
@@ -1323,7 +1316,6 @@ bot.command('fixdb', (ctx) => {
         const conf = (db.users[ctx.from.id] || []).find(c => c.uuid === uuid);
         const currentConfigName = conf ? conf.name : "Test - CypherNET💎";
         
-        // استخراج اطلاعات سرور
         const targetServer = db.servers?.find(s => s.id === conf?.serverId);
         const mciText = `<code>${generateMciConfig(uuid, currentConfigName, targetServer)}</code>`;
         
@@ -1446,10 +1438,8 @@ bot.command('fixdb', (ctx) => {
         state.step = 'WAITING_RECEIPT';
         userSteps.set(ctx.from.id, state);
         
-        // تبدیل به عدد انگلیسی
         const priceDisplay = parseInt(state.price).toLocaleString('en-US');
 
-        // قیمت درون تگ کد قرار گرفت
         const msg = `💳 <b>مرحله پرداخت</b>\n\n📝 نام سرویس: ${name}\n🧾 شناسه خرید: <code>${state.orderId}</code>\n💰 مبلغ قابل پرداخت: <code>${priceDisplay}</code> تومان\n\nشماره کارت:\n<code>6219861906525570</code>\nبه نام:\nح.احقاقی‌فر\n\n📸 <b>لطفاً پس از واریز، عکس فیش یا رسید پرداختی خود را همینجا ارسال کنید.</b>`;
 
         const keyboard = { inline_keyboard: [[Markup.button.callback('❌ لغو', 'cancel_flow')]] };
@@ -1467,44 +1457,78 @@ bot.command('fixdb', (ctx) => {
 
     bot.hears('🛠 پشتیبانی و گزارش خطا', (ctx) => { userSteps.set(ctx.from.id, { step: 'SUPPORT_MENU', ts: Date.now() }); ctx.reply('موضوع پیامت چیه؟', supportMenuKeyboard); });
     bot.action('support_general', (ctx) => { ctx.answerCbQuery('❌ بخش استرداد وجه فعلاً غیرفعال است.', { show_alert: true }); });
-    bot.action('support_error', (ctx) => { ctx.answerCbQuery(); userSteps.set(ctx.from.id, { step: 'CHAT_ERROR', msgCount: 0, ticketMsgId: null, ticketBody: '', ts: Date.now() }); ctx.deleteMessage().catch(()=> {}); ctx.reply('وارد چت پشتیبانی شدی. پیامت رو بفرست:', chatKeyboard); });
-    bot.hears('❌ خروج از چت پشتیبانی', async (ctx) => { const state = userSteps.get(ctx.from.id); if (state && state.ticketMsgId) { try { await ctx.telegram.editMessageText(GROUP_ID, state.ticketMsgId, null, state.ticketBody + '\n\n🚪 <b>کاربر خودش از چت خارج شد.</b>', { parse_mode: 'HTML' }); } catch(e) {} await sendFeedbackPrompt(ctx, ctx.from.id, state.ticketMsgId); } userSteps.delete(ctx.from.id); ctx.reply('از حالت پشتیبانی خارج شدی. به منوی اصلی برگشتیم:', mainKeyboard); });
+    bot.action('support_error', (ctx) => { ctx.answerCbQuery(); userSteps.set(ctx.from.id, { step: 'CHAT_ERROR', ts: Date.now() }); ctx.deleteMessage().catch(()=> {}); ctx.reply('وارد چت پشتیبانی شدی. پیامت رو بفرست:\n(می‌توانی متن، عکس، ویس و ویدیو بفرستی)', chatKeyboard); });
+    
+    bot.hears('❌ خروج از چت پشتیبانی', async (ctx) => { 
+        const state = userSteps.get(ctx.from.id); 
+        if (state && (state.step === 'CHAT_ERROR' || state.step === 'CHAT_SUPPORT')) {
+            const topicId = parseInt(state.step === 'CHAT_ERROR' ? TOPIC_ERROR : TOPIC_SUPPORT);
+            try {
+                await ctx.telegram.sendMessage(GROUP_ID, `🚪 کاربر #User_${ctx.from.id} از حالت پشتیبانی خارج شد.`, { message_thread_id: topicId });
+            } catch(e) {}
+        }
+        userSteps.delete(ctx.from.id); 
+        ctx.reply('از حالت پشتیبانی خارج شدی. به منوی اصلی برگشتیم:', mainKeyboard); 
+    });
 
-    bot.on('photo', async (ctx) => {
+    // --- هندلر یکپارچه برای دریافت تمام مدیاها (عکس، ویدیو، ویس، سند) ---
+    bot.on(['photo', 'video', 'voice', 'document', 'audio', 'animation'], async (ctx) => {
         const state = userSteps.get(ctx.from.id);
-        if (!state) return;
+        const adminState = adminSteps.get(ctx.from.id);
 
-        if (state.step === 'WAITING_RECEIPT') {
-            const payToken = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
-            const db = readDb();
-            if(!db.payments) db.payments = {};
-            db.payments[payToken] = { userId: ctx.from.id, planId: state.planId, configName: state.configName, orderId: state.orderId, type: 'new' };
-            writeDb(db);
-
-            const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-            const caption = `💰 <b>رسید جدید</b>\n#User_${ctx.from.id}\n📦 شماره سفارش: <code>${state.orderId}</code>\n👤 آیدی: ${ctx.from.username ? `@${ctx.from.username}` : 'ندارد'}\n📦 پلن: ${state.planName}\n📝 نام: ${state.configName}\n💵 مبلغ: ${state.price} تومان`;
-            await ctx.telegram.sendPhoto(GROUP_ID, photoId, { caption, message_thread_id: parseInt(TOPIC_PAYMENT), parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('✅ تایید و صدور کانفیگ', `confnew_${payToken}`)], [Markup.button.callback('❌ رد رسید', `reject_${payToken}`)]]) });
-            userSteps.delete(ctx.from.id);
-            ctx.reply('رسید شما دریافت شد و در صف بررسی قرار گرفت.', mainKeyboard);
-        }
-        else if (state.step === 'WAITING_RENEW_RECEIPT') {
-            const payToken = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
-            const db = readDb();
-            if (state.price === 'نامعین') {
-                return ctx.reply('⚠️ قیمت دریافت نشد! لطفاً با زدن دکمه لغو، فرآیند را مجدداً شروع کنید.');
+        // 1. ارسال پیام DM توسط ادمین
+        if (isUserAdmin(ctx.from.id.toString()) && adminState && adminState.step === 'DM_GET_MSG') {
+            try {
+                await ctx.telegram.copyMessage(adminState.targetUserId, ctx.chat.id, ctx.message.message_id);
+                ctx.reply('✅ فایل/پیام شما با موفقیت برای کاربر ارسال شد.');
+            } catch (e) {
+                ctx.reply('❌ ارسال ناموفق! (احتمالاً کاربر ربات را بلاک کرده است)');
             }
-            if(!db.payments) db.payments = {};
-            db.payments[payToken] = { userId: ctx.from.id, planId: state.planId, email: state.email, orderId: state.orderId, type: 'renew' };
-            writeDb(db);
-
-            const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-            const caption = `🔄 <b>درخواست تمدید اکانت</b>\n#User_${ctx.from.id}\n📦 شماره سفارش: <code>${state.orderId}</code>\n👤 آیدی: ${ctx.from.username ? `@${ctx.from.username}` : 'ندارد'}\n📦 پلن: ${state.planName}\n📧 ایمیل: <code>${state.email}</code>\n💵 مبلغ: ${state.price} تومان`;
-            await ctx.telegram.sendPhoto(GROUP_ID, photoId, { caption, message_thread_id: parseInt(TOPIC_PAYMENT), parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('✅ تایید و تمدید سرویس', `confrenew_${payToken}`)], [Markup.button.callback('❌ رد رسید', `reject_${payToken}`)]]) });
-            userSteps.delete(ctx.from.id);
-            ctx.reply('رسید تمدید شما دریافت شد و در صف بررسی قرار گرفت.', mainKeyboard);
+            adminSteps.delete(ctx.from.id);
+            return;
         }
-        else if (state.step === 'CHAT_ERROR' || state.step === 'CHAT_SUPPORT') {
-            if (state.ticketMsgId) await ctx.telegram.sendPhoto(GROUP_ID, ctx.message.photo[ctx.message.photo.length - 1].file_id, { caption: `📸 عکس ارسالی کاربر` + (ctx.message.caption ? `\nمتن: ${ctx.message.caption}` : ''), reply_to_message_id: state.ticketMsgId });
+
+        // 2. چت پشتیبانی (ارسال از کاربر به ادمین)
+        if (state && (state.step === 'CHAT_ERROR' || state.step === 'CHAT_SUPPORT')) {
+            await forwardToAdmin(ctx, state);
+            return;
+        }
+
+        // 3. دریافت رسید (فقط عکس مجاز است)
+        if (state && (state.step === 'WAITING_RECEIPT' || state.step === 'WAITING_RENEW_RECEIPT')) {
+            if (!ctx.message.photo) {
+                return ctx.reply('⚠️ لطفاً برای بررسی پرداخت، فقط عکس (اسکرین‌شات رسید) ارسال کنید.');
+            }
+
+            if (state.step === 'WAITING_RECEIPT') {
+                const payToken = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
+                const db = readDb();
+                if(!db.payments) db.payments = {};
+                db.payments[payToken] = { userId: ctx.from.id, planId: state.planId, configName: state.configName, orderId: state.orderId, type: 'new' };
+                writeDb(db);
+
+                const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+                const caption = `💰 <b>رسید جدید</b>\n#User_${ctx.from.id}\n📦 شماره سفارش: <code>${state.orderId}</code>\n👤 آیدی: ${ctx.from.username ? `@${ctx.from.username}` : 'ندارد'}\n📦 پلن: ${state.planName}\n📝 نام: ${state.configName}\n💵 مبلغ: ${state.price} تومان`;
+                await ctx.telegram.sendPhoto(GROUP_ID, photoId, { caption, message_thread_id: parseInt(TOPIC_PAYMENT), parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('✅ تایید و صدور کانفیگ', `confnew_${payToken}`)], [Markup.button.callback('❌ رد رسید', `reject_${payToken}`)]]) });
+                userSteps.delete(ctx.from.id);
+                ctx.reply('رسید شما دریافت شد و در صف بررسی قرار گرفت.', mainKeyboard);
+            }
+            else if (state.step === 'WAITING_RENEW_RECEIPT') {
+                const payToken = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
+                const db = readDb();
+                if (state.price === 'نامعین') {
+                    return ctx.reply('⚠️ قیمت دریافت نشد! لطفاً با زدن دکمه لغو، فرآیند را مجدداً شروع کنید.');
+                }
+                if(!db.payments) db.payments = {};
+                db.payments[payToken] = { userId: ctx.from.id, planId: state.planId, email: state.email, orderId: state.orderId, type: 'renew' };
+                writeDb(db);
+
+                const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+                const caption = `🔄 <b>درخواست تمدید اکانت</b>\n#User_${ctx.from.id}\n📦 شماره سفارش: <code>${state.orderId}</code>\n👤 آیدی: ${ctx.from.username ? `@${ctx.from.username}` : 'ندارد'}\n📦 پلن: ${state.planName}\n📧 ایمیل: <code>${state.email}</code>\n💵 مبلغ: ${state.price} تومان`;
+                await ctx.telegram.sendPhoto(GROUP_ID, photoId, { caption, message_thread_id: parseInt(TOPIC_PAYMENT), parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('✅ تایید و تمدید سرویس', `confrenew_${payToken}`)], [Markup.button.callback('❌ رد رسید', `reject_${payToken}`)]]) });
+                userSteps.delete(ctx.from.id);
+                ctx.reply('رسید تمدید شما دریافت شد و در صف بررسی قرار گرفت.', mainKeyboard);
+            }
         }
     });
 
@@ -1521,12 +1545,28 @@ bot.command('fixdb', (ctx) => {
             await processConfigName(ctx, ctx.message.text);
             return;
         }
-
-        
-
         
         if (isUserAdmin(userId) && adminState && adminState.step) {
             const db = readDb();
+
+            // --- Admin DM Handle Text ---
+            if (adminState.step === 'DM_GET_USER') {
+                adminSteps.set(ctx.from.id, { step: 'DM_GET_MSG', targetUserId: input });
+                ctx.reply(`✍️ حالا پیامی که می‌خواهید برای کاربر ${input} ارسال شود را بفرستید:\n(پشتیبانی از متن، عکس، ویدیو، ویس و فایل)`);
+                return;
+            }
+
+            if (adminState.step === 'DM_GET_MSG') {
+                try {
+                    await ctx.telegram.copyMessage(adminState.targetUserId, ctx.chat.id, ctx.message.message_id);
+                    ctx.reply('✅ پیام متنی شما با موفقیت برای کاربر ارسال شد.');
+                } catch (e) {
+                    ctx.reply('❌ ارسال ناموفق! (احتمالاً کاربر ربات را بلاک کرده است)');
+                }
+                adminSteps.delete(ctx.from.id);
+                return;
+            }
+            // -----------------------------
 
             if (adminState.step === 'ADD_ADMIN') {
                 if (ADMIN_IDS.includes(input)) {
@@ -1578,12 +1618,10 @@ bot.command('fixdb', (ctx) => {
                     };
 
                     let extractedUrl = extract('آدرس');
-                    // اینجا ربات خودش می‌فهمه که اگه http نذاشتی، برات بذاره
                     if (extractedUrl && !extractedUrl.startsWith('http')) {
                         extractedUrl = 'http://' + extractedUrl;
                     }
             
-                    
                     const newServer = {
                         id: 'srv_' + Math.floor(Math.random() * 900000),
                         name: extract('نام'),
@@ -1641,7 +1679,7 @@ bot.command('fixdb', (ctx) => {
                     }
 
                     const updatedServer = {
-                        id: adminState.serverId, // شناسه اصلی دست‌نخورده می‌ماند
+                        id: adminState.serverId, 
                         name: extract('نام') || db.servers[serverIndex].name,
                         panelUrl: extractedUrl || db.servers[serverIndex].panelUrl,
                         webBasePath: extract('مسیر پنل'),
@@ -1650,7 +1688,7 @@ bot.command('fixdb', (ctx) => {
                         domain: extract('دامنه') || db.servers[serverIndex].domain,
                         sni: extract('اس‌ان‌آی') || db.servers[serverIndex].sni,
                         path: extract('مسیر کانفیگ') || db.servers[serverIndex].path,
-                        isMigrating: db.servers[serverIndex].isMigrating // حفظ وضعیت تخلیه
+                        isMigrating: db.servers[serverIndex].isMigrating 
                     };
 
                     ctx.reply(`🔍 در حال تست لاگین با اطلاعات جدید...\nآدرس نهایی: [${updatedServer.panelUrl}]\nمسیر: [${updatedServer.webBasePath}]`);
@@ -1679,7 +1717,6 @@ bot.command('fixdb', (ctx) => {
                 const initialLength = db.servers.length;
                 db.servers = db.servers.filter(s => s.id !== input);
                 
-                // در صورت حذف، چک میکنه اگه دیفالت بوده خالی بشه
                 if (db.settings.activeServerId === input) delete db.settings.activeServerId;
                 if (db.settings.activeVipServerId === input) delete db.settings.activeVipServerId;
                 
@@ -1727,7 +1764,6 @@ bot.command('fixdb', (ctx) => {
                     let targetUserId = getValue('کاربر خاص');
                     if (targetUserId === 'ندارد' || !targetUserId) targetUserId = null;
 
-                    // --- منطق هوشمند محاسبه زمان (روز یا ماه) ---
                     let durationText = '';
                     if (days < 30) {
                         durationText = `${days} روزه`;
@@ -1735,7 +1771,6 @@ bot.command('fixdb', (ctx) => {
                         const months = Math.floor(days / 30);
                         durationText = `${months} ماهه`;
                     }
-                    // ----------------------------------------------
 
                     const newPlan = {
                         id, name, gb, days, price, order,
@@ -1748,7 +1783,6 @@ bot.command('fixdb', (ctx) => {
                     if (existingIndex > -1) db.settings.plans[existingIndex] = newPlan;
                     else db.settings.plans.push(newPlan);
 
-                    // مرتب‌سازی پکیج‌ها
                     db.settings.plans.sort((a, b) => (a.order || 99) - (b.order || 99));
 
                     writeDb(db);
@@ -1841,10 +1875,7 @@ bot.command('fixdb', (ctx) => {
                 const db = readDb();
                 const plans = db.settings.plans || [];
                 
-                // خواندن تمام پکیج‌های دیتابیس و ساخت دکمه
                 let buttons = plans.map(p => [Markup.button.callback(`📦 ${p.name}`, `manual_p_${p.id}`)]);
-                
-                // اضافه کردن دکمه پکیج VIP در انتها
                 buttons.push([Markup.button.callback('👑 100 گیگ VIP (1 ماهه)', 'manual_p_vip')]);
                 
                 return ctx.reply('📦 حالا پلن را انتخاب کنید:', { 
@@ -1874,7 +1905,6 @@ bot.command('fixdb', (ctx) => {
                     expiryDays = plan.days;
                 }
                 
-                // تشخیص هوشمند سرور هدف بر اساس نوع پلن انتخابی
                 const targetServerId = (isVip && db.settings.activeVipServerId) 
                     ? db.settings.activeVipServerId 
                     : (db.settings.activeServerId || 'srv_11528');
@@ -1882,21 +1912,18 @@ bot.command('fixdb', (ctx) => {
                 const targetServer = db.servers?.find(s => s.id === targetServerId);
                 const email = `User_${targetUserId}_Ord${orderId}_${Date.now()}`;
                 
-                // ساخت اکانت با پاس دادن آبجکت سرور صحیح
                 const uuid = await createClient(email, totalGB, expiryDays, targetServer || null);
                 if (!uuid) return ctx.reply('❌ خطا در ارتباط با پنل سرور.');
 
                 const freshDb = readDb();
                 if (!freshDb.users[targetUserId]) freshDb.users[targetUserId] = [];
                 
-                // افزودن اتوماتیک پرچم کشورِ سرور به انتهای اسم کانفیگ
                 let finalName = input;
                 const flag = getServerFlag(targetServer?.name);
                 if (flag && !finalName.includes(flag)) {
                     finalName = `${finalName} ${flag}`.trim();
                 }
 
-                // ثبت مشخصات به همراه سرور اختصاصی و لیبل VIP در صورت نیاز
                 freshDb.users[targetUserId].push({ 
                     email, 
                     uuid, 
@@ -1906,7 +1933,6 @@ bot.command('fixdb', (ctx) => {
                     ...(isVip ? { isVip: true } : {})
                 });
                 
-                // اگر پکیج VIP بود، کاربر را هم به لیست مشتریان ویژه اضافه می‌کنیم
                 if (isVip) {
                     if (!freshDb.vipUsers) freshDb.vipUsers = [];
                     if (!freshDb.vipUsers.includes(targetUserId)) freshDb.vipUsers.push(targetUserId);
@@ -1946,20 +1972,17 @@ bot.command('fixdb', (ctx) => {
                 const stats = (db.userStats && db.userStats[targetId]) || { totalSpent: 0, buyCount: 0, renewCount: 0 };
                 const configs = db.users[targetId] || [];
 
-                // --- دریافت نام و یوزرنیم از سرور تلگرام ---
                 let nameDisplay = 'نامشخص';
                 let usernameDisplay = 'ندارد';
                 try {
                     const chatInfo = await ctx.telegram.getChat(targetId);
                     nameDisplay = chatInfo.first_name || 'بدون نام';
                     if (chatInfo.last_name) nameDisplay += ` ${chatInfo.last_name}`;
-                    // جلوگیری از بهم‌ریختگی تگ‌های HTML
                     nameDisplay = nameDisplay.replace(/</g, '&lt;').replace(/>/g, '&gt;');
                     usernameDisplay = chatInfo.username ? `@${chatInfo.username}` : 'ندارد';
                 } catch (e) {
                     nameDisplay = 'نامشخص (ربات دسترسی ندارد)';
                 }
-                // ------------------------------------------
 
                 let text = `🔍 <b>پرونده کاربر:</b> <code>${targetId}</code>\n`;
                 text += `👤 <b>نام تلگرام:</b> ${nameDisplay}\n`;
@@ -2005,15 +2028,9 @@ bot.command('fixdb', (ctx) => {
             }
 
             if (adminState.step === 'RESET_USER') {
-                // پاک کردن تمام کانفیگ‌های ثبت شده
                 if (db.users[input]) delete db.users[input];
-                
-                // پاک کردن از لیست سابقه تست
                 if (db.testUsers) db.testUsers = db.testUsers.filter(id => id.toString() !== input);
-                
-                // پاک کردن از لیست VIP
                 if (db.vipUsers) db.vipUsers = db.vipUsers.filter(id => id.toString() !== input);
-                
                 writeDb(db);
                 ctx.reply(`🗑 تمام اطلاعات کاربر ${input} (شامل کانفیگ‌ها، وضعیت VIP، سابقه تست و مسدودی) از دیتابیس ربات پاک شد.`);
                 adminSteps.delete(ctx.from.id);
@@ -2021,49 +2038,9 @@ bot.command('fixdb', (ctx) => {
             }
         }
 
-        if (ctx.chat.id.toString() === GROUP_ID) {
-            if (adminState && adminState.userId) {
-                try {
-                    const safeAdminText = ctx.message.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                    await ctx.telegram.sendMessage(adminState.userId, `👨‍💻 <b>پاسخ پشتیبانی:</b>\n\n${safeAdminText}`, { parse_mode: 'HTML' });
-                    const newBody = adminState.ticketBody + `\n\n👨‍💻 <b>شما:</b>\n<blockquote>${safeAdminText}</blockquote>`;
-                    await ctx.telegram.editMessageText(GROUP_ID, adminState.ticketMsgId, null, newBody, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('💬 ارسال پاسخ', `reply_${adminState.userId}_${adminState.ticketMsgId}`)], [Markup.button.callback('🔒 بستن چت', `close_${adminState.userId}_${adminState.ticketMsgId}`)]]) });
-                    ctx.reply('✅ پاسخت برای کاربر ارسال شد.');
-                } catch (err) {}
-                adminSteps.delete(ctx.from.id);
-            }
-            return; 
-        }
-
-    
-
+        // --- User Support Message ---
         if (state && (state.step === 'CHAT_ERROR' || state.step === 'CHAT_SUPPORT')) {
-            if (state.msgCount >= 5) return ctx.reply('⚠️ شما سقف مجاز پیام را پر کرده‌اید.');
-            state.msgCount++;
-            state.ts = Date.now();
-            const safeUserText = ctx.message.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            
-            const firstName = ctx.from.first_name ? ctx.from.first_name.replace(/</g, '&lt;').replace(/>/g, '&gt;') : 'بدون نام';
-            const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
-
-            if (!state.ticketMsgId) {
-                state.ticketBody = `<b>🎫 تیکت جدید</b>\n#User_${ctx.from.id}\n👤 نام: ${firstName}\n🆔 آیدی: ${username}\n\n🗣 <b>متن پیام:</b>\n${safeUserText}`;
-                const msg = await ctx.telegram.sendMessage(GROUP_ID, state.ticketBody, { message_thread_id: parseInt(state.step === 'CHAT_ERROR' ? TOPIC_ERROR : TOPIC_SUPPORT), parse_mode: 'HTML' });
-                state.ticketMsgId = msg.message_id;
-                await ctx.telegram.editMessageReplyMarkup(GROUP_ID, state.ticketMsgId, null, { inline_keyboard: [[Markup.button.callback('💬 ارسال پاسخ', `reply_${ctx.from.id}_${state.ticketMsgId}`)], [Markup.button.callback('🔒 بستن چت', `close_${ctx.from.id}_${state.ticketMsgId}`)]] });
-            } else {
-                state.ticketBody += `\n\n🗣 <b>متن پیام:</b>\n${safeUserText}`;
-                await ctx.telegram.editMessageText(GROUP_ID, state.ticketMsgId, null, state.ticketBody, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('💬 ارسال پاسخ', `reply_${ctx.from.id}_${state.ticketMsgId}`)], [Markup.button.callback('🔒 بستن چت', `close_${ctx.from.id}_${state.ticketMsgId}`)]]) });
-            }
-            try {
-                    await ctx.telegram.sendMessage(GROUP_ID, `🔔 <b>پیام جدید</b> از کاربر دریافت و به متن تیکت اضافه شد.`, { 
-                        reply_to_message_id: state.ticketMsgId, 
-                        parse_mode: 'HTML' 
-                    });
-                } catch(e) {}
-            
-            userSteps.set(ctx.from.id, state);
-            ctx.reply('پیامت به تیکت اضافه شد.');
+            await forwardToAdmin(ctx, state);
             return;
         }
 
@@ -2072,9 +2049,33 @@ bot.command('fixdb', (ctx) => {
         }
     });
     
-    bot.action(/reply_(\d+)_(\d+)/, async (ctx) => { adminSteps.set(ctx.from.id, { userId: ctx.match[1], ticketMsgId: ctx.match[2], ticketBody: ctx.callbackQuery.message.text }); ctx.reply(`✍️ متنت رو بنویس:`); ctx.answerCbQuery(); });
-    bot.action(/close_(\d+)_(\d+)/, async (ctx) => { userSteps.delete(Number(ctx.match[1])); await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n🔒 <b>چت بسته شد.</b>', { parse_mode: 'HTML' }); await sendFeedbackPrompt(ctx, ctx.match[1], ctx.match[2]); ctx.answerCbQuery(); });
-    bot.action(/feedback_(yes|no)_(\d+)/, async (ctx) => { await ctx.editMessageText(`ممنون از بازخوردت 🌻.`); ctx.telegram.sendMessage(GROUP_ID, `📊 بازخورد: ${ctx.match[1] === 'yes' ? '✅ حل شد' : '❌ حل نشد'}`, { reply_to_message_id: parseInt(ctx.match[2]) }); });
+    // --- مدیریت دکمه‌های بستن تیکت و نظرسنجی ---
+    bot.action(/close_ticket_(\d+)/, async (ctx) => { 
+        const userId = Number(ctx.match[1]);
+        userSteps.delete(userId); 
+        
+        await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+        await ctx.reply(`🔒 چت با کاربر #User_${userId} بسته شد.`);
+        
+        try {
+            await ctx.telegram.sendMessage(userId, '🔒 <b>پشتیبانی به پایان رسید و مکالمه بسته شد.</b>\nآیا مشکل شما برطرف شد؟', {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [
+                        [Markup.button.callback('✅ بله، مشکل حل شد', `feedback_yes_${userId}`)],
+                        [Markup.button.callback('❌ خیر، حل نشد', `feedback_no_${userId}`)]
+                    ]
+                }
+            });
+        } catch (e) {}
+        
+        ctx.answerCbQuery('تیکت بسته شد.'); 
+    });
+
+    bot.action(/feedback_(yes|no)_(\d+)/, async (ctx) => { 
+        await ctx.editMessageText(`ممنون از بازخوردت 🌻.`); 
+        ctx.telegram.sendMessage(GROUP_ID, `📊 بازخورد پشتیبانی کاربر #User_${ctx.match[2]}:\n${ctx.match[1] === 'yes' ? '✅ مشکلش حل شد.' : '❌ مشکلش حل نشد.'}`); 
+    });
 
     bot.action(/confnew_(.+)/, async (ctx) => {
         const payToken = ctx.match[1];
@@ -2106,7 +2107,6 @@ bot.command('fixdb', (ctx) => {
             
         const targetServer = db.servers?.find(s => s.id === targetServerId);
 
-        // --- فیچر جدید: نام‌گذاری هوشمند و افزودن پرچم ---
         let finalName = configName;
         if (finalName === 'بدون اسم' || !finalName) {
             const userConfigs = db.users[userId] || [];
@@ -2115,9 +2115,7 @@ bot.command('fixdb', (ctx) => {
         }
         const flag = getServerFlag(targetServer?.name);
         finalName = `${finalName} ${flag}`.trim();
-        // -----------------------------------------------
 
-        // ساخت کانفیگ در سرور
         const uuid = await createClient(email, totalGB, expiryDays, targetServer || null);
         
         if (!uuid) return ctx.reply('❌ خطا در ساخت کانفیگ در پنل.');
@@ -2126,7 +2124,7 @@ bot.command('fixdb', (ctx) => {
         db.users[userId].push({ 
             email, 
             uuid, 
-            name: finalName, // ذخیره با اسم و پرچم جدید
+            name: finalName,
             orderId: orderId,
             serverId: targetServerId,
             ...(planId === 'vip' ? { isVip: true } : {})
@@ -2179,7 +2177,6 @@ bot.command('fixdb', (ctx) => {
         const conf = userConfigs.find(c => c.email === email);
         if (!conf) return ctx.reply('❌ اکانت در دیتابیس یافت نشد.');
 
-        // --- تشخیص هوشمند سرور فعلی (جلوگیری از باگ VIPهای قدیمی) ---
         let currentServerId = conf.serverId;
         if (!currentServerId) {
             currentServerId = (conf.isVip && db.settings.activeVipServerId) 
@@ -2187,14 +2184,10 @@ bot.command('fixdb', (ctx) => {
                 : (db.settings.activeServerId || 'srv_11528');
         }
 
-        // --- تشخیص سرور هدف (مقصد) ---
        const oldServer = db.servers?.find(s => s.id === currentServerId);
         
-        
-        // حالت عادی: کاربر روی همون سرور خودش تمدید میشه
         let targetServerId = currentServerId; 
         
-        // حالت تخلیه: اگر سرور کاربر تو وضعیت تخلیه بود، اونوقت کوچش میدیم به سرور اکتیو
         if (oldServer && oldServer.isMigrating) {
             targetServerId = (conf.isVip && db.settings.activeVipServerId)
                 ? db.settings.activeVipServerId 
@@ -2206,8 +2199,6 @@ bot.command('fixdb', (ctx) => {
         const oldEmail = conf.email;
         const newEmail = `User_${userId}_Ord${orderId}_${Date.now()}`;
 
-        // --- عملیات کوچ هوشمند دوطرفه با انتقال کامل حجم و زمان ---
-        // --- محاسبه حجم و زمان باقیمانده برای همه تمدیدها (همون سرور یا کوچ) ---
         let remainGB = 0;
         let remainDays = 0;
         
@@ -2230,43 +2221,34 @@ bot.command('fixdb', (ctx) => {
             }
         }
 
-            // ۳. جمع زدن حجم و زمان قبلی با جدید
             const finalGB = planId === 'vip' ? 100 : totalGB + remainGB;
 
             let finalDays;
             if (planId === 'vip') {
-                // قانون هدیه تمدید به‌موقع برای اعضای VIP
                 if (remainDays > 0 && remainDays <= 3) {
-                    finalDays = 32; // ۳۰ روز اصلی + ۲ روز هدیه
+                    finalDays = 32;
                 } else {
-                    finalDays = 30; // تمدید استاندارد در سایر مواقع
+                    finalDays = 30;
                 }
             } else {
-                // قانون کاربران عادی: تجمیع زمان جدید با باقی‌مانده سرویس قبلی
                 finalDays = expiryDays + Math.ceil(remainDays);
             }
 
-            // ۴. ساخت اکانت تو سرور مقصد
             if (currentServerId !== targetServerId) {
-            // ۱. حذف از سرور مبدأ
             if (oldServer) await deleteClient(oldEmail, oldServer); 
             
-            // ۲. ساخت در سرور مقصد با حجم و زمان تجمیع‌شده
             const newUuid = await createClient(newEmail, finalGB, finalDays, targetServer || null);
             if (!newUuid) return ctx.reply('❌ خطا در کوچ کانفیگ به سرور جدید.');
             conf.uuid = newUuid; 
         } else {
-            // تمدید عادی روی همون سرور قبلی اما با حجم و زمان تجمیع‌شده (finalGB و finalDays)
             const result = await renewClient(conf.uuid, oldEmail, newEmail, finalGB, finalDays, targetServer || null);
             if (!result.success) return ctx.reply(`❌ <b>خطا در تمدید:</b>\n<code>${result.log}</code>`, { parse_mode: 'HTML' });
         }
-        // -------------------------------------------------------------
 
         conf.email = newEmail;
         conf.orderId = orderId; 
         conf.serverId = targetServerId; 
         
-        // --- به‌روزرسانی اسم و پرچم ---
         if (conf.name.includes('تست') || conf.name === 'سرویس قبلی' || conf.name === 'بدون اسم') {
             const cypherCount = userConfigs.filter(c => c.name && c.name.startsWith('سایفر')).length;
             conf.name = `سایفر ${cypherCount + 1}`;
@@ -2277,7 +2259,6 @@ bot.command('fixdb', (ctx) => {
             oldFlags.forEach(f => { conf.name = conf.name.replace(f, '').trim(); });
             conf.name = `${conf.name} ${flag}`.trim();
         }
-        // -----------------------------
 
         const priceMatch = caption.match(/💵 مبلغ: ([\d,]+) تومان/);
         if (priceMatch) { db.totalIncome = (db.totalIncome || 0) + parseInt(priceMatch[1].replace(/,/g, ''), 10); db.successfulSales = (db.successfulSales || 0) + 1; }
@@ -2291,11 +2272,10 @@ bot.command('fixdb', (ctx) => {
         delete db.payments[payToken];
         writeDb(db);
 
-        await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تمدید شد</b>', { parse_mode: 'HTML' });
-        await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت تمدید شد.</b>\n🧾 شناسه خرید: <code>${orderId}</code> (تاییدشده)\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را امتحان کنید. در صورت عدم اتصال، از کانفیگ ۲ استفاده کنید.`, { 
+       await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت تمدید شد.</b>\n🧾 شناسه خرید: <code>${orderId}</code> (تأییدشده)\n\n♻️ <b>نکته مهم:</b> نیازی به وارد کردن کانفیگ جدید نیست! همان کانفیگ قبلی شما مجدداً شارژ شده و به درستی کار می‌کند.\n\n(اگر نیاز به دریافت مجدد کانفیگ دارید، می‌توانید از دکمه‌های زیر استفاده کنید)`, { 
     parse_mode: 'HTML', 
     ...Markup.inlineKeyboard([
-        [Markup.button.callback('🟡 کانفیگ ۱', `getconf_1_${conf.uuid}`), Markup.button.callback('🔵 کانفیگ ۲', `getconf_2_${conf.uuid}`)]
+        [Markup.button.callback('🟡 دریافت مجدد کانفیگ ۱', `getconf_1_${conf.uuid}`), Markup.button.callback('🔵 دریافت مجدد کانفیگ ۲', `getconf_2_${conf.uuid}`)]
     ]) 
 });
     });
@@ -2310,7 +2290,6 @@ bot.command('fixdb', (ctx) => {
     const conf = userConfigs.find(c => c.uuid === uuid);
     const currentConfigName = conf ? conf.name : "CypherNET💎";
     
-    // دریافت اطلاعات سرور اختصاصی همین کانفیگ
     const targetServer = db.servers?.find(s => s.id === conf?.serverId);
     
     if (opId === '1') {
@@ -2332,7 +2311,6 @@ bot.command('fixdb', (ctx) => {
     }
 });
 
-// --- سیستم همگام‌ساز خودکار پنل و ربات (هر ۱ ساعت) ---
     setInterval(async () => {
         try {
             const db = readDb();
@@ -2356,8 +2334,6 @@ bot.command('fixdb', (ctx) => {
                     const currentUsed = traffic.up + traffic.down;
                     const currentExpiry = traffic.expiryTime;
 
-                    // بررسی اینکه آیا ربات خودش این کانفیگ را به تازگی تمدید کرده است؟
-                    // اگر ایمیل تغییر کرده باشد، یعنی تمدید توسط ربات بوده، پس فقط آمار را بی‌صدا آپدیت کن
                     if (!conf.panelStats || conf.panelStats.email !== conf.email) {
                         conf.panelStats = { total: currentTotal, used: currentUsed, expiry: currentExpiry, email: conf.email };
                         dbChanged = true;
@@ -2370,12 +2346,10 @@ bot.command('fixdb', (ctx) => {
                         changes.push(`⏱ زمان سرویس شما بروزرسانی شد.`);
                     }
 
-                    // (یک مگابایت بافر برای جلوگیری از خطای محاسباتی پنل)
                     if (currentTotal > conf.panelStats.total || currentUsed < (conf.panelStats.used - 1048576)) { 
                         changes.push(`🔋 حجم سرویس شما بروزرسانی شد.`);
                     }
 
-                    // در صورتی که تغییرات توسط ادمین در پنل اعمال شده باشد
                     if (changes.length > 0) {
                         conf.panelStats = { total: currentTotal, used: currentUsed, expiry: currentExpiry, email: conf.email };
                         conf.notified = { days3: false, gb85: false };
@@ -2404,7 +2378,6 @@ bot.command('fixdb', (ctx) => {
         }
     }, 60 * 60 * 1000);
 
-// --- سیستم پاکسازی خودکار اکانت‌های منقضی شده (هر ۳ ساعت) ---
     setInterval(async () => {
         try {
             const db = readDb();
@@ -2415,14 +2388,12 @@ bot.command('fixdb', (ctx) => {
                 if (!Array.isArray(db.users[userId])) continue;
 
                 for (let conf of db.users[userId]) {
-                    // اگر قبلا از پنل پاک شده، نیازی به بررسی مجدد نیست
                     if (conf.deletedFromPanel) continue;
 
                     const isTestAccount = conf.email?.startsWith('Test_') || conf.planId === 'test' || conf.name?.includes('تست');
                     const targetServer = db.servers?.find(s => s.id === conf.serverId);
                     if (!targetServer) continue;
 
-                    // دریافت ترافیک از سرور برای دسترسی به expiryTime
                     const traffic = await getClientTraffic(conf.email, targetServer);
                     
                     if (!traffic) {
@@ -2434,13 +2405,11 @@ bot.command('fixdb', (ctx) => {
                     if (traffic.expiryTime > 0) {
                         const diffMs = now - traffic.expiryTime;
 
-                        // بررسی اکانت‌های تست (بیش از ۲ روز)
                         if (isTestAccount && diffMs > (2 * 24 * 60 * 60 * 1000)) {
                             await deleteClient(conf.email, targetServer).catch(()=>{});
                             conf.deletedFromPanel = true;
                             dbChanged = true;
                         } 
-                        // بررسی اکانت‌های عادی و VIP (بیش از ۱۴ روز)
                         else if (!isTestAccount && diffMs > (14 * 24 * 60 * 60 * 1000)) {
                             await deleteClient(conf.email, targetServer).catch(()=>{});
                             conf.deletedFromPanel = true;
@@ -2455,7 +2424,7 @@ bot.command('fixdb', (ctx) => {
         }
     }, 3 * 60 * 60 * 1000);
 
-setInterval(async () => {
+    setInterval(async () => {
         try {
             const db = readDb();
             let dbChanged = false;
@@ -2475,7 +2444,6 @@ setInterval(async () => {
                         continue;
                     }
                     
-                    // تنظیمات اولیه هشدارها با اضافه شدن gb1
                     if (!conf.notified) { 
                         conf.notified = { days3: false, gb85: false, gb1: false }; 
                         dbChanged = true; 
@@ -2492,7 +2460,6 @@ setInterval(async () => {
                         continue;
                     }
 
-                    // حذف اکانت‌های منقضی شده بالای ۳۰ روز از دیتابیس
                     if (traffic.expiryTime > 0) {
                         const diffDays = (now - traffic.expiryTime) / (1000 * 60 * 60 * 24);
                         const isTestAccount = traffic.email?.startsWith('Test_') || traffic.planId === 'test' || traffic.name?.includes('تست');
@@ -2518,7 +2485,6 @@ setInterval(async () => {
                         remainDays = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 0;
                     }
 
-                    // ۱. هشدار زمان (۳ روز مانده)
                     if (remainDays <= 3 && remainDays > 0 && !conf.notified.days3) {
                         conf.notified.days3 = true;
                         dbChanged = true;
@@ -2528,7 +2494,6 @@ setInterval(async () => {
                         });
                     }
 
-                    // ۲. هشدار مصرف ۸۵ درصد (به شرطی که بیشتر از ۱ گیگ مانده باشد تا تداخل نکند)
                     if (traffic.total > 0 && (usedGB / totalGB) >= 0.85 && remainGB > 1 && !conf.notified.gb85) {
                         conf.notified.gb85 = true;
                         dbChanged = true;
@@ -2538,7 +2503,6 @@ setInterval(async () => {
                         });
                     }
 
-                    // ۳. هشدار کمتر از ۱ گیگابایت
                     if (traffic.total > 0 && remainGB <= 1 && remainGB > 0 && !conf.notified.gb1) {
                         conf.notified.gb1 = true;
                         dbChanged = true;
@@ -2560,6 +2524,5 @@ setInterval(async () => {
         } catch (e) {}
     }, 60 * 60 * 1000);
 }
-
 
 module.exports = setupHandlers;
