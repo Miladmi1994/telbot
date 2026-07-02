@@ -251,6 +251,8 @@ function setupHandlers(bot) {
             await forwardToAdmin(ctx, state);
             return;
         }
+                return next();
+    });
 
     bot.command('admin', (ctx) => {
         const userId = ctx.from?.id?.toString();
