@@ -229,9 +229,9 @@ function setupHandlers(bot) {
                         const extraOptions = { parse_mode: 'HTML', reply_to_message_id: (userSteps.get(Number(targetUserId))?.lastUserMsgId || undefined) };
 
                         if (ctx.message.text) {
-                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>\n\n${adminText}`, { parse_mode: 'HTML' });
+                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>\n\n${adminText}`, { parse_mode: 'HTML', ...chatKeyboard });
                         } else {
-                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>`, { parse_mode: 'HTML' });
+                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>`, { parse_mode: 'HTML', ...chatKeyboard });
                             await ctx.telegram.copyMessage(targetUserId, ctx.chat.id, ctx.message.message_id);
                         }
 
@@ -1297,12 +1297,34 @@ function setupHandlers(bot) {
         userSteps.delete(ctx.from.id);
         const contact = ctx.message.contact;
         if (contact.user_id !== ctx.from.id) return ctx.reply('لطفا فقط شماره خودت رو بفرست.');
+        
         const db = readDb();
         if (db.testUsers.includes(ctx.from.id)) return ctx.reply('❌ شما قبلاً اکانت تست دریافت کرده‌اید.', mainKeyboard);
         db.testUsers.push(ctx.from.id);
         writeDb(db);
-        await ctx.telegram.sendMessage(GROUP_ID, `🆕 <b>درخواست تست</b>\n#User_${ctx.from.id}\n👤: ${ctx.from.username ? `@${ctx.from.username}` : 'ندارد'}\n📞: <code>+${contact.phone_number}</code>`, { message_thread_id: parseInt(TOPIC_TEST), parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('✅ تایید و صدور تست', `sendtest_${ctx.from.id}`)]]) });
-        ctx.reply('✅ درخواست تست شما ثبت شد.\nاین اکانت شامل ۲۰۰ مگابایت حجم و یک‌بار مصرف است. منتظر تایید باش.', mainKeyboard);
+        
+        // ارسال پیام اطلاع‌رسانی به گروه (بدون دکمه تایید)
+        await ctx.telegram.sendMessage(GROUP_ID, `🆕 <b>درخواست تست (صدور خودکار)</b>\n#User_${ctx.from.id}\n👤: ${ctx.from.username ? `@${ctx.from.username}` : 'ندارد'}\n📞: <code>+${contact.phone_number}</code>`, { message_thread_id: parseInt(TOPIC_TEST), parse_mode: 'HTML' });
+        
+        // پیام انتظار برای کاربر
+        const waitMsg = await ctx.reply('⏳ در حال ساخت کانفیگ تست، لطفا چند لحظه صبر کنید...', mainKeyboard);
+
+        // پروسه ساخت خودکار کانفیگ
+        const targetServerId = db.settings.activeServerId || 'srv_11528';
+        const targetServer = db.servers?.find(s => s.id === targetServerId);
+        const email = `Test_${ctx.from.id}_${Date.now()}`;
+        
+        const uuid = await createClient(email, 0.2, 1, targetServer || null); 
+        if (!uuid) return ctx.reply('❌ خطا در ارتباط با سرور.');
+
+        const freshDb = readDb();
+        if (!freshDb.users[ctx.from.id]) freshDb.users[ctx.from.id] = [];
+        freshDb.users[ctx.from.id].push({ email, uuid, name: 'Test - اکانت تست', serverId: targetServerId });
+        writeDb(freshDb);
+
+        // پاک کردن پیام انتظار و ارسال کانفیگ
+        await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+        await ctx.telegram.sendMessage(ctx.from.id, `🎁 <b>کانفیگ تست شما آماده است.</b>`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('🎁 دریافت کانفیگ تست', `get_test_1_${uuid}`)]] } });
     });
 
     bot.action(/sendtest_(\d+)/, async (ctx) => {
@@ -2198,10 +2220,10 @@ function setupHandlers(bot) {
 
         delete db.payments[payToken];
         writeDb(db);
-
-        await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تایید شد</b>', { parse_mode: 'HTML' });
-        await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را امتحان کنید در صورت عدم اتصال از کانفیگ ۲ استفاده کنید.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🟡 کانفیگ ۱', `getconf_1_${uuid}`), Markup.button.callback('🔵 کانفیگ ۲', `getconf_2_${uuid}`)]]) }); 
-    });
+    
+        await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تایید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
+        
+        await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را امتحان کنید در صورت عدم اتصال از کانفیگ ۲ استفاده کنید.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🟡 کانفیگ ۱', `getconf_1_${uuid}`), Markup.button.callback('🔵 کانفیگ ۲', `getconf_2_${uuid}`)]]) });    });
 
     bot.action(/confrenew_(.+)/, async (ctx) => {
         const payToken = ctx.match[1];
