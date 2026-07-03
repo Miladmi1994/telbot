@@ -677,19 +677,22 @@ function setupHandlers(bot) {
         ctx.answerCbQuery();
     });
 
-    bot.command('fixdb', async (ctx) => {
-    if (!isUserAdmin(ctx.from.id.toString())) return;
-    
-    // فرض بر این است که db متغیر دیتابیس شماست
-    try {
-        // تغییر ردیف‌های خالی یا NULL به سرور جدید
-        const result = db.prepare(`UPDATE services SET server_id = 'srv_364212' WHERE server_id IS NULL OR server_id = ''`).run();
+    bot.command('fixdb', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        let count = 0;
         
-        ctx.reply(`✅ دیتابیس با موفقیت اصلاح شد.\nتعداد ردیف‌های تغییر یافته: ${result.changes}`);
-    } catch (e) {
-        ctx.reply('❌ خطا در اصلاح دیتابیس: ' + e.message);
-    }
-});
+        for (const userId in db.users) {
+            db.users[userId].forEach(conf => {
+                if (!conf.serverId || conf.serverId === 'srv_11528' || conf.serverId === 'srv_364212' || conf.serverId === 'default') {
+                    conf.serverId = 'srv_364212'; 
+                    count++;
+                }
+            });
+        }
+        writeDb(db);
+        ctx.reply(`✅ دیتابیس اصلاح شد! ${count} کانفیگ قدیمی یا نامعتبر، با موفقیت به سرور ایتالیا (srv_364212) متصل شدند.`);
+    });
 
     bot.action('admin_finance_menu', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
