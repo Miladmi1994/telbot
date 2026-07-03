@@ -229,9 +229,9 @@ function setupHandlers(bot) {
                         const extraOptions = { parse_mode: 'HTML', reply_to_message_id: (userSteps.get(Number(targetUserId))?.lastUserMsgId || undefined) };
 
                         if (ctx.message.text) {
-                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>\n\n${adminText}`, { parse_mode: 'HTML' });
+                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>\n\n${adminText}`, { parse_mode: 'HTML', ...chatKeyboard });
                         } else {
-                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>`, { parse_mode: 'HTML' });
+                            await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی:</b>`, { parse_mode: 'HTML', ...chatKeyboard });
                             await ctx.telegram.copyMessage(targetUserId, ctx.chat.id, ctx.message.message_id);
                         }
 
@@ -684,14 +684,14 @@ function setupHandlers(bot) {
         
         for (const userId in db.users) {
             db.users[userId].forEach(conf => {
-                if (!conf.serverId || conf.serverId === 'srv_11528' || conf.serverId === 'default') {
-                    conf.serverId = 'srv_580584'; 
+                if (!conf.serverId || conf.serverId === 'srv_11528' || conf.serverId === 'srv_364212' || conf.serverId === 'default') {
+                    conf.serverId = 'srv_364212'; 
                     count++;
                 }
             });
         }
         writeDb(db);
-        ctx.reply(`✅ دیتابیس اصلاح شد! ${count} کانفیگ قدیمی، با موفقیت به سرور ایتالیا وصل شدن.`);
+        ctx.reply(`✅ دیتابیس اصلاح شد! ${count} کانفیگ قدیمی یا نامعتبر، با موفقیت به سرور ایتالیا (srv_364212) متصل شدند.`);
     });
 
     bot.action('admin_finance_menu', (ctx) => {
@@ -943,7 +943,10 @@ function setupHandlers(bot) {
         });
 
         return await Promise.all(userConfigs.map(async (conf) => {
-            const targetServer = db.servers?.find(s => s.id === conf.serverId);
+            let targetServer = db.servers?.find(s => s.id === conf.serverId);
+            if (!targetServer && conf.isVip) targetServer = db.servers?.find(s => s.id === db.settings.activeVipServerId);
+            if (!targetServer) targetServer = db.servers?.find(s => s.id === db.settings.activeServerId);
+            
             const traffic = await getClientTraffic(conf.email, targetServer);
             
             if (!traffic) return { conf, status: 'deleted', remainDays: -999 };
@@ -1002,7 +1005,10 @@ function setupHandlers(bot) {
         const conf = (db.users[ctx.from.id] || []).find(c => c.uuid === uuid);
         if (!conf) return ctx.editMessageText('❌ اکانت یافت نشد.');
 
-        const targetServer = db.servers?.find(s => s.id === conf.serverId);
+        let targetServer = db.servers?.find(s => s.id === conf.serverId);
+        if (!targetServer && conf.isVip) targetServer = db.servers?.find(s => s.id === db.settings.activeVipServerId);
+        if (!targetServer) targetServer = db.servers?.find(s => s.id === db.settings.activeServerId);
+        
         const traffic = await getClientTraffic(conf.email, targetServer);
         let statusText, totalText = 'نامحدود', usedText = '0 GB', remainText = 'نامحدود', remainDaysText = 'نامحدود';
         let isActive = false;
@@ -1297,20 +1303,50 @@ function setupHandlers(bot) {
         userSteps.delete(ctx.from.id);
         const contact = ctx.message.contact;
         if (contact.user_id !== ctx.from.id) return ctx.reply('لطفا فقط شماره خودت رو بفرست.');
+        
         const db = readDb();
         if (db.testUsers.includes(ctx.from.id)) return ctx.reply('❌ شما قبلاً اکانت تست دریافت کرده‌اید.', mainKeyboard);
         db.testUsers.push(ctx.from.id);
         writeDb(db);
-        await ctx.telegram.sendMessage(GROUP_ID, `🆕 <b>درخواست تست</b>\n#User_${ctx.from.id}\n👤: ${ctx.from.username ? `@${ctx.from.username}` : 'ندارد'}\n📞: <code>+${contact.phone_number}</code>`, { message_thread_id: parseInt(TOPIC_TEST), parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('✅ تایید و صدور تست', `sendtest_${ctx.from.id}`)]]) });
-        ctx.reply('✅ درخواست تست شما ثبت شد.\nاین اکانت شامل ۲۰۰ مگابایت حجم و یک‌بار مصرف است. منتظر تایید باش.', mainKeyboard);
-    });
+        
+        // ارسال پیام اطلاع‌رسانی به گروه (بدون دکمه تایید)
+        await ctx.telegram.sendMessage(GROUP_ID, `🆕 <b>درخواست تست (صدور خودکار)</b>\n#User_${ctx.from.id}\n👤: ${ctx.from.username ? `@${ctx.from.username}` : 'ندارد'}\n📞: <code>+${contact.phone_number}</code>`, { message_thread_id: parseInt(TOPIC_TEST), parse_mode: 'HTML' });
+        
+        // پیام انتظار برای کاربر
+        const waitMsg = await ctx.reply('⏳ در حال ساخت کانفیگ تست، لطفا چند لحظه صبر کنید...', mainKeyboard);
+
+        // پروسه ساخت خودکار کانفیگ
+        const targetServerId = db.settings.activeServerId || 'srv_364212';
+        const targetServer = db.servers?.find(s => s.id === targetServerId);
+        const email = `Test_${ctx.from.id}_${Date.now()}`;
+        
+        const uuid = await createClient(email, 0.2, 1, targetServer || null); 
+        if (!uuid) return ctx.reply('❌ خطا در ارتباط با سرور.');
+
+        const freshDb = readDb();
+        if (!freshDb.users[ctx.from.id]) freshDb.users[ctx.from.id] = [];
+        freshDb.users[ctx.from.id].push({ email, uuid, name: 'Test - اکانت تست', serverId: targetServerId });
+        writeDb(freshDb);
+
+        // پاک کردن پیام انتظار و ارسال کانفیگ
+        await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+        await ctx.telegram.sendMessage(ctx.from.id, `🎁 <b>کانفیگ تست شما با موفقیت صادر شد.</b>\n\n📦 <b>حجم:</b> 200 مگابایت\n⏳ <b>زمان:</b> 1 روز\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را دریافت و امتحان کنید. در صورت عدم اتصال، کانفیگ ۲ را دریافت کنید.`, { 
+            parse_mode: 'HTML', 
+            reply_markup: { 
+                inline_keyboard: [
+                    [Markup.button.callback('🟡 دریافت کانفیگ ۱', `get_test_1_${uuid}`)],
+                    [Markup.button.callback('🔵 دریافت کانفیگ ۲', `get_test_2_${uuid}`)]
+                ] 
+            } 
+        });
+    }); 
 
     bot.action(/sendtest_(\d+)/, async (ctx) => {
         const userId = ctx.match[1];
         await ctx.answerCbQuery('در حال ساخت...', { show_alert: false });
         
         const db = readDb();
-        const targetServerId = db.settings.activeServerId || 'srv_11528';
+        const targetServerId = db.settings.activeServerId || 'srv_364212';
         const targetServer = db.servers?.find(s => s.id === targetServerId);
 
         const email = `Test_${userId}_${Date.now()}`;
@@ -1877,6 +1913,7 @@ function setupHandlers(bot) {
                         email: email,
                         uuid: uuid,
                         name: email + ' (VIP)',
+                        serverId: db.settings.activeVipServerId || db.settings.activeServerId || 'srv_11528',
                         isVip: true,
                         notified: { days3: false, gb1: false }
                     });
@@ -1949,7 +1986,7 @@ function setupHandlers(bot) {
                 
                 const targetServerId = (isVip && db.settings.activeVipServerId) 
                     ? db.settings.activeVipServerId 
-                    : (db.settings.activeServerId || 'srv_11528');
+                    : (db.settings.activeServerId || 'srv_364212');
                     
                 const targetServer = db.servers?.find(s => s.id === targetServerId);
                 const email = `User_${targetUserId}_Ord${orderId}_${Date.now()}`;
@@ -2156,7 +2193,7 @@ function setupHandlers(bot) {
 
         const targetServerId = (planId === 'vip' && db.settings.activeVipServerId)
             ? db.settings.activeVipServerId 
-            : (db.settings.activeServerId || 'srv_11528');
+            : (db.settings.activeServerId || 'srv_364212');
             
         const targetServer = db.servers?.find(s => s.id === targetServerId);
 
@@ -2198,10 +2235,10 @@ function setupHandlers(bot) {
 
         delete db.payments[payToken];
         writeDb(db);
-
-        await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تایید شد</b>', { parse_mode: 'HTML' });
-        await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را امتحان کنید در صورت عدم اتصال از کانفیگ ۲ استفاده کنید.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🟡 کانفیگ ۱', `getconf_1_${uuid}`), Markup.button.callback('🔵 کانفیگ ۲', `getconf_2_${uuid}`)]]) }); 
-    });
+    
+        await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تایید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
+        
+        await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را امتحان کنید در صورت عدم اتصال از کانفیگ ۲ استفاده کنید.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🟡 کانفیگ ۱', `getconf_1_${uuid}`), Markup.button.callback('🔵 کانفیگ ۲', `getconf_2_${uuid}`)]]) });    });
 
     bot.action(/confrenew_(.+)/, async (ctx) => {
         const payToken = ctx.match[1];
@@ -2234,7 +2271,7 @@ function setupHandlers(bot) {
         if (!currentServerId) {
             currentServerId = (conf.isVip && db.settings.activeVipServerId) 
                 ? db.settings.activeVipServerId 
-                : (db.settings.activeServerId || 'srv_11528');
+                : (db.settings.activeServerId || 'srv_364212');
         }
 
        const oldServer = db.servers?.find(s => s.id === currentServerId);
@@ -2324,7 +2361,7 @@ function setupHandlers(bot) {
         conf.notified = { days3: false, gb85: false };
         delete db.payments[payToken];
         writeDb(db);
-
+        await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تمدید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } }).catch(()=>{});
        await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت تمدید شد.</b>\n🧾 شناسه خرید: <code>${orderId}</code> (تأییدشده)\n\n♻️ <b>نکته مهم:</b> نیازی به وارد کردن کانفیگ جدید نیست! همان کانفیگ قبلی شما مجدداً شارژ شده و به درستی کار می‌کند.\n\n(اگر نیاز به دریافت مجدد کانفیگ دارید، می‌توانید از دکمه‌های زیر استفاده کنید)`, { 
     parse_mode: 'HTML', 
     ...Markup.inlineKeyboard([
