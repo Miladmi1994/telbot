@@ -1339,6 +1339,7 @@ function setupHandlers(bot) {
                 ] 
             } 
         });
+    }); 
 
     bot.action(/sendtest_(\d+)/, async (ctx) => {
         const userId = ctx.match[1];
@@ -1912,7 +1913,7 @@ function setupHandlers(bot) {
                         email: email,
                         uuid: uuid,
                         name: email + ' (VIP)',
-                        serverId: db.settings.activeVipServerId || db.settings.activeServerId || 'srv_364212',
+                        serverId: db.settings.activeVipServerId || db.settings.activeServerId || 'srv_11528',
                         isVip: true,
                         notified: { days3: false, gb1: false }
                     });
