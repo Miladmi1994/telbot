@@ -302,7 +302,7 @@ function saveState(db, data) {
         }
 
         const insertPayment = db.prepare(`
-            INSERT INTO payments (token, user_id, plan_id, email, order_id, type)
+            INSERT INTO payments (token, user_id, plan_id, email, order_id, config_name, type)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
         for (const [token, payment] of Object.entries(data.payments || {})) {
