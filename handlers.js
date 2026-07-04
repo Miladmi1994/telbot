@@ -1359,8 +1359,8 @@ function setupHandlers(bot) {
         const config1 = generateMtnConfig(uuid, currentConfigName, targetServer);
         const config2 = generateMciConfig(uuid, currentConfigName, targetServer);
         
-        const msg1 = `🟡 <b>کانفیگ شماره ۱:</b>\n\n<blockquote expandable><code>${config1}</code></blockquote>`;
-        const msg2 = `🔵 <b>کانفیگ شماره ۲:</b>\n\n<blockquote expandable><code>${config2}</code></blockquote>\n\n⚠️ <b>نکته مهم:</b>\nلطفاً هر دو کانفیگ را به برنامه اضافه کنید و هرکدام که سرعت و پایداری بهتری داشت را متصل شوید. (ممکن است هر کانفیگ روی اپراتورهای خاصی عملکرد بهتری داشته باشد)`;
+        const msg1 = `🟡 <b>کانفیگ شماره ۱:</b>\nبرای کپی کردن کانفیگ روی آن ضربه بزنید:\n\n<blockquote expandable><code>${config1}</code></blockquote>`;
+        const msg2 = `🔵 <b>کانفیگ شماره ۲:</b>\nبرای کپی کردن کانفیگ روی آن ضربه بزنید:\n\n<blockquote expandable><code>${config2}</code></blockquote>\n\n⚠️ <b>نکته مهم:</b>\nلطفاً هر دو کانفیگ را به برنامه اضافه کنید و هرکدام که سرعت و پایداری بهتری داشت را متصل شوید. (ممکن است هر کانفیگ روی اپراتورهای خاصی عملکرد بهتری داشته باشد)`;
         
         await ctx.reply(msg1, { parse_mode: 'HTML' });
         await ctx.reply(msg2, { parse_mode: 'HTML' });
