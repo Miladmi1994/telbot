@@ -1564,11 +1564,11 @@ function setupHandlers(bot) {
                     return ctx.reply('⚠️ قیمت دریافت نشد! لطفاً با زدن دکمه لغو، فرآیند را مجدداً شروع کنید.');
                 }
                 if(!db.payments) db.payments = {};
-                db.payments[payToken] = { userId: ctx.from.id, planId: state.planId, email: state.email, orderId: state.orderId, type: 'renew' };
+                db.payments[payToken] = { userId: ctx.from.id, planId: state.planId, configName: state.configName, email: state.email, orderId: state.orderId, type: 'renew' };
                 writeDb(db);
 
                 const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-                const caption = `🔄 <b>درخواست تمدید اکانت</b>\n#User_${ctx.from.id}\n📦 شماره سفارش: <code>${state.orderId}</code>\n👤 آیدی: ${ctx.from.username ? `@${ctx.from.username}` : 'ندارد'}\n📦 پلن: ${state.planName}\n📧 ایمیل: <code>${state.email}</code>\n💵 مبلغ: ${state.price} تومان`;
+                const caption = `🔄 <b>درخواست تمدید اکانت</b>\n#User_${ctx.from.id}\n📦 شماره سفارش: <code>${state.orderId}</code>\n👤 آیدی: ${ctx.from.username ? `@${ctx.from.username}` : 'ندارد'}\n📦 پلن: ${state.planName}\n📝 نام: ${state.configName}\n📧 ایمیل: <code>${state.email}</code>\n💵 مبلغ: ${state.price} تومان`;
                 await ctx.telegram.sendPhoto(GROUP_ID, photoId, { caption, message_thread_id: parseInt(TOPIC_PAYMENT), parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('✅ تایید و تمدید سرویس', `confrenew_${payToken}`)], [Markup.button.callback('❌ رد رسید', `reject_${payToken}`)]]) });
                 userSteps.delete(ctx.from.id);
                 ctx.reply('رسید تمدید شما دریافت شد و در صف بررسی قرار گرفت.', mainKeyboard);
@@ -2224,7 +2224,7 @@ function setupHandlers(bot) {
         // کد قبلی را با این جایگزین کنید:
         await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\nجهت دریافت کانفیگ‌های خود روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]]) });
         });
-        
+
     bot.action(/confrenew_(.+)/, async (ctx) => {
         const payToken = ctx.match[1];
         const db = readDb();
