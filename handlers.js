@@ -86,8 +86,8 @@ async function forwardToAdmin(ctx, state) {
         if (ctx.message.text) {
             const safeText = ctx.message.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
             const header = isThread 
-                ? `💬 <b>پیام جدید</b> | 👤 #User_${userId} | 🔖 #Msg_${ctx.message.message_id}` 
-                : `📩 <b>تیکت جدید</b>\n👤 #User_${userId}\n🆔 ${username}\n🔖 #Msg_${ctx.message.message_id}`;
+                ? `💬 <b>پیام جدید</b> | 👤 #User_${userId}` 
+                : `📩 <b>تیکت جدید</b>\n👤 #User_${userId}\n🆔 ${username}`;
             const text = `${header}\n\n<blockquote>${safeText}</blockquote>`;
             
             await ctx.telegram.sendMessage(GROUP_ID, text, extraOptions);
@@ -219,7 +219,6 @@ function setupHandlers(bot) {
                     try {
                         // 1. بازگرداندن کاربر به محیط چت
                         let state = userSteps.get(Number(targetUserId)) || { step: 'CHAT_SUPPORT' };
-                        state.step = 'CHAT_SUPPORT';
                         state.lastAdminMsgId = ctx.message.message_id; // برای زنجیره ریپلای
                         state.ts = Date.now();
                         userSteps.set(Number(targetUserId), state);
@@ -1047,25 +1046,15 @@ function setupHandlers(bot) {
         const msg = `📝 <b>نام کانفیگ:</b> ${conf.name}\n👤 <b>شناسه کاربر:</b> <code>${ctx.from.id}</code>\n🧾 <b>شناسه خرید:</b> <code>${orderIdText}</code> (ثبت‌شده)\nوضعیت: ${statusText}\n\n🔸 <b>کل حجم:</b> ${totalText}\n🔹 <b>مصرف شده:</b> ${usedText}\n🟢 <b>باقی‌مانده:</b> ${remainText}\n⏳ <b>زمان باقی‌مانده:</b> ${remainDaysText}`;
 
         let buttons = [];
-        if (isActive) buttons.push([Markup.button.callback('دریافت کانفیگ', `dash_getconf_${conf.uuid}`)]);
+        // کد قبلی را با این جایگزین کنید:
+        if (isActive) buttons.push([Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${conf.uuid}`)]);
         if (!isTest) buttons.push([Markup.button.callback('🔄 تمدید سرویس', `init_renew_${conf.email}`)]);
         buttons.push([Markup.button.callback('🔙 بازگشت', isActive ? 'dash_active' : 'dash_expired')]);
 
         ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
     });
 
-    bot.action(/dash_getconf_(.+)/, async (ctx) => {
-        const uuid = ctx.match[1];
-        ctx.editMessageText(`کدام کانفیگ را می‌خواهید؟\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را امتحان کنید. در صورت بروز مشکل و عدم اتصال، از کانفیگ ۲ استفاده کنید.`, {
-            parse_mode: 'HTML',
-            reply_markup: {
-                inline_keyboard: [
-                    [Markup.button.callback('🟡 کانفیگ ۱', `getconf_1_${uuid}`), Markup.button.callback('🔵 کانفیگ ۲', `getconf_2_${uuid}`)],
-                    [Markup.button.callback('🔙 بازگشت به جزئیات', `dash_detail_${uuid}`)]
-                ]
-            }
-        });
-    });
+
 
     bot.hears('🔄 تمدید سرویس', async (ctx) => {
         userSteps.delete(ctx.from.id);
@@ -1330,15 +1319,8 @@ function setupHandlers(bot) {
 
         // پاک کردن پیام انتظار و ارسال کانفیگ
         await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
-        await ctx.telegram.sendMessage(ctx.from.id, `🎁 <b>کانفیگ تست شما با موفقیت صادر شد.</b>\n\n📦 <b>حجم:</b> 200 مگابایت\n⏳ <b>زمان:</b> 1 روز\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را دریافت و امتحان کنید. در صورت عدم اتصال، کانفیگ ۲ را دریافت کنید.`, { 
-            parse_mode: 'HTML', 
-            reply_markup: { 
-                inline_keyboard: [
-                    [Markup.button.callback('🟡 دریافت کانفیگ ۱', `get_test_1_${uuid}`)],
-                    [Markup.button.callback('🔵 دریافت کانفیگ ۲', `get_test_2_${uuid}`)]
-                ] 
-            } 
-        });
+        // کد قبلی را با این جایگزین کنید:
+        await ctx.telegram.sendMessage(ctx.from.id, `🎁 <b>کانفیگ تست شما با موفقیت صادر شد.</b>\n\n📦 <b>حجم:</b> 200 مگابایت\n⏳ <b>زمان:</b> 1 روز\n\nجهت دریافت روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('🎁 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]] } });
     }); 
 
     bot.action(/sendtest_(\d+)/, async (ctx) => {
@@ -1358,46 +1340,30 @@ function setupHandlers(bot) {
         writeDb(db);
 
         await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n✅ ارسال شد');
-        await ctx.telegram.sendMessage(userId, `🎁 <b>کانفیگ تست شما آماده است.</b>`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('🎁 دریافت کانفیگ تست', `get_test_1_${uuid}`)]] } });
+        await ctx.telegram.sendMessage(userId, `🎁 <b>کانفیگ تست شما آماده است.</b>\nجهت دریافت روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('🎁 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]] } });
     });
 
-    bot.action(/get_test_1_(.+)/, async (ctx) => {
+    bot.action(/get_configs_(.+)/, async (ctx) => {
         const uuid = ctx.match[1];
         await ctx.answerCbQuery('✅ در حال ارسال...', { show_alert: false });
         
         const db = readDb();
-        const conf = (db.users[ctx.from.id] || []).find(c => c.uuid === uuid);
-        const currentConfigName = conf ? conf.name : "Test - CypherNET💎";
+        const userConfigs = db.users[ctx.from.id] || [];
+        const conf = userConfigs.find(c => c.uuid === uuid);
+        const currentConfigName = conf ? conf.name : "CypherNET💎";
         
-        const targetServer = db.servers?.find(s => s.id === conf?.serverId);
-        const configText = generateMtnConfig(uuid, currentConfigName, targetServer);
-        
-        const msg = `🟡 <b>کانفیگ شماره ۱:</b>\nبرای کپی کردن، روی کانفیگ ضربه بزنید:\n\n<blockquote expandable><code>${configText}</code></blockquote>\n\n⚠️ <b>نکته:</b> اگر این کانفیگ روی نت شما جواب نداد یا وصل نشد، از دکمه زیر کانفیگ دوم را دریافت کنید.`;
-        
-        await ctx.reply(msg, { 
-            parse_mode: 'HTML',
-            reply_markup: {
-                inline_keyboard: [
-                    [Markup.button.callback('🔄 دریافت کانفیگ دوم', `get_test_2_${uuid}`)]
-                ]
-            }
-        });
-    });
+        let targetServer = db.servers?.find(s => s.id === conf?.serverId);
+        if (!targetServer && conf?.isVip) targetServer = db.servers?.find(s => s.id === db.settings.activeVipServerId);
+        if (!targetServer) targetServer = db.servers?.find(s => s.id === db.settings.activeServerId);
 
-    bot.action(/get_test_2_(.+)/, async (ctx) => {
-        const uuid = ctx.match[1];
-        await ctx.answerCbQuery('✅ در حال ارسال...', { show_alert: false });
+        const config1 = generateMtnConfig(uuid, currentConfigName, targetServer);
+        const config2 = generateMciConfig(uuid, currentConfigName, targetServer);
         
-        const db = readDb();
-        const conf = (db.users[ctx.from.id] || []).find(c => c.uuid === uuid);
-        const currentConfigName = conf ? conf.name : "Test - CypherNET💎";
+        const msg1 = `🟡 <b>کانفیگ شماره ۱:</b>\n\n<blockquote expandable><code>${config1}</code></blockquote>`;
+        const msg2 = `🔵 <b>کانفیگ شماره ۲:</b>\n\n<blockquote expandable><code>${config2}</code></blockquote>\n\n⚠️ <b>نکته مهم:</b>\nلطفاً هر دو کانفیگ را به برنامه اضافه کنید و هرکدام که سرعت و پایداری بهتری داشت را متصل شوید. (ممکن است هر کانفیگ روی اپراتورهای خاصی عملکرد بهتری داشته باشد)`;
         
-        const targetServer = db.servers?.find(s => s.id === conf?.serverId);
-        const mciText = `<code>${generateMciConfig(uuid, currentConfigName, targetServer)}</code>`;
-        
-        const msg = `🔵 <b>کانفیگ شماره ۲:</b>\nبرای کپی کردن، روی کانفیگ ضربه بزنید:\n\n${mciText}`;
-        
-        await ctx.reply(msg, { parse_mode: 'HTML' });
+        await ctx.reply(msg1, { parse_mode: 'HTML' });
+        await ctx.reply(msg2, { parse_mode: 'HTML' });
     });
 
     bot.hears('🛒 خرید مستقیم (بدون شماره)', (ctx) => {
@@ -2020,10 +1986,8 @@ function setupHandlers(bot) {
                 writeDb(freshDb);
 
                 try {
-                    await ctx.telegram.sendMessage(targetUserId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را امتحان کنید در صورت عدم اتصال، کانفیگ 2 را دریافت کنید.`, { 
-                    parse_mode: 'HTML', 
-                    ...Markup.inlineKeyboard([[Markup.button.callback('🟡 کانفیگ ۱', `getconf_1_${uuid}`), Markup.button.callback('🔵 کانفیگ ۲', `getconf_2_${uuid}`)]]) 
-                }); 
+                    // کد قبلی را با این جایگزین کنید:
+                    await ctx.telegram.sendMessage(targetUserId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\nجهت دریافت کانفیگ‌های خود روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]]) });
                     ctx.reply(`✅ خرید دستی با موفقیت ثبت و برای کاربر ارسال شد.\n🌐 سرور انتخاب شده: ${targetServer?.name || 'پیش‌فرض'}`);
                 } catch (e) {
                     ctx.reply(`⚠️ ثبت شد اما کاربر ربات را بلاک کرده است.\n🌐 سرور انتخاب شده: ${targetServer?.name || 'پیش‌فرض'}`);
@@ -2167,6 +2131,25 @@ function setupHandlers(bot) {
         ctx.telegram.sendMessage(GROUP_ID, `📊 بازخورد کاربر #User_${ctx.match[2]}: ${ctx.match[1] === 'yes' ? '✅ حل شد' : '❌ حل نشد'}`); 
     });
 
+    bot.action(/reject_(.+)/, async (ctx) => {
+        const payToken = ctx.match[1];
+        const db = readDb();
+        const payData = db.payments?.[payToken];
+        
+        if (!payData) return ctx.answerCbQuery('❌ اطلاعات تراکنش یافت نشد یا قبلاً بررسی شده است.', {show_alert: true});
+
+        const userId = payData.userId;
+        delete db.payments[payToken];
+        writeDb(db);
+
+        const caption = ctx.callbackQuery.message.caption || '';
+        await ctx.editMessageCaption(caption + '\n\n❌ <b>وضعیت: رد شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } }).catch(()=>{});
+
+        try {
+            await ctx.telegram.sendMessage(userId, '❌ <b>رسید پرداختی شما توسط مدیریت تایید نشد.</b>\nدر صورت کسر وجه یا بروز مشکل، لطفاً از بخش «پشتیبانی و گزارش خطا» پیگیری کنید.', { parse_mode: 'HTML' });
+        } catch (e) {}
+    });
+
     bot.action(/confnew_(.+)/, async (ctx) => {
         const payToken = ctx.match[1];
         const db = readDb();
@@ -2238,7 +2221,8 @@ function setupHandlers(bot) {
     
         await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تایید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
         
-        await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\n⚠️ <b>نکته:</b> ابتدا کانفیگ ۱ را امتحان کنید در صورت عدم اتصال از کانفیگ ۲ استفاده کنید.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🟡 کانفیگ ۱', `getconf_1_${uuid}`), Markup.button.callback('🔵 کانفیگ ۲', `getconf_2_${uuid}`)]]) });    });
+        // کد قبلی را با این جایگزین کنید:
+        await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\nجهت دریافت کانفیگ‌های خود روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]]) });
 
     bot.action(/confrenew_(.+)/, async (ctx) => {
         const payToken = ctx.match[1];
@@ -2362,44 +2346,11 @@ function setupHandlers(bot) {
         delete db.payments[payToken];
         writeDb(db);
         await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تمدید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } }).catch(()=>{});
-       await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت تمدید شد.</b>\n🧾 شناسه خرید: <code>${orderId}</code> (تأییدشده)\n\n♻️ <b>نکته مهم:</b> نیازی به وارد کردن کانفیگ جدید نیست! همان کانفیگ قبلی شما مجدداً شارژ شده و به درستی کار می‌کند.\n\n(اگر نیاز به دریافت مجدد کانفیگ دارید، می‌توانید از دکمه‌های زیر استفاده کنید)`, { 
-    parse_mode: 'HTML', 
-    ...Markup.inlineKeyboard([
-        [Markup.button.callback('🟡 دریافت مجدد کانفیگ ۱', `getconf_1_${conf.uuid}`), Markup.button.callback('🔵 دریافت مجدد کانفیگ ۲', `getconf_2_${conf.uuid}`)]
-    ]) 
-});
+       // کد قبلی را با این جایگزین کنید:
+        await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت تمدید شد.</b>\n🧾 شناسه خرید: <code>${orderId}</code> (تأییدشده)\n\n♻️ <b>نکته مهم:</b> نیازی به وارد کردن کانفیگ جدید نیست! همان کانفیگ قبلی شما مجدداً شارژ شده و به درستی کار می‌کند.\n\n(اگر نیاز به دریافت مجدد کانفیگ دارید، می‌توانید از دکمه زیر استفاده کنید)`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت مجدد کانفیگ‌ها', `get_configs_${conf.uuid}`)]]) });
     });
 
-    bot.action(/getconf_(1|2)_(.+)/, async (ctx) => {
-    const opId = ctx.match[1];
-    const uuid = ctx.match[2];
-    await ctx.answerCbQuery('✅ در حال ارسال...', { show_alert: false });
-    
-    const db = readDb();
-    const userConfigs = db.users[ctx.from.id] || [];
-    const conf = userConfigs.find(c => c.uuid === uuid);
-    const currentConfigName = conf ? conf.name : "CypherNET💎";
-    
-    const targetServer = db.servers?.find(s => s.id === conf?.serverId);
-    
-    if (opId === '1') {
-        const configText = generateMtnConfig(uuid, currentConfigName, targetServer);
-        const msg = `🟡 <b>کانفیگ شماره ۱:</b>\nجهت کپی کردن، روی کانفیگ زیر ضربه بزنید:\n\n<blockquote expandable><code>${configText}</code></blockquote>\n\n⚠️ <b>نکته:</b> اگر این کانفیگ روی نت شما متصل نشد، از دکمه زیر کانفیگ دوم را دریافت کنید.`;
-        await ctx.reply(msg, { 
-            parse_mode: 'HTML',
-            reply_markup: {
-                inline_keyboard: [
-                    [Markup.button.callback('🔄 دریافت کانفیگ ۲', `getconf_2_${uuid}`)]
-                ]
-            }
-        });
-    
-    } else if (opId === '2') {
-        const configText = generateMciConfig(uuid, currentConfigName, targetServer);
-        const msg = `🔵 <b>کانفیگ شماره ۲:</b>\nجهت کپی کردن، روی کانفیگ زیر ضربه بزنید:\n\n<blockquote expandable><code>${configText}</code></blockquote>`;
-        await ctx.reply(msg, { parse_mode: 'HTML' });
-    }
-});
+
 
     setInterval(async () => {
         try {
