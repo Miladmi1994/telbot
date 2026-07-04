@@ -1468,7 +1468,7 @@ function setupHandlers(bot) {
 
     bot.action('skip_name', (ctx) => { ctx.answerCbQuery(); processConfigName(ctx, 'بدون اسم'); });
 
-    async function processConfigName(ctx, name) {
+ async function processConfigName(ctx, name) {
         const state = userSteps.get(ctx.from.id);
         if (!state) return;
 
@@ -1479,6 +1479,21 @@ function setupHandlers(bot) {
         state.configName = name;
         state.step = 'WAITING_RECEIPT';
         userSteps.set(ctx.from.id, state);
+
+        // --- ثبت در دیتابیس پرداخت‌ها ---
+        const db = readDb();
+        if (!db.payments) db.payments = {};
+        
+        // اینجا اسم رو به آبجکت payments اضافه می‌کنیم
+        db.payments[state.orderId] = { 
+            userId: ctx.from.id, 
+            planId: state.planId, 
+            configName: name, // اسم اینجا ذخیره شد
+            orderId: state.orderId, 
+            type: 'new' 
+        };
+        writeDb(db);
+        // ------------------------------
         
         const priceDisplay = parseInt(state.price).toLocaleString('en-US');
 
