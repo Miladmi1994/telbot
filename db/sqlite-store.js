@@ -11,6 +11,15 @@ function openDatabase(dbFilePath) {
     const db = new DatabaseSync(dbFilePath);
     db.exec('PRAGMA foreign_keys = ON');
     db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
+
+    // آپدیت خودکار دیتابیس: اضافه کردن ستون نام کانفیگ در صورت عدم وجود
+    try {
+        db.exec('ALTER TABLE payments ADD COLUMN config_name TEXT;');
+        console.log("✅ ستون config_name به جدول payments اضافه شد.");
+    } catch (e) {
+        // اگر ستون از قبل وجود داشته باشد، این خطا نادیده گرفته می‌شود
+    }
+
     return db;
 }
 
