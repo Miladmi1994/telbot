@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS payments (
     plan_id TEXT NOT NULL,
     email TEXT,
     order_id TEXT,
+    config_name TEXT,
     type TEXT NOT NULL
 );
 

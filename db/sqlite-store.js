@@ -115,6 +115,7 @@ function loadState(db) {
             planId: row.plan_id,
             email: row.email || undefined,
             orderId: row.order_id || undefined,
+            onfigName: row.config_name,
             type: row.type
         };
     }
@@ -311,6 +312,7 @@ function saveState(db, data) {
                 payment.planId,
                 payment.email || null,
                 payment.orderId || null,
+                payment.configName || null,
                 payment.type
             );
         }
