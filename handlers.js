@@ -2223,7 +2223,8 @@ function setupHandlers(bot) {
         
         // کد قبلی را با این جایگزین کنید:
         await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\nجهت دریافت کانفیگ‌های خود روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]]) });
-
+        });
+        
     bot.action(/confrenew_(.+)/, async (ctx) => {
         const payToken = ctx.match[1];
         const db = readDb();
