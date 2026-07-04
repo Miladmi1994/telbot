@@ -12,13 +12,10 @@ function openDatabase(dbFilePath) {
     db.exec('PRAGMA foreign_keys = ON');
     db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
 
-    // آپدیت خودکار دیتابیس: اضافه کردن ستون نام کانفیگ در صورت عدم وجود
+    // این بلاک اضافه شد تا ستون رو تو دیتابیس‌های موجود هم بسازه
     try {
-        db.exec('ALTER TABLE payments ADD COLUMN config_name TEXT;');
-        console.log("✅ ستون config_name به جدول payments اضافه شد.");
-    } catch (e) {
-        // اگر ستون از قبل وجود داشته باشد، این خطا نادیده گرفته می‌شود
-    }
+        db.exec("ALTER TABLE payments ADD COLUMN config_name TEXT;");
+    } catch (e) {}
 
     return db;
 }
@@ -122,9 +119,9 @@ function loadState(db) {
         payments[row.token] = {
             userId: row.user_id,
             planId: row.plan_id,
+            configName: row.config_name || undefined, // این خط اضافه شد
             email: row.email || undefined,
             orderId: row.order_id || undefined,
-            onfigName: row.config_name,
             type: row.type
         };
     }
@@ -311,7 +308,7 @@ function saveState(db, data) {
         }
 
         const insertPayment = db.prepare(`
-            INSERT INTO payments (token, user_id, plan_id, email, order_id, config_name, type)
+            INSERT INTO payments (token, user_id, plan_id, config_name, email, order_id, type)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
         for (const [token, payment] of Object.entries(data.payments || {})) {
@@ -319,9 +316,9 @@ function saveState(db, data) {
                 token,
                 payment.userId,
                 payment.planId,
+                payment.configName || null, // این خط اضافه شد
                 payment.email || null,
                 payment.orderId || null,
-                payment.configName || null,
                 payment.type
             );
         }
