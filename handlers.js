@@ -640,6 +640,7 @@ function setupHandlers(bot) {
                     [Markup.button.callback('🚫 مسدود کردن', 'admin_ban_user'), Markup.button.callback('✅ رفع مسدودی', 'admin_unban_user')],
                     [Markup.button.callback('🗑 ریست کاربر', 'admin_reset_user'), Markup.button.callback('🧹 پاک کردن تست', 'admin_clear_test')],
                     [Markup.button.callback('📋 لیست ادمین‌ها', 'admin_list_admins')],
+                    [Markup.button.callback('🎁 جبران خسارت (افزایش گروهی)', 'admin_comp_menu')],
                     [Markup.button.callback('🔙 بازگشت', 'back_admin')]
                 ]
             }
@@ -673,6 +674,60 @@ function setupHandlers(bot) {
         }
         
         ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: adminUsersMenu.reply_markup });
+        ctx.answerCbQuery();
+    });
+
+    // --- بخش جبران خسارت ---
+    bot.action('admin_comp_menu', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const servers = db.servers || [];
+        
+        let buttons = servers.map(s => [Markup.button.callback(`🖥 ${s.name}`, `comp_srv_${s.id}`)]);
+        buttons.push([Markup.button.callback('🌐 همه سرورها', 'comp_srv_all')]);
+        buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_users_menu')]);
+        
+        ctx.editMessageText('🎁 <b>جبران خسارت گروهی</b>\n\nلطفاً مشخص کنید که قصد دارید به کاربران کدام سرور هدیه/جبرانی بدهید:', { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
+        ctx.answerCbQuery();
+    });
+
+    bot.action(/comp_srv_(.+)/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const srvId = ctx.match[1];
+        
+        adminSteps.set(ctx.from.id, { step: 'COMP_SELECT_TYPE', serverId: srvId });
+        
+        ctx.editMessageText('⚙️ <b>نوع جبران خسارت</b>\n\nقصد دارید چه چیزی به کاربران اضافه کنید؟', { 
+            parse_mode: 'HTML', 
+            reply_markup: {
+                inline_keyboard: [
+                    [Markup.button.callback('🔋 فقط حجم (گیگابایت)', 'comp_type_gb')],
+                    [Markup.button.callback('⏳ فقط زمان (روز)', 'comp_type_days')],
+                    [Markup.button.callback('🔋⏳ حجم و زمان (هر دو)', 'comp_type_both')],
+                    [Markup.button.callback('❌ لغو', 'admin_users_menu')]
+                ]
+            }
+        });
+        ctx.answerCbQuery();
+    });
+
+    bot.action(/comp_type_(.+)/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const type = ctx.match[1];
+        const state = adminSteps.get(ctx.from.id);
+        
+        if (!state || state.step !== 'COMP_SELECT_TYPE') return;
+        
+        state.step = 'COMP_GET_VALUE';
+        state.compType = type;
+        adminSteps.set(ctx.from.id, state);
+        
+        let msg = '';
+        if (type === 'gb') msg = '🔋 لطفاً مقدار <b>حجم</b> مورد نظر برای اضافه شدن را به عدد (گیگابایت) وارد کنید:\n(مثلاً: 5)';
+        else if (type === 'days') msg = '⏳ لطفاً مقدار <b>زمان</b> مورد نظر برای اضافه شدن را به عدد (روز) وارد کنید:\n(مثلاً: 3)';
+        else msg = '🔋⏳ لطفاً مقدار <b>حجم و زمان</b> را با یک فاصله بنویسید (اول حجم بعد روز):\n(مثلاً برای 5 گیگ و 3 روز بنویسید: 5 3)';
+        
+        ctx.reply(msg, { parse_mode: 'HTML' });
         ctx.answerCbQuery();
     });
 
@@ -2095,6 +2150,108 @@ function setupHandlers(bot) {
                 return;
             }
         }
+
+        // --- پردازش مقادیر جبران خسارت ---
+            if (adminState.step === 'COMP_GET_VALUE') {
+                const { serverId, compType } = adminState;
+                let addGb = 0;
+                let addDays = 0;
+                
+                try {
+                    if (compType === 'gb') {
+                        addGb = parseFloat(input);
+                        if (isNaN(addGb)) throw new Error();
+                    } else if (compType === 'days') {
+                        addDays = parseInt(input);
+                        if (isNaN(addDays)) throw new Error();
+                    } else if (compType === 'both') {
+                        const parts = input.split(' ');
+                        addGb = parseFloat(parts[0]);
+                        addDays = parseInt(parts[1]);
+                        if (isNaN(addGb) || isNaN(addDays)) throw new Error();
+                    }
+                } catch (e) {
+                    return ctx.reply('❌ فرمت وارد شده اشتباه است. لطفاً عدد معتبر وارد کنید.');
+                }
+
+                adminSteps.delete(ctx.from.id);
+                ctx.reply(`⏳ <b>در حال پردازش و اعمال جبران خسارت...</b>\n\nاین عملیات در پس‌زمینه انجام می‌شود و بسته به تعداد کاربران ممکن است چند دقیقه طول بکشد. لطفاً صبور باشید...`, { parse_mode: 'HTML' });
+
+                const db = readDb();
+                let successCount = 0;
+                let failCount = 0;
+                let affectedUsers = new Set();
+                
+                // اجرای حلقه امن در پس‌زمینه
+                (async () => {
+                    for (const uid in db.users) {
+                        let dbChanged = false;
+                        for (let conf of db.users[uid]) {
+                            // فیلتر کردن سرور و اکانت‌های تست
+                            if (serverId !== 'all' && conf.serverId !== serverId) continue;
+                            if (conf.name === 'سرویس قبلی' || conf.email.startsWith('Test_')) continue;
+
+                            const targetServer = db.servers?.find(s => s.id === conf.serverId);
+                            if (!targetServer) continue;
+
+                            try {
+                                const traffic = await getClientTraffic(conf.email, targetServer);
+                                if (!traffic) { failCount++; continue; }
+
+                                const currentTotalGB = traffic.total / 1073741824;
+                                
+                                let remainDays = 0;
+                                if (traffic.expiryTime > 0) {
+                                    const diffMs = traffic.expiryTime - Date.now();
+                                    if (diffMs > 0) remainDays = diffMs / (1000 * 60 * 60 * 24);
+                                }
+
+                                // محاسبه مقادیر جدید (اگر 0 باشه یعنی نامحدوده و نباید دست بخوره)
+                                const finalGB = traffic.total === 0 ? 0 : currentTotalGB + addGb;
+                                const finalDays = traffic.expiryTime === 0 ? 0 : Math.ceil(remainDays + addDays);
+
+                                // آپدیت کانفیگ روی سرور
+                                const result = await renewClient(conf.uuid, conf.email, conf.email, finalGB, finalDays, targetServer);
+                                
+                                if (result && result.success) {
+                                    successCount++;
+                                    affectedUsers.add(uid);
+                                    dbChanged = true;
+                                } else {
+                                    failCount++;
+                                }
+                            } catch (err) {
+                                failCount++;
+                            }
+                            
+                            // تاخیر ۲۰۰ میلی‌ثانیه‌ای برای جلوگیری از بلاک شدن توسط پنل سرور
+                            await new Promise(r => setTimeout(r, 200));
+                        }
+                        if (dbChanged) writeDb(db);
+                    }
+
+                    // ارسال گزارش کار به ادمین
+                    await ctx.telegram.sendMessage(ctx.from.id, `✅ <b>عملیات جبران خسارت با موفقیت پایان یافت.</b>\n\n🟢 موفق: ${successCount} کانفیگ\n🔴 ناموفق: ${failCount} کانفیگ\n👥 تعداد کاربران شامل هدیه: ${affectedUsers.size}`, { parse_mode: 'HTML' });
+
+                    // ارسال پیام گروهی به کاربرانی که هدیه دریافت کرده‌اند
+                    if (affectedUsers.size > 0) {
+                        let userMsg = `🎁 <b>هدیه جبران خسارت</b>\n\nکاربر گرامی، بابت اختلالات اخیر سرورها صمیمانه عذرخواهی می‌کنیم.\nجهت جبران این قطعی، `;
+                        if (compType === 'gb') userMsg += `مبلغ <b>${addGb} گیگابایت</b> حجم`;
+                        else if (compType === 'days') userMsg += `تعداد <b>${addDays} روز</b> زمان`;
+                        else userMsg += `مبلغ <b>${addGb} گیگابایت</b> حجم و <b>${addDays} روز</b> زمان`;
+                        userMsg += ` به سرویس شما اضافه شد.\n\nاز همراهی و شکیبایی شما سپاسگزاریم. 🌹`;
+
+                        for (const uid of affectedUsers) {
+                            try {
+                                await ctx.telegram.sendMessage(uid, userMsg, { parse_mode: 'HTML' });
+                            } catch (e) {}
+                            // تاخیر ۵۰ میلی‌ثانیه‌ای برای جلوگیری از اسپم شدن ربات توسط تلگرام
+                            await new Promise(r => setTimeout(r, 50));
+                        }
+                    }
+                })();
+                return;
+            }
 
         // --- User Support Message ---
         if (state && (state.step === 'CHAT_ERROR' || state.step === 'CHAT_SUPPORT')) {
