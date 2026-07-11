@@ -2192,7 +2192,7 @@ function setupHandlers(bot) {
                         let dbChanged = false;
                         for (let conf of db.users[uid]) {
                             // --- محدودیت تست فقط برای همین کانفیگ خاص ---
-                            if (conf.uuid !== 'c21e14ac-ef50-4c5d-bc74-d5a628e17d53') continue;
+                            if (conf.uuid !== '7dafd728-514b-4e9c-81d1-142daaa91f32') continue;
                             // ------------------------------------------
 
                             // فیلتر کردن سرور و اکانت‌های تست
