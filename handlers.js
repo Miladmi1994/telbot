@@ -2151,8 +2151,8 @@ function setupHandlers(bot) {
             }
         }
 
-        // --- پردازش مقادیر جبران خسارت ---
-            if (adminState.step === 'COMP_GET_VALUE') {
+            // --- پردازش مقادیر جبران خسارت ---
+            if (adminState && adminState.step === 'COMP_GET_VALUE') {
                 const { serverId, compType } = adminState;
                 let addGb = 0;
                 let addDays = 0;
