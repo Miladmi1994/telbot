@@ -2185,8 +2185,16 @@ function setupHandlers(bot) {
                 // اجرای حلقه امن در پس‌زمینه
                 (async () => {
                     for (const uid in db.users) {
+                        // --- محدودیت تست فقط برای آیدی شما ---
+                        if (uid !== '278963307') continue;
+                        // -----------------------------------
+
                         let dbChanged = false;
                         for (let conf of db.users[uid]) {
+                            // --- محدودیت تست فقط برای همین کانفیگ خاص ---
+                            if (conf.uuid !== 'c21e14ac-ef50-4c5d-bc74-d5a628e17d53') continue;
+                            // ------------------------------------------
+
                             // فیلتر کردن سرور و اکانت‌های تست
                             if (serverId !== 'all' && conf.serverId !== serverId) continue;
                             if (conf.name === 'سرویس قبلی' || conf.email.startsWith('Test_')) continue;
@@ -2198,6 +2206,15 @@ function setupHandlers(bot) {
                                 const traffic = await getClientTraffic(conf.email, targetServer);
                                 if (!traffic) { failCount++; continue; }
 
+                                // --- بررسی فعال بودن اکانت ---
+                                const isTimeExpired = traffic.expiryTime > 0 && traffic.expiryTime < Date.now();
+                                const isVolumeExpired = traffic.total > 0 && (traffic.up + traffic.down) >= traffic.total;
+                                
+                                if (isTimeExpired || isVolumeExpired) {
+                                    continue; // اکانت منقضی شده است، رد می‌شویم
+                                }
+                                // -----------------------------
+
                                 const currentTotalGB = traffic.total / 1073741824;
                                 
                                 let remainDays = 0;
@@ -2206,11 +2223,9 @@ function setupHandlers(bot) {
                                     if (diffMs > 0) remainDays = diffMs / (1000 * 60 * 60 * 24);
                                 }
 
-                                // محاسبه مقادیر جدید (اگر 0 باشه یعنی نامحدوده و نباید دست بخوره)
                                 const finalGB = traffic.total === 0 ? 0 : currentTotalGB + addGb;
                                 const finalDays = traffic.expiryTime === 0 ? 0 : Math.ceil(remainDays + addDays);
 
-                                // آپدیت کانفیگ روی سرور
                                 const result = await renewClient(conf.uuid, conf.email, conf.email, finalGB, finalDays, targetServer);
                                 
                                 if (result && result.success) {
@@ -2224,28 +2239,24 @@ function setupHandlers(bot) {
                                 failCount++;
                             }
                             
-                            // تاخیر ۲۰۰ میلی‌ثانیه‌ای برای جلوگیری از بلاک شدن توسط پنل سرور
                             await new Promise(r => setTimeout(r, 200));
                         }
                         if (dbChanged) writeDb(db);
                     }
 
-                    // ارسال گزارش کار به ادمین
-                    await ctx.telegram.sendMessage(ctx.from.id, `✅ <b>عملیات جبران خسارت با موفقیت پایان یافت.</b>\n\n🟢 موفق: ${successCount} کانفیگ\n🔴 ناموفق: ${failCount} کانفیگ\n👥 تعداد کاربران شامل هدیه: ${affectedUsers.size}`, { parse_mode: 'HTML' });
+                    await ctx.telegram.sendMessage(ctx.from.id, `✅ <b>عملیات جبران خسارت (تست کانفیگ خاص) پایان یافت.</b>\n\n🟢 موفق: ${successCount} کانفیگ\n🔴 ناموفق: ${failCount} کانفیگ\n👥 کاربران شامل هدیه: ${affectedUsers.size}`, { parse_mode: 'HTML' });
 
-                    // ارسال پیام گروهی به کاربرانی که هدیه دریافت کرده‌اند
                     if (affectedUsers.size > 0) {
                         let userMsg = `🎁 <b>هدیه جبران خسارت</b>\n\nکاربر گرامی، بابت اختلالات اخیر سرورها صمیمانه عذرخواهی می‌کنیم.\nجهت جبران این قطعی، `;
-                        if (compType === 'gb') userMsg += `مبلغ <b>${addGb} گیگابایت</b> حجم`;
+                        if (compType === 'gb') userMsg += `مقدار <b>${addGb} گیگابایت</b> حجم`;
                         else if (compType === 'days') userMsg += `تعداد <b>${addDays} روز</b> زمان`;
-                        else userMsg += `مبلغ <b>${addGb} گیگابایت</b> حجم و <b>${addDays} روز</b> زمان`;
+                        else userMsg += `مقدار <b>${addGb} گیگابایت</b> حجم و <b>${addDays} روز</b> زمان`;
                         userMsg += ` به سرویس شما اضافه شد.\n\nاز همراهی و شکیبایی شما سپاسگزاریم. 🌹`;
 
                         for (const uid of affectedUsers) {
                             try {
                                 await ctx.telegram.sendMessage(uid, userMsg, { parse_mode: 'HTML' });
                             } catch (e) {}
-                            // تاخیر ۵۰ میلی‌ثانیه‌ای برای جلوگیری از اسپم شدن ربات توسط تلگرام
                             await new Promise(r => setTimeout(r, 50));
                         }
                     }
