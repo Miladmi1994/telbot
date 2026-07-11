@@ -2185,15 +2185,9 @@ function setupHandlers(bot) {
                 // اجرای حلقه امن در پس‌زمینه
                 (async () => {
                     for (const uid in db.users) {
-                        // --- محدودیت تست فقط برای آیدی شما ---
-                        if (uid !== '278963307') continue;
-                        // -----------------------------------
 
                         let dbChanged = false;
                         for (let conf of db.users[uid]) {
-                            // --- محدودیت تست فقط برای همین کانفیگ خاص ---
-                            if (conf.uuid !== '7dafd728-514b-4e9c-81d1-142daaa91f32') continue;
-                            // ------------------------------------------
 
                             // فیلتر کردن سرور و اکانت‌های تست
                             if (serverId !== 'all' && conf.serverId !== serverId) continue;
