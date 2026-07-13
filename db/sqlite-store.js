@@ -15,6 +15,8 @@ function openDatabase(dbFilePath) {
     // این بلاک اضافه شد تا ستون رو تو دیتابیس‌های موجود هم بسازه
     try {
         db.exec("ALTER TABLE payments ADD COLUMN config_name TEXT;");
+        db.exec("ALTER TABLE settings ADD COLUMN crisis_mode INTEGER NOT NULL DEFAULT 0;");
+        db.exec("ALTER TABLE settings ADD COLUMN crisis_config TEXT;");
     } catch (e) {}
 
     return db;
@@ -134,6 +136,8 @@ function loadState(db) {
             maintenance: !!settingsRow?.maintenance,
             activeServerId: settingsRow?.active_server_id || undefined,
             activeVipServerId: settingsRow?.active_vip_server_id || undefined,
+            crisisMode: !!settingsRow?.crisis_mode,
+            crisisConfig: settingsRow?.crisis_config || null,
             plans
         },
         testUsers,
@@ -174,13 +178,17 @@ function saveState(db, data) {
                 sales_open = ?,
                 maintenance = ?,
                 active_server_id = ?,
-                active_vip_server_id = ?
+                active_vip_server_id = ?,
+                crisis_mode = ?,
+                crisis_config = ?
             WHERE id = 1
         `).run(
             data.settings?.salesOpen ? 1 : 0,
             data.settings?.maintenance ? 1 : 0,
             data.settings?.activeServerId || null,
-            data.settings?.activeVipServerId || null
+            data.settings?.activeVipServerId || null,
+            data.settings?.crisisMode ? 1 : 0,
+            data.settings?.crisisConfig || null
         );
 
         db.prepare('DELETE FROM payments').run();

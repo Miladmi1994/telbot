@@ -61,6 +61,7 @@ const getAdminKeyboard = (db) => Markup.inlineKeyboard([
     ],
     [
         Markup.button.callback('👥 مدیریت کاربران', 'admin_users_menu'),
+        Markup.button.callback('سوییچ بحران 🚨', 'admin_crisis_menu'),
         Markup.button.callback('🖥 مدیریت سرورها', 'admin_servers_menu')
     ],
     [
@@ -81,6 +82,7 @@ const adminServersMenu = Markup.inlineKeyboard([
     [Markup.button.callback('📋 لیست سرورها (آمار)', 'admin_list_servers')],
     [Markup.button.callback('✅ سرور پیش‌فرض عادی', 'admin_set_active_server'), Markup.button.callback('👑 سرور پیش‌فرض VIP', 'admin_set_vip_server')],
     [Markup.button.callback('➖ حذف سرور', 'admin_remove_server')],
+    [Markup.button.callback('☁️ مدیریت Cloudflare', 'admin_cf_menu')],
     [Markup.button.callback('🔙 بازگشت', 'back_admin')]
 ]);
 

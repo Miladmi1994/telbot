@@ -1,5 +1,6 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const { CF_API_TOKEN } = require('./config');
 
 // این ثابت‌ها فقط به عنوان "سرور پیش‌فرض" (ایتالیا) نگه داشته میشن 
 // تا کانفیگ‌های قدیمی همچنان بدون مشکل کار کنن
@@ -363,5 +364,51 @@ function generateMtnConfig(uuid, configName = "CypherNET💎", server = null) {
     return JSON.stringify(config);
 }
 
+// --- Cloudflare API Functions ---
+
+async function getCloudflareZones() {
+    try {
+        const res = await fetch('https://api.cloudflare.com/client/v4/zones', {
+            headers: { 'Authorization': `Bearer ${CF_API_TOKEN}`, 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (data.success) return data.result.map(z => ({ id: z.id, name: z.name }));
+        return [];
+    } catch (e) {
+        console.error("Cloudflare Zones Error:", e);
+        return [];
+    }
+}
+
+async function getDnsRecords(zoneId) {
+    try {
+        // فقط رکوردهای نوع A رو می‌گیریم که معمولاً برای سرور و کانفیگه
+        const res = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records?type=A`, {
+            headers: { 'Authorization': `Bearer ${CF_API_TOKEN}`, 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (data.success) return data.result.map(r => ({ id: r.id, name: r.name, content: r.content, proxied: r.proxied, type: r.type }));
+        return [];
+    } catch (e) {
+        console.error("Cloudflare DNS Records Error:", e);
+        return [];
+    }
+}
+
+async function updateDnsRecord(zoneId, recordId, name, type, content, proxied) {
+    try {
+        const res = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records/${recordId}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${CF_API_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, type, content, proxied, ttl: 1 })
+        });
+        const data = await res.json();
+        return data.success;
+    } catch (e) {
+        console.error("Cloudflare Update Error:", e);
+        return false;
+    }
+}
+
 // حتماً یادت نره تابع تست رو هم اکسپورت کنی
-module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateMciConfig, generateMtnConfig, getUsdtRate };
+module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateMciConfig, generateMtnConfig, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord };
