@@ -19,5 +19,6 @@ const sampleConfigMtn = '{"dns":{"servers":["1.1.1.1","8.8.8.8"],"tag":"dns-modu
 
 module.exports = {
     GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, 
-    ADMIN_IDS,userSteps, adminSteps, sampleConfig, sampleConfigMtn
+    ADMIN_IDS,userSteps, adminSteps, sampleConfig, sampleConfigMtn,
+    CF_API_TOKEN: process.env.CF_API_TOKEN
 };

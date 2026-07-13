@@ -2,7 +2,7 @@ const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, userSteps, adminSteps } = require('./config');
 const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, adminMarketingMenu } = require('./keyboards');
 const { readDb, writeDb } = require('./db');
-const { createClient, deleteClient, renewClient, getClientTraffic, generateMciConfig, generateMtnConfig, getUsdtRate, testServerConnection } = require('./api');
+const { createClient, deleteClient, renewClient, getClientTraffic, generateMciConfig, generateMtnConfig, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord } = require('./api');
 
 function generateOrderId() {
     return Math.floor(100000 + Math.random() * 900000).toString();
@@ -398,15 +398,7 @@ function setupHandlers(bot) {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.editMessageText('🖥 <b>مدیریت سرورها</b>\nاز اینجا می‌تونی سرورها رو مدیریت کنی و مقصدهای پیش‌فرض رو تعیین کنی:', { 
             parse_mode: 'HTML', 
-            reply_markup: {
-                inline_keyboard: [
-                    [Markup.button.callback('➖ حذف', 'admin_remove_server'), Markup.button.callback('✏️ ویرایش', 'admin_edit_server'), Markup.button.callback('➕ افزودن', 'admin_add_server')],
-                    [Markup.button.callback('📋 لیست سرورها', 'admin_list_servers')],
-                    [Markup.button.callback('✅ سرور عادی', 'admin_set_active_server'), Markup.button.callback('👑 سرور VIP', 'admin_set_vip_server')],
-                    [Markup.button.callback('🧳 مدیریت وضعیت تخلیه', 'admin_migration_menu')],
-                    [Markup.button.callback('🔙 بازگشت', 'back_admin')]
-                ]
-            }
+            reply_markup: adminServersMenu.reply_markup // استفاده از متغیری که تو فایل keyboards تعریف شده
         });
         ctx.answerCbQuery();
     });
@@ -424,6 +416,84 @@ function setupHandlers(bot) {
         
         buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_servers_menu')]);
         ctx.editMessageText('🧳 <b>مدیریت وضعیت تخلیه سرورها</b>\n\nاگه سروری رو روی حالت "در حال تخلیه" بذاری، کاربرای اون سرور موقع تمدید، به صورت اتوماتیک به سرور اکتیو (جدید) کوچ داده میشن.\n\nبرای تغییر وضعیت، روی دکمه‌ی سرور مورد نظر کلیک کن:', { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
+    });
+
+    // --- Cloudflare DNS Management ---
+
+    // 1. منوی اصلی کلودفلر (لیست دامنه‌ها)
+    bot.action('admin_cf_menu', async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        await ctx.answerCbQuery('در حال دریافت دامنه‌ها از Cloudflare...', { show_alert: false });
+
+        const zones = await getCloudflareZones();
+        
+        if (!zones || zones.length === 0) {
+            return ctx.editMessageText('❌ هیچ دامنه‌ای یافت نشد یا توکن نامعتبر است.', {
+                reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'admin_servers_menu')]] }
+            });
+        }
+
+        const buttons = zones.map(z => [Markup.button.callback(`🌐 ${z.name}`, `cf_zone_${z.id}_${z.name}`)]);
+        buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_servers_menu')]);
+
+        ctx.editMessageText('☁️ <b>مدیریت Cloudflare</b>\n\nلطفاً دامنه مورد نظر را انتخاب کنید:', { 
+            parse_mode: 'HTML', 
+            reply_markup: { inline_keyboard: buttons } 
+        });
+    });
+
+    // 2. لیست رکوردهای یک دامنه
+    bot.action(/cf_zone_(.+)_(.+)/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const zoneId = ctx.match[1];
+        const domainName = ctx.match[2];
+        
+        // ذخیره کردن zoneId تو حافظه برای مرحله بعد تا طول دکمه شیشه‌ای زیاد نشه
+        adminSteps.set(ctx.from.id, { step: 'CF_VIEW_ZONE', zoneId: zoneId });
+
+        await ctx.answerCbQuery('در حال دریافت رکوردها...', { show_alert: false });
+        const records = await getDnsRecords(zoneId);
+
+        if (!records || records.length === 0) {
+            return ctx.editMessageText(`❌ هیچ رکورد نوع A برای دامنه ${domainName} یافت نشد.`, {
+                reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'admin_cf_menu')]] }
+            });
+        }
+
+        let buttons = [];
+        let text = `☁️ <b>رکوردهای A دامنه:</b> ${domainName}\n\nبرای تغییر IP، روی رکورد مورد نظر کلیک کنید:\n`;
+
+        records.forEach(r => {
+            const proxyStatus = r.proxied ? '🟠 پروکسی روشن' : '⚪️ DNS Only';
+            // اینجا فقط آیدی رکورد رو می‌فرستیم که طولش زیر ۶۴ کاراکتر بمونه
+            buttons.push([Markup.button.callback(`✏️ ${r.name}`, `cfedit_${r.id}`)]);
+            text += `\n🔸 <b>${r.name}</b>\nآی‌پی: <code>${r.content}</code>\nوضعیت: ${proxyStatus}\n〰️〰️〰️`;
+        });
+
+        buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_cf_menu')]);
+
+        ctx.editMessageText(text, { 
+            parse_mode: 'HTML', 
+            reply_markup: { inline_keyboard: buttons } 
+        });
+    });
+
+    // 3. درخواست IP جدید از ادمین
+    bot.action(/cfedit_(.+)/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const recordId = ctx.match[1];
+        
+        // گرفتن zoneId از حافظه
+        const state = adminSteps.get(ctx.from.id);
+        if (!state || !state.zoneId) {
+             return ctx.answerCbQuery('❌ لطفاً دوباره از منوی دامنه‌ها شروع کنید.', {show_alert: true});
+        }
+
+        // ذخیره استیت برای مرحله بعد (ZoneId رو هم برای آپدیت نگه می‌داریم)
+        adminSteps.set(ctx.from.id, { step: 'CF_WAITING_IP', zoneId: state.zoneId, recordId: recordId });
+        
+        ctx.reply('✏️ لطفاً آی‌پی (IP) جدید را برای این رکورد ارسال کنید:\n\n(مثال: 104.21.23.10)');
+        ctx.answerCbQuery();
     });
 
     bot.action(/toggle_migration_srv_(.*)/, (ctx) => {
@@ -1373,9 +1443,19 @@ function setupHandlers(bot) {
         writeDb(freshDb);
 
         // پاک کردن پیام انتظار و ارسال کانفیگ
+        // پاک کردن پیام انتظار
         await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
-        // کد قبلی را با این جایگزین کنید:
-        await ctx.telegram.sendMessage(ctx.from.id, `🎁 <b>کانفیگ تست شما با موفقیت صادر شد.</b>\n\n📦 <b>حجم:</b> 200 مگابایت\n⏳ <b>زمان:</b> 1 روز\n\nجهت دریافت روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('🎁 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]] } });
+        
+        // ارسال پیام کانفیگ با دکمه شیشه‌ای
+        await ctx.telegram.sendMessage(ctx.from.id, `🎁 <b>کانفیگ تست شما با موفقیت صادر شد.</b>\n\n📦 <b>حجم:</b> 200 مگابایت\n⏳ <b>زمان:</b> 1 روز\n\nجهت دریافت روی دکمه زیر کلیک کنید:`, { 
+            parse_mode: 'HTML', 
+            reply_markup: { 
+                inline_keyboard: [[Markup.button.callback('🎁 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]] 
+            } 
+        });
+
+        // فراخوانی مجدد کیبورد اصلی برای جلوگیری از بسته شدن منو
+        await ctx.reply('✅ ساخت اکانت به پایان رسید. منوی اصلی:', mainKeyboard);
     }); 
 
     bot.action(/sendtest_(\d+)/, async (ctx) => {
@@ -1396,6 +1476,7 @@ function setupHandlers(bot) {
 
         await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n✅ ارسال شد');
         await ctx.telegram.sendMessage(userId, `🎁 <b>کانفیگ تست شما آماده است.</b>\nجهت دریافت روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('🎁 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]] } });
+        await ctx.reply('✅ ساخت اکانت به پایان رسید. منوی اصلی:', mainKeyboard);
     });
 
     bot.action(/get_configs_(.+)/, async (ctx) => {
@@ -1822,6 +1903,41 @@ function setupHandlers(bot) {
                 } catch (e) {
                     ctx.reply('❌ خطا در پردازش فرمت.');
                 }
+                adminSteps.delete(ctx.from.id);
+                return;
+            }
+
+            // هندل کردن IP جدید برای کلودفلر
+            if (adminState.step === 'CF_WAITING_IP') {
+                const newIp = input;
+                const { zoneId, recordId } = adminState;
+
+                // یک ولیدیشن ساده برای فرمت IP
+                const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+                if (!ipRegex.test(newIp)) {
+                    return ctx.reply('❌ فرمت IP اشتباه است. لطفاً فقط یک آی‌پی معتبر بفرستید.');
+                }
+
+                ctx.reply('⏳ در حال اعمال تغییرات در Cloudflare...');
+
+                // برای آپدیت، باید اسم رکورد و وضعیت پروکسی رو داشته باشیم
+                // پس یه بار دیگه رکوردها رو می‌گیریم تا دیتای قبلیش رو پیدا کنیم
+                const records = await getDnsRecords(zoneId);
+                const targetRecord = records.find(r => r.id === recordId);
+
+                if (!targetRecord) {
+                    adminSteps.delete(ctx.from.id);
+                    return ctx.reply('❌ رکورد در کلودفلر یافت نشد.');
+                }
+
+                const success = await updateDnsRecord(zoneId, recordId, targetRecord.name, 'A', newIp, targetRecord.proxied);
+
+                if (success) {
+                    ctx.reply(`✅ آی‌پی دامنه <b>${targetRecord.name}</b> با موفقیت به <code>${newIp}</code> تغییر یافت.`, { parse_mode: 'HTML' });
+                } else {
+                    ctx.reply('❌ خطا در ارتباط با کلودفلر. تغییرات اعمال نشد.');
+                }
+
                 adminSteps.delete(ctx.from.id);
                 return;
             }
