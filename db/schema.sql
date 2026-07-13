@@ -13,9 +13,7 @@ CREATE TABLE IF NOT EXISTS settings (
     sales_open INTEGER NOT NULL DEFAULT 1,
     maintenance INTEGER NOT NULL DEFAULT 0,
     active_server_id TEXT,
-    active_vip_server_id TEXT,
-    crisis_mode INTEGER NOT NULL DEFAULT 0,
-    crisis_config TEXT
+    active_vip_server_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS plans (
