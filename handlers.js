@@ -448,6 +448,9 @@ function setupHandlers(bot) {
         const zoneId = ctx.match[1];
         const domainName = ctx.match[2];
         
+        // ذخیره کردن zoneId تو حافظه برای مرحله بعد تا طول دکمه شیشه‌ای زیاد نشه
+        adminSteps.set(ctx.from.id, { step: 'CF_VIEW_ZONE', zoneId: zoneId });
+
         await ctx.answerCbQuery('در حال دریافت رکوردها...', { show_alert: false });
         const records = await getDnsRecords(zoneId);
 
@@ -462,7 +465,8 @@ function setupHandlers(bot) {
 
         records.forEach(r => {
             const proxyStatus = r.proxied ? '🟠 پروکسی روشن' : '⚪️ DNS Only';
-            buttons.push([Markup.button.callback(`✏️ ${r.name}`, `cf_edit_${zoneId}_${r.id}`)]);
+            // اینجا فقط آیدی رکورد رو می‌فرستیم که طولش زیر ۶۴ کاراکتر بمونه
+            buttons.push([Markup.button.callback(`✏️ ${r.name}`, `cfedit_${r.id}`)]);
             text += `\n🔸 <b>${r.name}</b>\nآی‌پی: <code>${r.content}</code>\nوضعیت: ${proxyStatus}\n〰️〰️〰️`;
         });
 
@@ -475,13 +479,18 @@ function setupHandlers(bot) {
     });
 
     // 3. درخواست IP جدید از ادمین
-    bot.action(/cf_edit_(.+)_(.+)/, async (ctx) => {
+    bot.action(/cfedit_(.+)/, async (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
-        const zoneId = ctx.match[1];
-        const recordId = ctx.match[2];
+        const recordId = ctx.match[1];
+        
+        // گرفتن zoneId از حافظه
+        const state = adminSteps.get(ctx.from.id);
+        if (!state || !state.zoneId) {
+             return ctx.answerCbQuery('❌ لطفاً دوباره از منوی دامنه‌ها شروع کنید.', {show_alert: true});
+        }
 
-        // ذخیره استیت برای مرحله بعد
-        adminSteps.set(ctx.from.id, { step: 'CF_WAITING_IP', zoneId, recordId });
+        // ذخیره استیت برای مرحله بعد (ZoneId رو هم برای آپدیت نگه می‌داریم)
+        adminSteps.set(ctx.from.id, { step: 'CF_WAITING_IP', zoneId: state.zoneId, recordId: recordId });
         
         ctx.reply('✏️ لطفاً آی‌پی (IP) جدید را برای این رکورد ارسال کنید:\n\n(مثال: 104.21.23.10)');
         ctx.answerCbQuery();
