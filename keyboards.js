@@ -61,7 +61,6 @@ const getAdminKeyboard = (db) => Markup.inlineKeyboard([
     ],
     [
         Markup.button.callback('👥 مدیریت کاربران', 'admin_users_menu'),
-        Markup.button.callback('سوییچ بحران 🚨', 'admin_crisis_menu'),
         Markup.button.callback('🖥 مدیریت سرورها', 'admin_servers_menu')
     ],
     [
