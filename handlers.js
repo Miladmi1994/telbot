@@ -398,15 +398,7 @@ function setupHandlers(bot) {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.editMessageText('🖥 <b>مدیریت سرورها</b>\nاز اینجا می‌تونی سرورها رو مدیریت کنی و مقصدهای پیش‌فرض رو تعیین کنی:', { 
             parse_mode: 'HTML', 
-            reply_markup: {
-                inline_keyboard: [
-                    [Markup.button.callback('➖ حذف', 'admin_remove_server'), Markup.button.callback('✏️ ویرایش', 'admin_edit_server'), Markup.button.callback('➕ افزودن', 'admin_add_server')],
-                    [Markup.button.callback('📋 لیست سرورها', 'admin_list_servers')],
-                    [Markup.button.callback('✅ سرور عادی', 'admin_set_active_server'), Markup.button.callback('👑 سرور VIP', 'admin_set_vip_server')],
-                    [Markup.button.callback('🧳 مدیریت وضعیت تخلیه', 'admin_migration_menu')],
-                    [Markup.button.callback('🔙 بازگشت', 'back_admin')]
-                ]
-            }
+            reply_markup: adminServersMenu.reply_markup // استفاده از متغیری که تو فایل keyboards تعریف شده
         });
         ctx.answerCbQuery();
     });
