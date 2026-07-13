@@ -12,7 +12,6 @@ function openDatabase(dbFilePath) {
     db.exec('PRAGMA foreign_keys = ON');
     db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
 
-    try { db.exec("ALTER TABLE payments ADD COLUMN config_name TEXT;"); } catch (e) {}
     try { db.exec("ALTER TABLE settings ADD COLUMN crisis_mode INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
     try { db.exec("ALTER TABLE settings ADD COLUMN crisis_config TEXT;"); } catch (e) {}
 
@@ -133,8 +132,6 @@ function loadState(db) {
             maintenance: !!settingsRow?.maintenance,
             activeServerId: settingsRow?.active_server_id || undefined,
             activeVipServerId: settingsRow?.active_vip_server_id || undefined,
-            crisisMode: !!settingsRow?.crisis_mode,
-            crisisConfig: settingsRow?.crisis_config || null,
             plans
         },
         testUsers,
@@ -175,17 +172,13 @@ function saveState(db, data) {
                 sales_open = ?,
                 maintenance = ?,
                 active_server_id = ?,
-                active_vip_server_id = ?,
-                crisis_mode = ?,
-                crisis_config = ?
+                active_vip_server_id = ?
             WHERE id = 1
         `).run(
             data.settings?.salesOpen ? 1 : 0,
             data.settings?.maintenance ? 1 : 0,
             data.settings?.activeServerId || null,
-            data.settings?.activeVipServerId || null,
-            data.settings?.crisisMode ? 1 : 0,
-            data.settings?.crisisConfig || null
+            data.settings?.activeVipServerId || null
         );
 
         db.prepare('DELETE FROM payments').run();
