@@ -12,12 +12,9 @@ function openDatabase(dbFilePath) {
     db.exec('PRAGMA foreign_keys = ON');
     db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
 
-    // این بلاک اضافه شد تا ستون رو تو دیتابیس‌های موجود هم بسازه
-    try {
-        db.exec("ALTER TABLE payments ADD COLUMN config_name TEXT;");
-        db.exec("ALTER TABLE settings ADD COLUMN crisis_mode INTEGER NOT NULL DEFAULT 0;");
-        db.exec("ALTER TABLE settings ADD COLUMN crisis_config TEXT;");
-    } catch (e) {}
+    try { db.exec("ALTER TABLE payments ADD COLUMN config_name TEXT;"); } catch (e) {}
+    try { db.exec("ALTER TABLE settings ADD COLUMN crisis_mode INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE settings ADD COLUMN crisis_config TEXT;"); } catch (e) {}
 
     return db;
 }
