@@ -5,6 +5,7 @@ const { DatabaseSync } = require('node:sqlite');
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 function openDatabase(dbFilePath) {
+    
     const dir = path.dirname(dbFilePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
