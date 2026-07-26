@@ -12,10 +12,8 @@ function openDatabase(dbFilePath) {
     db.exec('PRAGMA foreign_keys = ON');
     db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
 
-    // این بلاک اضافه شد تا ستون رو تو دیتابیس‌های موجود هم بسازه
-    try {
-        db.exec("ALTER TABLE payments ADD COLUMN config_name TEXT;");
-    } catch (e) {}
+    try { db.exec("ALTER TABLE settings ADD COLUMN crisis_mode INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE settings ADD COLUMN crisis_config TEXT;"); } catch (e) {}
 
     return db;
 }
@@ -156,17 +154,17 @@ function saveState(db, data) {
 
     try {
         db.prepare(`
-            UPDATE global_stats SET
-                total_income = ?,
-                successful_sales = ?,
-                abandoned_carts = ?,
-                test_to_buy_conversion = ?
+            UPDATE settings SET
+                sales_open = ?,
+                maintenance = ?,
+                active_server_id = ?,
+                active_vip_server_id = ?
             WHERE id = 1
         `).run(
-            data.totalIncome || 0,
-            data.successfulSales || 0,
-            data.stats?.abandonedCarts || 0,
-            data.stats?.testToBuyConversion || 0
+            data.settings?.salesOpen ? 1 : 0,
+            data.settings?.maintenance ? 1 : 0,
+            data.settings?.activeServerId || null,
+            data.settings?.activeVipServerId || null
         );
 
         db.prepare(`
