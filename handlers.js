@@ -171,6 +171,47 @@ function setupHandlers(bot) {
         return next();
     });
 
+    bot.command('send_backup_config', async (ctx) => {
+    if (!ADMIN_IDS.includes(ctx.from.id)) return;
+    const args = ctx.message.text.split(' ');
+    const newSni = args[1]; 
+    if (!newSni) return ctx.reply('❌ لطفاً SNI جدید را وارد کنید.');
+
+    const db = readDb();
+    let count = 0;
+
+    for (const userId in db.users) {
+        // بررسی اینکه آیا کاربر در لیست VIP قرار دارد یا خیر
+        if (!db.vipUsers || !db.vipUsers.map(String).includes(String(userId))) continue;
+        
+        if (!Array.isArray(db.users[userId])) continue;
+        for (const conf of db.users[userId]) {
+            if (conf.name === 'سرویس قبلی' || conf.deletedFromPanel) continue;
+            
+            let link = conf.configLink || ""; 
+            if (!link) continue;
+
+            if (link.includes('sni=')) {
+                link = link.replace(/sni=[^&#]+/, `sni=${newSni}`);
+            } else if (link.includes('#')) {
+                link = link.replace('#', `&sni=${newSni}#`);
+            } else {
+                link += `&sni=${newSni}`;
+            }
+            
+            const message = `🔄 <b>کانفیگ پشتیبان (هلند)</b>\n\nاین کانفیگ را به عنوان پشتیبان در کلاینت خود اضافه کنید تا در صورت نیاز از آن استفاده کنید:\n\n<code>${link}</code>`;
+            
+            try {
+                await bot.telegram.sendMessage(userId, message, { parse_mode: 'HTML' });
+                count++;
+            } catch (e) {
+                logError('Send Backup Config', e);
+            }
+        }
+    }
+    ctx.reply(`✅ کانفیگ پشتیبان با SNI جدید فقط برای کاربران VIP (${count} کانفیگ) ارسال شد.`);
+});
+
     bot.action('admin_broadcast', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.editMessageText('📢 لطفاً گروه هدف برای ارسال پیام را انتخاب کنید:', { 
