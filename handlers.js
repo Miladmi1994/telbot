@@ -1800,22 +1800,22 @@ function setupHandlers(bot) {
                     if (!targetServer) targetServer = db.servers?.find(s => s.id === db.settings.activeVipServerId) || db.servers?.find(s => s.id === db.settings.activeServerId);
                     if (!targetServer) continue;
 
-                    const backupServer = { ...targetServer, sni: newSni };
+                    const newServerObj = { ...targetServer, sni: newSni };
                     
-                    const config1 = generateMtnConfig(conf.uuid, conf.name, backupServer);
-                    const config2 = generateMciConfig(conf.uuid, conf.name, backupServer);
+                    const config1 = generateMtnConfig(conf.uuid, conf.name, newServerObj);
+                    const config2 = generateMciConfig(conf.uuid, conf.name, newServerObj);
                     
-                    const message = `🔄 <b>کانفیگ پشتیبان (هلند)</b>\n\nاین کانفیگ‌ها را به عنوان پشتیبان در کلاینت خود اضافه کنید تا در صورت اختلال، بدون قطعی متصل بمانید:\n\n🟡 <b>کانفیگ شماره ۱:</b>\n<blockquote expandable><code>${config1}</code></blockquote>\n\n🔵 <b>کانفیگ شماره ۲:</b>\n<blockquote expandable><code>${config2}</code></blockquote>`;
+                    const message = `🔄 <b>کانفیگ‌های سرور جدید (هلند)</b>\n\nکاربر گرامی، جهت اتصال پس از انتقال به سرور جدید، لطفاً کانفیگ‌های زیر را در برنامه خود وارد کنید:\n\n🟡 <b>کانفیگ شماره ۱:</b>\n<blockquote expandable><code>${config1}</code></blockquote>\n\n🔵 <b>کانفیگ شماره ۲:</b>\n<blockquote expandable><code>${config2}</code></blockquote>`;
                     
                     try {
                         await bot.telegram.sendMessage(uid, message, { parse_mode: 'HTML' });
                         count++;
                     } catch (e) {
-                        logError('Send Backup Config', e);
+                        logError('Send New Server Config', e);
                     }
                 }
             }
-            return ctx.reply(`✅ کانفیگ پشتیبان با SNI جدید فقط برای کاربران VIP (${count} کانفیگ) ارسال شد.`);
+            return ctx.reply(`✅ کانفیگ‌های سرور جدید با SNI آپدیت‌شده فقط برای کاربران VIP (${count} کانفیگ) ارسال شد.`);
         }
 
         const ignoreTexts = ['🛒 خرید مستقیم (بدون شماره)', '🛠 پشتیبانی و گزارش خطا', '❌ خروج از چت پشتیبانی', '👤 داشبورد من', '📚 آموزش‌ها', '🔄 تمدید سرویس'];
