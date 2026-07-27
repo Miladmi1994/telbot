@@ -173,15 +173,6 @@ function setupHandlers(bot) {
 
     bot.command('send_backup_config', async (ctx) => {
     if (!ADMIN_IDS.includes(ctx.from.id)) return;
-    const args = ctx.message.text.split(' ');
-    const newSni = args[1]; 
-    if (!newSni) return ctx.reply('❌ لطفاً SNI جدید را وارد کنید.');
-
-    const db = readDb();
-    let count = 0;
-
-    bot.command('send_backup_config', async (ctx) => {
-    if (!ADMIN_IDS.includes(ctx.from.id)) return;
     adminSteps.set(ctx.from.id, { step: 'waiting_for_backup_sni' });
     await ctx.reply('لطفاً SNI جدید را ارسال کنید:');
 });
@@ -1789,38 +1780,7 @@ function setupHandlers(bot) {
         const input = ctx.message.text.trim();
         const adminState = adminSteps.get(ctx.from.id);
         const state = userSteps.get(ctx.from.id);
-        
-        const ignoreTexts = ['🛒 خرید مستقیم (بدون شماره)', '🛠 پشتیبانی و گزارش خطا', '❌ خروج از چت پشتیبانی', '👤 داشبورد من', '📚 آموزش‌ها', '🔄 تمدید سرویس'];
-        if (ignoreTexts.includes(ctx.message.text)) return;
-
-        if (state && state.step === 'WAITING_NAME') {
-            await processConfigName(ctx, ctx.message.text);
-            return;
-        }
-        
-        if (isUserAdmin(userId) && adminState && adminState.step) {
-            const db = readDb();
-
-            // --- Admin DM Handle Text ---
-            if (adminState.step === 'DM_GET_USER') {
-                adminSteps.set(ctx.from.id, { step: 'DM_GET_MSG', targetUserId: input });
-                ctx.reply(`✍️ حالا پیامی که می‌خواهید برای کاربر ${input} ارسال شود را بفرستید:\n(پشتیبانی از متن، عکس، ویدیو، ویس و فایل)`);
-                return;
-            }
-
-            if (adminState.step === 'DM_GET_MSG') {
-                try {
-                    await ctx.telegram.copyMessage(adminState.targetUserId, ctx.chat.id, ctx.message.message_id);
-                    ctx.reply('✅ پیام متنی شما با موفقیت برای کاربر ارسال شد.');
-                } catch (e) {
-                    ctx.reply('❌ ارسال ناموفق! (احتمالاً کاربر ربات را بلاک کرده است)');
-                }
-                adminSteps.delete(ctx.from.id);
-                return;
-            }
-            // -----------------------------
-
-            const adminState = adminSteps.get(ctx.from.id);
+        const adminState = adminSteps.get(ctx.from.id);
 if (adminState && adminState.step === 'waiting_for_backup_sni') {
     adminSteps.delete(ctx.from.id);
     const newSni = ctx.message.text.trim();
@@ -1859,6 +1819,37 @@ if (adminState && adminState.step === 'waiting_for_backup_sni') {
     }
     return ctx.reply(`✅ کانفیگ پشتیبان با SNI جدید فقط برای کاربران VIP (${count} کانفیگ) ارسال شد.`);
 }
+        const ignoreTexts = ['🛒 خرید مستقیم (بدون شماره)', '🛠 پشتیبانی و گزارش خطا', '❌ خروج از چت پشتیبانی', '👤 داشبورد من', '📚 آموزش‌ها', '🔄 تمدید سرویس'];
+        if (ignoreTexts.includes(ctx.message.text)) return;
+
+        if (state && state.step === 'WAITING_NAME') {
+            await processConfigName(ctx, ctx.message.text);
+            return;
+        }
+        
+        if (isUserAdmin(userId) && adminState && adminState.step) {
+            const db = readDb();
+
+            // --- Admin DM Handle Text ---
+            if (adminState.step === 'DM_GET_USER') {
+                adminSteps.set(ctx.from.id, { step: 'DM_GET_MSG', targetUserId: input });
+                ctx.reply(`✍️ حالا پیامی که می‌خواهید برای کاربر ${input} ارسال شود را بفرستید:\n(پشتیبانی از متن، عکس، ویدیو، ویس و فایل)`);
+                return;
+            }
+
+            if (adminState.step === 'DM_GET_MSG') {
+                try {
+                    await ctx.telegram.copyMessage(adminState.targetUserId, ctx.chat.id, ctx.message.message_id);
+                    ctx.reply('✅ پیام متنی شما با موفقیت برای کاربر ارسال شد.');
+                } catch (e) {
+                    ctx.reply('❌ ارسال ناموفق! (احتمالاً کاربر ربات را بلاک کرده است)');
+                }
+                adminSteps.delete(ctx.from.id);
+                return;
+            }
+            // -----------------------------
+
+            
 
             if (adminState.step === 'ADD_ADMIN') {
                 if (ADMIN_IDS.includes(input)) {
