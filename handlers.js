@@ -1788,6 +1788,7 @@ function setupHandlers(bot) {
 
             const db = readDb();
             let count = 0;
+            const oldFlags = ['🇳🇱', '🇩🇪', '🇮🇹', '🇫🇷', '🇬🇧', '🇹🇷', '🌍', '🇫🇮'];
 
             for (const uid in db.users) {
                 if (!db.vipUsers || !db.vipUsers.map(String).includes(String(uid))) continue;
@@ -1802,8 +1803,14 @@ function setupHandlers(bot) {
 
                     const newServerObj = { ...targetServer, sni: newSni };
                     
-                    const config1 = generateMtnConfig(conf.uuid, conf.name, newServerObj);
-                    const config2 = generateMciConfig(conf.uuid, conf.name, newServerObj);
+                    // --- حذف پرچم‌های قدیمی و اضافه کردن پرچم هلند ---
+                    let newName = conf.name;
+                    oldFlags.forEach(f => { newName = newName.replace(f, '').trim(); });
+                    newName = `${newName} 🇳🇱`.trim();
+                    // ----------------------------------------------------
+                    
+                    const config1 = generateMtnConfig(conf.uuid, newName, newServerObj);
+                    const config2 = generateMciConfig(conf.uuid, newName, newServerObj);
                     
                     const message = `🔄 <b>کانفیگ‌های سرور جدید (هلند)</b>\n\nکاربر گرامی، جهت اتصال پس از انتقال به سرور جدید، لطفاً کانفیگ‌های زیر را در برنامه خود وارد کنید:\n\n🟡 <b>کانفیگ شماره ۱:</b>\n<blockquote expandable><code>${config1}</code></blockquote>\n\n🔵 <b>کانفیگ شماره ۲:</b>\n<blockquote expandable><code>${config2}</code></blockquote>`;
                     
@@ -1815,7 +1822,7 @@ function setupHandlers(bot) {
                     }
                 }
             }
-            return ctx.reply(`✅ کانفیگ‌های سرور جدید با SNI آپدیت‌شده فقط برای کاربران VIP (${count} کانفیگ) ارسال شد.`);
+            return ctx.reply(`✅ کانفیگ‌های سرور جدید با پرچم هلند فقط برای کاربران VIP (${count} کانفیگ) ارسال شد.`);
         }
 
         const ignoreTexts = ['🛒 خرید مستقیم (بدون شماره)', '🛠 پشتیبانی و گزارش خطا', '❌ خروج از چت پشتیبانی', '👤 داشبورد من', '📚 آموزش‌ها', '🔄 تمدید سرویس'];
