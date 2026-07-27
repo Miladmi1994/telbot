@@ -171,6 +171,12 @@ function setupHandlers(bot) {
         return next();
     });
 
+    bot.command('send_backup_config', async (ctx) => {
+    if (!isUserAdmin(ctx.from.id.toString())) return; 
+    adminSteps.set(ctx.from.id, { step: 'waiting_for_backup_sni' });
+    await ctx.reply('لطفاً SNI جدید را ارسال کنید:');
+});
+
     bot.action('admin_broadcast', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.editMessageText('📢 لطفاً گروه هدف برای ارسال پیام را انتخاب کنید:', { 
@@ -1774,7 +1780,44 @@ function setupHandlers(bot) {
         const input = ctx.message.text.trim();
         const adminState = adminSteps.get(ctx.from.id);
         const state = userSteps.get(ctx.from.id);
-        
+
+        if (isUserAdmin(userId) && adminState && adminState.step === 'waiting_for_backup_sni') {
+            adminSteps.delete(ctx.from.id);
+            const newSni = ctx.message.text.trim();
+            if (!newSni) return ctx.reply('❌ مقدار SNI نمی‌تواند خالی باشد.');
+
+            const db = readDb();
+            let count = 0;
+
+            for (const uid in db.users) {
+                if (!db.vipUsers || !db.vipUsers.map(String).includes(String(uid))) continue;
+                if (!Array.isArray(db.users[uid])) continue;
+                
+                for (const conf of db.users[uid]) {
+                    if (conf.name === 'سرویس قبلی' || conf.deletedFromPanel) continue;
+                    
+                    let targetServer = db.servers?.find(s => s.id === conf.serverId);
+                    if (!targetServer) targetServer = db.servers?.find(s => s.id === db.settings.activeVipServerId) || db.servers?.find(s => s.id === db.settings.activeServerId);
+                    if (!targetServer) continue;
+
+                    const newServerObj = { ...targetServer, sni: newSni };
+                    
+                    const config1 = generateMtnConfig(conf.uuid, conf.name, newServerObj);
+                    const config2 = generateMciConfig(conf.uuid, conf.name, newServerObj);
+                    
+                    const message = `🔄 <b>کانفیگ‌های سرور جدید (هلند)</b>\n\nکاربر گرامی، جهت اتصال پس از انتقال به سرور جدید، لطفاً کانفیگ‌های زیر را در برنامه خود وارد کنید:\n\n🟡 <b>کانفیگ شماره ۱:</b>\n<blockquote expandable><code>${config1}</code></blockquote>\n\n🔵 <b>کانفیگ شماره ۲:</b>\n<blockquote expandable><code>${config2}</code></blockquote>`;
+                    
+                    try {
+                        await bot.telegram.sendMessage(uid, message, { parse_mode: 'HTML' });
+                        count++;
+                    } catch (e) {
+                        logError('Send New Server Config', e);
+                    }
+                }
+            }
+            return ctx.reply(`✅ کانفیگ‌های سرور جدید با SNI آپدیت‌شده فقط برای کاربران VIP (${count} کانفیگ) ارسال شد.`);
+        }
+
         const ignoreTexts = ['🛒 خرید مستقیم (بدون شماره)', '🛠 پشتیبانی و گزارش خطا', '❌ خروج از چت پشتیبانی', '👤 داشبورد من', '📚 آموزش‌ها', '🔄 تمدید سرویس'];
         if (ignoreTexts.includes(ctx.message.text)) return;
 
@@ -1949,12 +1992,10 @@ function setupHandlers(bot) {
                 return;
             }
 
-            // هندل کردن IP جدید برای کلودفلر
             if (adminState.step === 'CF_WAITING_IP') {
                 const newIp = input;
                 const { zoneId, recordId } = adminState;
 
-                // یک ولیدیشن ساده برای فرمت IP
                 const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
                 if (!ipRegex.test(newIp)) {
                     return ctx.reply('❌ فرمت IP اشتباه است. لطفاً فقط یک آی‌پی معتبر بفرستید.');
@@ -1962,8 +2003,6 @@ function setupHandlers(bot) {
 
                 ctx.reply('⏳ در حال اعمال تغییرات در Cloudflare...');
 
-                // برای آپدیت، باید اسم رکورد و وضعیت پروکسی رو داشته باشیم
-                // پس یه بار دیگه رکوردها رو می‌گیریم تا دیتای قبلیش رو پیدا کنیم
                 const records = await getDnsRecords(zoneId);
                 const targetRecord = records.find(r => r.id === recordId);
 
@@ -2214,7 +2253,6 @@ function setupHandlers(bot) {
                 writeDb(freshDb);
 
                 try {
-                    // کد قبلی را با این جایگزین کنید:
                     await ctx.telegram.sendMessage(targetUserId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\nجهت دریافت کانفیگ‌های خود روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]]) });
                     ctx.reply(`✅ خرید دستی با موفقیت ثبت و برای کاربر ارسال شد.\n🌐 سرور انتخاب شده: ${targetServer?.name || 'پیش‌فرض'}`);
                 } catch (e) {
@@ -2309,112 +2347,104 @@ function setupHandlers(bot) {
             }
         }
 
-            // --- پردازش مقادیر جبران خسارت ---
-            if (adminState && adminState.step === 'COMP_GET_VALUE') {
-                const { serverId, compType } = adminState;
-                let addGb = 0;
-                let addDays = 0;
-                
-                try {
-                    if (compType === 'gb') {
-                        addGb = parseFloat(input);
-                        if (isNaN(addGb)) throw new Error();
-                    } else if (compType === 'days') {
-                        addDays = parseInt(input);
-                        if (isNaN(addDays)) throw new Error();
-                    } else if (compType === 'both') {
-                        const parts = input.split(' ');
-                        addGb = parseFloat(parts[0]);
-                        addDays = parseInt(parts[1]);
-                        if (isNaN(addGb) || isNaN(addDays)) throw new Error();
-                    }
-                } catch (e) {
-                    return ctx.reply('❌ فرمت وارد شده اشتباه است. لطفاً عدد معتبر وارد کنید.');
+        // --- پردازش مقادیر جبران خسارت ---
+        if (adminState && adminState.step === 'COMP_GET_VALUE') {
+            const { serverId, compType } = adminState;
+            let addGb = 0;
+            let addDays = 0;
+            
+            try {
+                if (compType === 'gb') {
+                    addGb = parseFloat(input);
+                    if (isNaN(addGb)) throw new Error();
+                } else if (compType === 'days') {
+                    addDays = parseInt(input);
+                    if (isNaN(addDays)) throw new Error();
+                } else if (compType === 'both') {
+                    const parts = input.split(' ');
+                    addGb = parseFloat(parts[0]);
+                    addDays = parseInt(parts[1]);
+                    if (isNaN(addGb) || isNaN(addDays)) throw new Error();
                 }
+            } catch (e) {
+                return ctx.reply('❌ فرمت وارد شده اشتباه است. لطفاً عدد معتبر وارد کنید.');
+            }
 
-                adminSteps.delete(ctx.from.id);
-                ctx.reply(`⏳ <b>در حال پردازش و اعمال جبران خسارت...</b>\n\nاین عملیات در پس‌زمینه انجام می‌شود و بسته به تعداد کاربران ممکن است چند دقیقه طول بکشد. لطفاً صبور باشید...`, { parse_mode: 'HTML' });
+            adminSteps.delete(ctx.from.id);
+            ctx.reply(`⏳ <b>در حال پردازش و اعمال جبران خسارت...</b>\n\nاین عملیات در پس‌زمینه انجام می‌شود و بسته به تعداد کاربران ممکن است چند دقیقه طول بکشد. لطفاً صبور باشید...`, { parse_mode: 'HTML' });
 
-                const db = readDb();
-                let successCount = 0;
-                let failCount = 0;
-                let affectedUsers = new Set();
-                
-                // اجرای حلقه امن در پس‌زمینه
-                (async () => {
-                    for (const uid in db.users) {
+            const db = readDb();
+            let successCount = 0;
+            let failCount = 0;
+            let affectedUsers = new Set();
+            
+            (async () => {
+                for (const uid in db.users) {
+                    let dbChanged = false;
+                    for (let conf of db.users[uid]) {
+                        if (serverId !== 'all' && conf.serverId !== serverId) continue;
+                        if (conf.name === 'سرویس قبلی' || conf.email.startsWith('Test_')) continue;
 
-                        let dbChanged = false;
-                        for (let conf of db.users[uid]) {
+                        const targetServer = db.servers?.find(s => s.id === conf.serverId);
+                        if (!targetServer) continue;
 
-                            // فیلتر کردن سرور و اکانت‌های تست
-                            if (serverId !== 'all' && conf.serverId !== serverId) continue;
-                            if (conf.name === 'سرویس قبلی' || conf.email.startsWith('Test_')) continue;
+                        try {
+                            const traffic = await getClientTraffic(conf.email, targetServer);
+                            if (!traffic) { failCount++; continue; }
 
-                            const targetServer = db.servers?.find(s => s.id === conf.serverId);
-                            if (!targetServer) continue;
+                            const isTimeExpired = traffic.expiryTime > 0 && traffic.expiryTime < Date.now();
+                            const isVolumeExpired = traffic.total > 0 && (traffic.up + traffic.down) >= traffic.total;
+                            
+                            if (isTimeExpired || isVolumeExpired) {
+                                continue;
+                            }
 
-                            try {
-                                const traffic = await getClientTraffic(conf.email, targetServer);
-                                if (!traffic) { failCount++; continue; }
+                            const currentTotalGB = traffic.total / 1073741824;
+                            let remainDays = 0;
+                            if (traffic.expiryTime > 0) {
+                                const diffMs = traffic.expiryTime - Date.now();
+                                if (diffMs > 0) remainDays = diffMs / (1000 * 60 * 60 * 24);
+                            }
 
-                                // --- بررسی فعال بودن اکانت ---
-                                const isTimeExpired = traffic.expiryTime > 0 && traffic.expiryTime < Date.now();
-                                const isVolumeExpired = traffic.total > 0 && (traffic.up + traffic.down) >= traffic.total;
-                                
-                                if (isTimeExpired || isVolumeExpired) {
-                                    continue; // اکانت منقضی شده است، رد می‌شویم
-                                }
-                                // -----------------------------
+                            const finalGB = traffic.total === 0 ? 0 : currentTotalGB + addGb;
+                            const finalDays = traffic.expiryTime === 0 ? 0 : Math.ceil(remainDays + addDays);
 
-                                const currentTotalGB = traffic.total / 1073741824;
-                                
-                                let remainDays = 0;
-                                if (traffic.expiryTime > 0) {
-                                    const diffMs = traffic.expiryTime - Date.now();
-                                    if (diffMs > 0) remainDays = diffMs / (1000 * 60 * 60 * 24);
-                                }
-
-                                const finalGB = traffic.total === 0 ? 0 : currentTotalGB + addGb;
-                                const finalDays = traffic.expiryTime === 0 ? 0 : Math.ceil(remainDays + addDays);
-
-                                const result = await renewClient(conf.uuid, conf.email, conf.email, finalGB, finalDays, targetServer);
-                                
-                                if (result && result.success) {
-                                    successCount++;
-                                    affectedUsers.add(uid);
-                                    dbChanged = true;
-                                } else {
-                                    failCount++;
-                                }
-                            } catch (err) {
+                            const result = await renewClient(conf.uuid, conf.email, conf.email, finalGB, finalDays, targetServer);
+                            
+                            if (result && result.success) {
+                                successCount++;
+                                affectedUsers.add(uid);
+                                dbChanged = true;
+                            } else {
                                 failCount++;
                             }
-                            
-                            await new Promise(r => setTimeout(r, 200));
+                        } catch (err) {
+                            failCount++;
                         }
-                        if (dbChanged) writeDb(db);
+                        await new Promise(r => setTimeout(r, 200));
                     }
+                    if (dbChanged) writeDb(db);
+                }
 
-                    await ctx.telegram.sendMessage(ctx.from.id, `✅ <b>عملیات جبران خسارت (تست کانفیگ خاص) پایان یافت.</b>\n\n🟢 موفق: ${successCount} کانفیگ\n🔴 ناموفق: ${failCount} کانفیگ\n👥 کاربران شامل هدیه: ${affectedUsers.size}`, { parse_mode: 'HTML' });
+                await ctx.telegram.sendMessage(ctx.from.id, `✅ <b>عملیات جبران خسارت پایان یافت.</b>\n\n🟢 موفق: ${successCount} کانفیگ\n🔴 ناموفق: ${failCount} کانفیگ\n👥 کاربران شامل هدیه: ${affectedUsers.size}`, { parse_mode: 'HTML' });
 
-                    if (affectedUsers.size > 0) {
-                        let userMsg = `🎁 <b>هدیه جبران خسارت</b>\n\nکاربر گرامی، بابت اختلالات اخیر سرورها صمیمانه عذرخواهی می‌کنیم.\nجهت جبران این قطعی، `;
-                        if (compType === 'gb') userMsg += `مقدار <b>${addGb} گیگابایت</b> حجم`;
-                        else if (compType === 'days') userMsg += `تعداد <b>${addDays} روز</b> زمان`;
-                        else userMsg += `مقدار <b>${addGb} گیگابایت</b> حجم و <b>${addDays} روز</b> زمان`;
-                        userMsg += ` به سرویس شما اضافه شد.\n\nاز همراهی و شکیبایی شما سپاسگزاریم. 🌹`;
+                if (affectedUsers.size > 0) {
+                    let userMsg = `🎁 <b>هدیه جبران خسارت</b>\n\nکاربر گرامی، بابت اختلالات اخیر صمیمانه عذرخواهی می‌کنیم.\nجهت جبران این قطعی، `;
+                    if (compType === 'gb') userMsg += `مقدار <b>${addGb} گیگابایت</b> حجم`;
+                    else if (compType === 'days') userMsg += `تعداد <b>${addDays} روز</b> زمان`;
+                    else userMsg += `مقدار <b>${addGb} گیگابایت</b> حجم و <b>${addDays} روز</b> زمان`;
+                    userMsg += ` به سرویس شما اضافه شد.\n\nاز همراهی و شکیبایی شما سپاسگزاریم. 🌹`;
 
-                        for (const uid of affectedUsers) {
-                            try {
-                                await ctx.telegram.sendMessage(uid, userMsg, { parse_mode: 'HTML' });
-                            } catch (e) {}
-                            await new Promise(r => setTimeout(r, 50));
-                        }
+                    for (const uid of affectedUsers) {
+                        try {
+                            await ctx.telegram.sendMessage(uid, userMsg, { parse_mode: 'HTML' });
+                        } catch (e) {}
+                        await new Promise(r => setTimeout(r, 50));
                     }
-                })();
-                return;
-            }
+                }
+            })();
+            return;
+        }
 
         // --- User Support Message ---
         if (state && (state.step === 'CHAT_ERROR' || state.step === 'CHAT_SUPPORT')) {
