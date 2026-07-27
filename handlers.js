@@ -180,36 +180,10 @@ function setupHandlers(bot) {
     const db = readDb();
     let count = 0;
 
-    for (const userId in db.users) {
-        // بررسی اینکه آیا کاربر در لیست VIP قرار دارد یا خیر
-        if (!db.vipUsers || !db.vipUsers.map(String).includes(String(userId))) continue;
-        
-        if (!Array.isArray(db.users[userId])) continue;
-        for (const conf of db.users[userId]) {
-            if (conf.name === 'سرویس قبلی' || conf.deletedFromPanel) continue;
-            
-            let link = conf.configLink || ""; 
-            if (!link) continue;
-
-            if (link.includes('sni=')) {
-                link = link.replace(/sni=[^&#]+/, `sni=${newSni}`);
-            } else if (link.includes('#')) {
-                link = link.replace('#', `&sni=${newSni}#`);
-            } else {
-                link += `&sni=${newSni}`;
-            }
-            
-            const message = `🔄 <b>کانفیگ پشتیبان (هلند)</b>\n\nاین کانفیگ را به عنوان پشتیبان در کلاینت خود اضافه کنید تا در صورت نیاز از آن استفاده کنید:\n\n<code>${link}</code>`;
-            
-            try {
-                await bot.telegram.sendMessage(userId, message, { parse_mode: 'HTML' });
-                count++;
-            } catch (e) {
-                logError('Send Backup Config', e);
-            }
-        }
-    }
-    ctx.reply(`✅ کانفیگ پشتیبان با SNI جدید فقط برای کاربران VIP (${count} کانفیگ) ارسال شد.`);
+    bot.command('send_backup_config', async (ctx) => {
+    if (!ADMIN_IDS.includes(ctx.from.id)) return;
+    adminSteps.set(ctx.from.id, { step: 'waiting_for_backup_sni' });
+    await ctx.reply('لطفاً SNI جدید را ارسال کنید:');
 });
 
     bot.action('admin_broadcast', (ctx) => {
@@ -1845,6 +1819,46 @@ function setupHandlers(bot) {
                 return;
             }
             // -----------------------------
+
+            const adminState = adminSteps.get(ctx.from.id);
+if (adminState && adminState.step === 'waiting_for_backup_sni') {
+    adminSteps.delete(ctx.from.id);
+    const newSni = ctx.message.text.trim();
+    if (!newSni) return ctx.reply('❌ مقدار SNI نمی‌تواند خالی باشد.');
+
+    const db = readDb();
+    let count = 0;
+
+    for (const userId in db.users) {
+        if (!db.vipUsers || !db.vipUsers.map(String).includes(String(userId))) continue;
+        if (!Array.isArray(db.users[userId])) continue;
+        
+        for (const conf of db.users[userId]) {
+            if (conf.name === 'سرویس قبلی' || conf.deletedFromPanel) continue;
+            
+            let link = conf.configLink || ""; 
+            if (!link) continue;
+
+            if (link.includes('sni=')) {
+                link = link.replace(/sni=[^&#]+/, `sni=${newSni}`);
+            } else if (link.includes('#')) {
+                link = link.replace('#', `&sni=${newSni}#`);
+            } else {
+                link += `&sni=${newSni}`;
+            }
+            
+            const message = `🔄 <b>کانفیگ پشتیبان (هلند)</b>\n\nاین کانفیگ را به عنوان پشتیبان در کلاینت خود اضافه کنید تا در صورت نیاز از آن استفاده کنید:\n\n<code>${link}</code>`;
+            
+            try {
+                await bot.telegram.sendMessage(userId, message, { parse_mode: 'HTML' });
+                count++;
+            } catch (e) {
+                logError('Send Backup Config', e);
+            }
+        }
+    }
+    return ctx.reply(`✅ کانفیگ پشتیبان با SNI جدید فقط برای کاربران VIP (${count} کانفیگ) ارسال شد.`);
+}
 
             if (adminState.step === 'ADD_ADMIN') {
                 if (ADMIN_IDS.includes(input)) {
