@@ -172,7 +172,7 @@ function setupHandlers(bot) {
     });
 
     bot.command('send_backup_config', async (ctx) => {
-    if (!ADMIN_IDS.includes(ctx.from.id)) return;
+    if (!isUserAdmin(ctx.from.id.toString())) return; 
     adminSteps.set(ctx.from.id, { step: 'waiting_for_backup_sni' });
     await ctx.reply('لطفاً SNI جدید را ارسال کنید:');
 });
