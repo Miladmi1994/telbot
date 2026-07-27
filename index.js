@@ -3,6 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { Telegraf } = require('telegraf');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const setupHandlers = require('./handlers');
+const { scheduleNightlyBackup } = require('./scripts/backup-db');
 
 const bot = new Telegraf(
     process.env.BOT_TOKEN,
@@ -12,6 +13,7 @@ const bot = new Telegraf(
 );
 
 setupHandlers(bot);
+scheduleNightlyBackup(bot);
 
 bot.catch((err, ctx) => {
     console.error(`⚠️ خطای محافظت شده در پردازش آپدیت:`, err.message);

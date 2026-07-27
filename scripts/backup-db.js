@@ -22,15 +22,39 @@ async function gzipFile(sourcePath, destPath) {
 }
 
 function resolveDbPath() {
-    const dbPath = process.env.DB_PATH
-        ? path.resolve(ROOT, process.env.DB_PATH)
-        : path.join(ROOT, 'db.json');
-
-    if (!fs.existsSync(dbPath)) {
-        throw new Error(`Database not found: ${dbPath}`);
+    if (process.env.DB_PATH) {
+        const dbPath = path.resolve(ROOT, process.env.DB_PATH);
+        if (!fs.existsSync(dbPath)) {
+            throw new Error(`Database not found: ${dbPath}`);
+        }
+        return dbPath;
     }
 
-    return dbPath;
+    const candidates = [
+        path.join(ROOT, 'db.json'),
+        path.join(ROOT, 'telbot.db')
+    ];
+    const found = candidates.find((p) => fs.existsSync(p));
+    if (!found) {
+        throw new Error(`Database not found (checked: ${candidates.join(', ')})`);
+    }
+    return found;
+}
+
+function copySqliteBackup(dbPath, rawBackup) {
+    try {
+        const { DatabaseSync } = require('node:sqlite');
+        const db = new DatabaseSync(dbPath);
+        const escaped = rawBackup.replace(/'/g, "''");
+        db.exec(`VACUUM INTO '${escaped}'`);
+        db.close();
+    } catch (err) {
+        console.warn(`VACUUM INTO failed (${err.message}); falling back to file copy`);
+        if (fs.existsSync(rawBackup)) {
+            try { fs.unlinkSync(rawBackup); } catch (_) {}
+        }
+        fs.copyFileSync(dbPath, rawBackup);
+    }
 }
 
 async function createBackup(dbPath) {
@@ -42,11 +66,7 @@ async function createBackup(dbPath) {
     const rawBackup = path.join(BACKUP_DIR, `${base}-${stamp}${ext}`);
 
     if (dbPath.endsWith('.db') || dbPath.endsWith('.sqlite')) {
-        const { DatabaseSync } = require('node:sqlite');
-        const db = new DatabaseSync(dbPath);
-        const escaped = rawBackup.replace(/'/g, "''");
-        db.exec(`VACUUM INTO '${escaped}'`);
-        db.close();
+        copySqliteBackup(dbPath, rawBackup);
     } else {
         fs.copyFileSync(dbPath, rawBackup);
     }
@@ -70,7 +90,23 @@ function pruneOldBackups() {
     }
 }
 
-async function sendToAdmin(filePath, caption) {
+function getAdminId() {
+    return process.env.ADMIN_ID;
+}
+
+async function sendWithTelegram(telegram, filePath, caption) {
+    const adminId = getAdminId();
+    if (!adminId) {
+        throw new Error('ADMIN_ID must be set in .env');
+    }
+    await telegram.sendDocument(adminId, { source: filePath }, { caption });
+}
+
+async function sendWithNewBot(filePath, caption) {
+    if (!process.env.BOT_TOKEN || !process.env.ADMIN_ID) {
+        throw new Error('BOT_TOKEN and ADMIN_ID must be set in .env');
+    }
+
     const agent = process.env.PROXY_URL
         ? new HttpsProxyAgent(process.env.PROXY_URL)
         : undefined;
@@ -79,18 +115,14 @@ async function sendToAdmin(filePath, caption) {
         agent ? { telegram: { agent } } : undefined
     );
 
-    await bot.telegram.sendDocument(
-        process.env.ADMIN_ID,
-        { source: filePath },
-        { caption }
-    );
+    await sendWithTelegram(bot.telegram, filePath, caption);
 }
 
-async function main() {
-    if (!process.env.BOT_TOKEN || !process.env.ADMIN_ID) {
-        throw new Error('BOT_TOKEN and ADMIN_ID must be set in .env');
-    }
-
+/**
+ * Create a gzipped DB backup, send it to ADMIN_ID, and prune old local files.
+ * @param {{ telegram?: import('telegraf').Telegram }} [options]
+ */
+async function runBackup(options = {}) {
     const dbPath = resolveDbPath();
     const backupFile = await createBackup(dbPath);
     const sizeMb = (fs.statSync(backupFile).size / (1024 * 1024)).toFixed(2);
@@ -105,13 +137,63 @@ async function main() {
         `Time: ${new Date().toISOString()}`
     ].join('\n');
 
-    await sendToAdmin(backupFile, caption);
+    if (options.telegram) {
+        await sendWithTelegram(options.telegram, backupFile, caption);
+    } else {
+        await sendWithNewBot(backupFile, caption);
+    }
+
     pruneOldBackups();
 
-    console.log(`Backup saved and sent to admin ${process.env.ADMIN_ID}: ${backupFile}`);
+    console.log(`Backup saved and sent to admin ${getAdminId()}: ${backupFile}`);
+    return backupFile;
 }
 
-main().catch((err) => {
-    console.error('Backup failed:', err.message);
-    process.exit(1);
-});
+/**
+ * Schedule a nightly backup inside the bot process (checks every minute).
+ * Hour/minute use the server's local timezone. Override with BACKUP_HOUR / BACKUP_MINUTE.
+ */
+function scheduleNightlyBackup(bot) {
+    const hour = Number(process.env.BACKUP_HOUR ?? 3);
+    const minute = Number(process.env.BACKUP_MINUTE ?? 0);
+    let lastRunKey = null;
+    let running = false;
+
+    const tick = async () => {
+        const now = new Date();
+        if (now.getHours() !== hour || now.getMinutes() !== minute) return;
+
+        const runKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+        if (lastRunKey === runKey || running) return;
+
+        lastRunKey = runKey;
+        running = true;
+        try {
+            await runBackup({ telegram: bot.telegram });
+        } catch (err) {
+            console.error('Nightly backup failed:', err.message);
+            const adminId = getAdminId();
+            if (adminId) {
+                await bot.telegram.sendMessage(
+                    adminId,
+                    `⚠️ Nightly database backup failed:\n<code>${err.message}</code>`,
+                    { parse_mode: 'HTML' }
+                ).catch(() => {});
+            }
+        } finally {
+            running = false;
+        }
+    };
+
+    setInterval(tick, 60 * 1000);
+    console.log(`Nightly backup scheduled for ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} local time`);
+}
+
+if (require.main === module) {
+    runBackup().catch((err) => {
+        console.error('Backup failed:', err.message);
+        process.exit(1);
+    });
+}
+
+module.exports = { runBackup, scheduleNightlyBackup };
