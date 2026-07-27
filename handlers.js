@@ -1802,8 +1802,8 @@ function setupHandlers(bot) {
 
                     const backupServer = { ...targetServer, sni: newSni };
                     
-                    const config1 = generateMtnConfig(conf.uuid, conf.name + " (Backup)", backupServer);
-                    const config2 = generateMciConfig(conf.uuid, conf.name + " (Backup)", backupServer);
+                    const config1 = generateMtnConfig(conf.uuid, conf.name, backupServer);
+                    const config2 = generateMciConfig(conf.uuid, conf.name, backupServer);
                     
                     const message = `🔄 <b>کانفیگ پشتیبان (هلند)</b>\n\nاین کانفیگ‌ها را به عنوان پشتیبان در کلاینت خود اضافه کنید تا در صورت اختلال، بدون قطعی متصل بمانید:\n\n🟡 <b>کانفیگ شماره ۱:</b>\n<blockquote expandable><code>${config1}</code></blockquote>\n\n🔵 <b>کانفیگ شماره ۲:</b>\n<blockquote expandable><code>${config2}</code></blockquote>`;
                     
