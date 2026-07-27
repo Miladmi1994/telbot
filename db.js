@@ -29,6 +29,8 @@ const defaultDb = {
 };
 
 let sqliteDb = null;
+let memoryCache = null; // اضافه شدن کش حافظه
+let writeTimeout = null; // متغیر برای مدیریت تاخیر ذخیره‌سازی
 
 function isSqlitePath(value) {
     return typeof value === 'string' && (value.endsWith('.db') || value.endsWith('.sqlite'));
@@ -90,32 +92,48 @@ function normalizeDb(data) {
 }
 
 function readDb() {
+    // خواندن سریع از حافظه رم در صورت وجود
+    if (memoryCache) {
+        return JSON.parse(JSON.stringify(memoryCache)); 
+    }
+
+    let rawData;
     if (isSqlitePath(process.env.DB_PATH)) {
-        const data = loadState(getSqliteDb());
-        const { data: normalized, needsUpdate } = normalizeDb(data);
-        if (needsUpdate) saveState(getSqliteDb(), normalized);
-        return normalized;
+        rawData = loadState(getSqliteDb());
+    } else {
+        const dbPath = getJsonPath();
+        if (!fs.existsSync(dbPath)) {
+            fs.writeFileSync(dbPath, JSON.stringify(defaultDb, null, 2));
+            rawData = defaultDb;
+        } else {
+            rawData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+        }
     }
 
-    const dbPath = getJsonPath();
-    if (!fs.existsSync(dbPath)) {
-        fs.writeFileSync(dbPath, JSON.stringify(defaultDb, null, 2));
-        return defaultDb;
+    const { data: normalized, needsUpdate } = normalizeDb(rawData);
+    memoryCache = normalized; // مقداردهی اولیه کش
+
+    if (needsUpdate) {
+        writeDb(normalized);
     }
 
-    let data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-    const { data: normalized, needsUpdate } = normalizeDb(data);
-    if (needsUpdate) writeDb(normalized);
-    return normalized;
+    return JSON.parse(JSON.stringify(memoryCache));
 }
 
 function writeDb(data) {
-    if (isSqlitePath(process.env.DB_PATH)) {
-        saveState(getSqliteDb(), data);
-        return;
-    }
+    // بروزرسانی فوری در حافظه رم
+    memoryCache = JSON.parse(JSON.stringify(data));
 
-    fs.writeFileSync(getJsonPath(), JSON.stringify(data, null, 2));
+    // جلوگیری از ترافیک دیسک با اعمال تاخیر ۳ ثانیه‌ای (Debounce)
+    if (writeTimeout) clearTimeout(writeTimeout);
+    
+    writeTimeout = setTimeout(() => {
+        if (isSqlitePath(process.env.DB_PATH)) {
+            saveState(getSqliteDb(), memoryCache);
+        } else {
+            fs.writeFileSync(getJsonPath(), JSON.stringify(memoryCache, null, 2));
+        }
+    }, 3000);
 }
 
 module.exports = { readDb, writeDb };
