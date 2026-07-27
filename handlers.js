@@ -1796,18 +1796,16 @@ function setupHandlers(bot) {
                 for (const conf of db.users[uid]) {
                     if (conf.name === 'سرویس قبلی' || conf.deletedFromPanel) continue;
                     
-                    let link = conf.configLink || ""; 
-                    if (!link) continue;
+                    let targetServer = db.servers?.find(s => s.id === conf.serverId);
+                    if (!targetServer) targetServer = db.servers?.find(s => s.id === db.settings.activeVipServerId) || db.servers?.find(s => s.id === db.settings.activeServerId);
+                    if (!targetServer) continue;
 
-                    if (link.includes('sni=')) {
-                        link = link.replace(/sni=[^&#]+/, `sni=${newSni}`);
-                    } else if (link.includes('#')) {
-                        link = link.replace('#', `&sni=${newSni}#`);
-                    } else {
-                        link += `&sni=${newSni}`;
-                    }
+                    const backupServer = { ...targetServer, sni: newSni };
                     
-                    const message = `🔄 <b>کانفیگ پشتیبان (هلند)</b>\n\nاین کانفیگ را به عنوان پشتیبان در کلاینت خود اضافه کنید تا در صورت نیاز از آن استفاده کنید:\n\n<code>${link}</code>`;
+                    const config1 = generateMtnConfig(conf.uuid, conf.name + " (Backup)", backupServer);
+                    const config2 = generateMciConfig(conf.uuid, conf.name + " (Backup)", backupServer);
+                    
+                    const message = `🔄 <b>کانفیگ پشتیبان (هلند)</b>\n\nاین کانفیگ‌ها را به عنوان پشتیبان در کلاینت خود اضافه کنید تا در صورت اختلال، بدون قطعی متصل بمانید:\n\n🟡 <b>کانفیگ شماره ۱:</b>\n<blockquote expandable><code>${config1}</code></blockquote>\n\n🔵 <b>کانفیگ شماره ۲:</b>\n<blockquote expandable><code>${config2}</code></blockquote>`;
                     
                     try {
                         await bot.telegram.sendMessage(uid, message, { parse_mode: 'HTML' });
