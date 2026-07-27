@@ -36,9 +36,6 @@ function rowToPlan(row) {
     return plan;
 }
 
-  
-
-
 function rowToServer(row) {
     const server = {
         id: row.id,

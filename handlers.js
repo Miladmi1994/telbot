@@ -155,8 +155,28 @@ function setupHandlers(bot) {
 
     bot.action('admin_broadcast', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
-        adminSteps.set(ctx.from.id, { step: 'WAITING_BROADCAST_MESSAGE' });
-        ctx.reply('📢 لطفاً پیام خود را بفرستید.\n\n(پشتیبانی از متن، عکس، ویدیو و کپشن)', { 
+        ctx.editMessageText('📢 لطفاً گروه هدف برای ارسال پیام را انتخاب کنید:', { 
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [Markup.button.callback('👤 کاربران عادی', 'broadcast_target_normal')],
+                    [Markup.button.callback('👑 کاربران VIP', 'broadcast_target_vip')],
+                    [Markup.button.callback('🌐 همه کاربران', 'broadcast_target_all')],
+                    [Markup.button.callback('❌ لغو ارسال', 'cancel_broadcast')]
+                ]
+            }
+        });
+        ctx.answerCbQuery();
+    });
+
+    bot.action(/broadcast_target_(.*)/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const target = ctx.match[1];
+        adminSteps.set(ctx.from.id, { step: 'WAITING_BROADCAST_MESSAGE', target: target });
+        
+        let targetName = target === 'vip' ? 'کاربران VIP' : target === 'normal' ? 'کاربران عادی' : 'همه کاربران';
+        
+        ctx.editMessageText(`📢 لطفاً پیام خود را برای <b>${targetName}</b> بفرستید.\n\n(پشتیبانی از متن، عکس، ویدیو و کپشن)`, { 
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
@@ -189,7 +209,18 @@ function setupHandlers(bot) {
             Object.keys(db.users || {}).forEach(uid => allUsers.add(uid));
             Object.keys(db.userStats || {}).forEach(uid => allUsers.add(uid));
             
-            const usersArray = Array.from(allUsers);
+            // --- تغییرات مربوط به جداسازی کاربران ---
+            const target = adminState.target || 'all';
+            const vipUsers = db.vipUsers || [];
+            
+            let usersArray = Array.from(allUsers);
+            if (target === 'vip') {
+                usersArray = usersArray.filter(uid => vipUsers.includes(uid));
+            } else if (target === 'normal') {
+                usersArray = usersArray.filter(uid => !vipUsers.includes(uid));
+            }
+            // ----------------------------------------
+            
             ctx.reply(`⏳ در حال ارسال پیام به ${usersArray.length} کاربر...\nلطفاً صبور باشید.`);
             adminSteps.delete(ctx.from.id);
             
