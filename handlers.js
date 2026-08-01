@@ -2808,10 +2808,10 @@ function setupHandlers(bot) {
                         // مدیریت ارسال اخطارهای زمان و حجم
                         const renewBtn = { inline_keyboard: [[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)]] };
 
-                        if (diffDays <= 3 && diffDays > 0 && !conf.notified.days3) {
+                        if (diffDays > 2 && diffDays <= 3 && !conf.notified.days3) {
                             conf.notified.days3 = true;
                             userChanged = true;
-                            bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
+                            bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط <b>۳ روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
                         }
 
                         if (currentTotal > 0 && remainGB <= 1 && remainGB > 0 && !conf.notified.gb1) {
