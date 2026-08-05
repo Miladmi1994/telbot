@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
-const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, userSteps, adminSteps } = require('./config');
-const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, adminMarketingMenu } = require('./keyboards');
+const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
+const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, adminMarketingMenu, adminAccountingMenu } = require('./keyboards');
 const { readDb, writeDb } = require('./db');
 const { createClient, deleteClient, renewClient, getClientTraffic, generateMciConfig, generateMtnConfig, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord } = require('./api');
 const fs = require('fs');
@@ -301,6 +301,17 @@ function setupHandlers(bot) {
         }
 
         return next();
+    });
+
+    bot.command('sync_period', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const amount = parseInt(ctx.message.text.split(' ')[1]);
+        if (isNaN(amount)) return ctx.reply('❌ فرمت اشتباه است. لطفاً مبلغ را با عدد وارد کنید. مثال: /sync_period 1500000');
+        
+        const db = readDb();
+        db.periodIncome = amount;
+        writeDb(db);
+        ctx.reply(`✅ درآمد دوره فعلی با موفقیت روی ${amount.toLocaleString('en-US')} تومان تنظیم شد.`);
     });
 
     bot.command('admin', (ctx) => {
@@ -878,6 +889,192 @@ function setupHandlers(bot) {
         ctx.editMessageText('💰 <b>مدیریت مالی و فروش</b>\nیک گزینه رو انتخاب کن:', { 
             parse_mode: 'HTML', 
             reply_markup: adminFinanceMenu.reply_markup 
+        });
+        ctx.answerCbQuery();
+    });
+
+    bot.action('admin_accounting_menu', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        ctx.editMessageText('📓 <b>دفتر حساب‌وکتاب شرکا</b>\n\nاین بخش برای محاسبه سود، کسر هزینه‌ها و تسویه دوره‌ای طراحی شده است.\n\n👇 یک گزینه را انتخاب کنید:', { 
+            parse_mode: 'HTML', 
+            reply_markup: adminAccountingMenu.reply_markup 
+        });
+        ctx.answerCbQuery();
+    });
+
+    // --- بخش حسابداری و تسویه‌حساب ---
+    bot.action('acc_status', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const income = db.periodIncome || 0;
+        const expenses = db.periodExpenses || 0;
+        const netProfit = income - expenses;
+        const share = netProfit / 2;
+
+        const text = `📊 <b>وضعیت دوره مالی فعلی</b>\n\n` +
+                     `💰 کل درآمد دوره: <code>${income.toLocaleString('en-US')}</code> تومان\n` +
+                     `➖ مجموع هزینه‌ها: <code>${expenses.toLocaleString('en-US')}</code> تومان\n` +
+                     `💵 سود خالص: <code>${netProfit.toLocaleString('en-US')}</code> تومان\n\n` +
+                     `🤝 سهم هر شریک تا این لحظه: <b><code>${share.toLocaleString('en-US')}</code> تومان</b>`;
+
+        ctx.editMessageText(text, { 
+            parse_mode: 'HTML', 
+            reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'admin_accounting_menu')]] }
+        });
+        ctx.answerCbQuery();
+    });
+
+    bot.action('acc_add_expense', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        adminSteps.set(ctx.from.id, { step: 'WAITING_FOR_EXPENSE' });
+        ctx.reply('➖ لطفاً مبلغ هزینه (مثلاً تمدید سرور) را به تومان و فقط با عدد (بدون حروف) وارد کنید:');
+        ctx.answerCbQuery();
+    });
+
+    bot.action('acc_settle', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const income = db.periodIncome || 0;
+        const expenses = db.periodExpenses || 0;
+        const netProfit = income - expenses;
+        const share = netProfit / 2;
+
+        if (income === 0 && expenses === 0) {
+            return ctx.answerCbQuery('⚠️ در این دوره هیچ تراکنش یا هزینه‌ای ثبت نشده است!', { show_alert: true });
+        }
+
+        if (!db.settlements) db.settlements = [];
+        
+        const newSettlement = {
+            id: (db.settlements.length > 0 ? db.settlements[db.settlements.length - 1].id + 1 : 1),
+            date: Date.now(),
+            income: income,
+            expense: expenses,
+            netProfit: netProfit,
+            partnerShare: share
+        };
+        db.settlements.push(newSettlement);
+
+        db.periodIncome = 0;
+        db.periodExpenses = 0;
+        writeDb(db);
+
+        const jalaaliDate = new Date().toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' });
+        
+        const text = `🧾 <b>فاکتور تسویه حساب شرکا</b>\n📅 تاریخ: ${jalaaliDate}\n\n` +
+                     `💰 کل درآمد دوره: <code>${income.toLocaleString('en-US')}</code> تومان\n` +
+                     `➖ هزینه‌های کسر شده: <code>${expenses.toLocaleString('en-US')}</code> تومان\n` +
+                     `💵 سود خالص: <code>${netProfit.toLocaleString('en-US')}</code> تومان\n` +
+                     `〰️〰️〰️〰️〰️〰️\n` +
+                     `🤝 <b>سهم پرداختی هر شریک: <code>${share.toLocaleString('en-US')}</code> تومان</b>\n\n` +
+                     `✅ تسویه حساب در سیستم ثبت شد و صندوق دوره از هم‌اکنون برای دوره جدید صفر گردید.`;
+
+        ctx.editMessageText(text, { 
+            parse_mode: 'HTML', 
+            reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت به منوی مالی', 'admin_finance_menu')]] }
+        });
+    });// مرحله اول: نمایش پیش‌نمایش و درخواست تایید
+    bot.action('acc_settle', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const income = db.periodIncome || 0;
+        const expenses = db.periodExpenses || 0;
+        const netProfit = income - expenses;
+        const share = netProfit / 2;
+
+        if (income === 0 && expenses === 0) {
+            return ctx.answerCbQuery('⚠️ در این دوره هیچ تراکنش یا هزینه‌ای ثبت نشده است!', { show_alert: true });
+        }
+
+        const text = `⚠️ <b>پیش‌نمایش تسویه حساب شرکا</b>\n\n` +
+                     `💰 کل درآمد دوره: <code>${income.toLocaleString('en-US')}</code> تومان\n` +
+                     `➖ مجموع هزینه‌ها: <code>${expenses.toLocaleString('en-US')}</code> تومان\n` +
+                     `💵 سود خالص: <code>${netProfit.toLocaleString('en-US')}</code> تومان\n` +
+                     `〰️〰️〰️〰️〰️〰️\n` +
+                     `🤝 <b>سهم هر شریک: <code>${share.toLocaleString('en-US')}</code> تومان</b>\n\n` +
+                     `❓ آیا از انجام تسویه حساب و صفر شدن دوره اطمینان دارید؟`;
+
+        ctx.editMessageText(text, { 
+            parse_mode: 'HTML', 
+            reply_markup: { 
+                inline_keyboard: [
+                    [Markup.button.callback('✅ بله، تایید و تسویه نهایی', 'acc_settle_confirm')],
+                    [Markup.button.callback('❌ انصراف', 'admin_accounting_menu')]
+                ] 
+            }
+        });
+        ctx.answerCbQuery();
+    });
+
+    // مرحله دوم: انجام تسویه و صفر کردن دوره پس از تایید ادمین
+    bot.action('acc_settle_confirm', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const income = db.periodIncome || 0;
+        const expenses = db.periodExpenses || 0;
+        const netProfit = income - expenses;
+        const share = netProfit / 2;
+
+        if (income === 0 && expenses === 0) {
+            return ctx.answerCbQuery('⚠️ در این دوره هیچ تراکنش یا هزینه‌ای ثبت نشده است!', { show_alert: true });
+        }
+
+        if (!db.settlements) db.settlements = [];
+        
+        const newSettlement = {
+            id: (db.settlements.length > 0 ? db.settlements[db.settlements.length - 1].id + 1 : 1),
+            date: Date.now(),
+            income: income,
+            expense: expenses,
+            netProfit: netProfit,
+            partnerShare: share
+        };
+        db.settlements.push(newSettlement);
+
+        db.periodIncome = 0;
+        db.periodExpenses = 0;
+        writeDb(db);
+
+        const jalaaliDate = new Date().toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' });
+        
+        const text = `🧾 <b>فاکتور تسویه حساب شرکا (تایید و انجام شد)</b>\n📅 تاریخ: ${jalaaliDate}\n\n` +
+                     `💰 کل درآمد دوره: <code>${income.toLocaleString('en-US')}</code> تومان\n` +
+                     `➖ هزینه‌های کسر شده: <code>${expenses.toLocaleString('en-US')}</code> تومان\n` +
+                     `💵 سود خالص: <code>${netProfit.toLocaleString('en-US')}</code> تومان\n` +
+                     `〰️〰️〰️〰️〰️〰️\n` +
+                     `🤝 <b>سهم پرداختی هر شریک: <code>${share.toLocaleString('en-US')}</code> تومان</b>\n\n` +
+                     `✅ تسویه حساب با موفقیت ثبت شد و صندوق دوره از هم‌اکنون برای دوره جدید صفر گردید.`;
+
+        ctx.editMessageText(text, { 
+            parse_mode: 'HTML', 
+            reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت به منوی مالی', 'admin_finance_menu')]] }
+        });
+        ctx.answerCbQuery('تسویه حساب با موفقیت انجام شد.');
+    });
+
+    bot.action('acc_history', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const settlements = db.settlements || [];
+        
+        if (settlements.length === 0) {
+            return ctx.answerCbQuery('📭 هیچ تسویه‌ای تا به حال در سیستم ثبت نشده است.', { show_alert: true });
+        }
+
+        const last5 = settlements.slice(-5).reverse();
+        let text = `🗂 <b>۵ تسویه حساب اخیر:</b>\n\n`;
+
+        last5.forEach(s => {
+            const sDate = new Date(s.date).toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' });
+            text += `📅 تاریخ تسویه: ${sDate}\n`;
+            text += `💰 درآمد: ${s.income.toLocaleString('en-US')} | ➖ هزینه: ${s.expense.toLocaleString('en-US')}\n`;
+            text += `🤝 سهم هر شریک: <b>${s.partnerShare.toLocaleString('en-US')} تومان</b>\n`;
+            text += `〰️〰️〰️\n`;
+        });
+
+        ctx.editMessageText(text, { 
+            parse_mode: 'HTML', 
+            reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'admin_accounting_menu')]] }
         });
         ctx.answerCbQuery();
     });
@@ -1836,6 +2033,20 @@ function setupHandlers(bot) {
         if (isUserAdmin(userId) && adminState && adminState.step) {
             const db = readDb();
 
+            // --- Admin Accounting Expense ---
+            if (adminState.step === 'WAITING_FOR_EXPENSE') {
+                const amount = parseInt(input.replace(/,/g, ''), 10);
+                if (isNaN(amount)) {
+                    return ctx.reply('❌ لطفاً فقط عدد وارد کنید (بدون حروف).');
+                }
+                const db = readDb();
+                db.periodExpenses = (db.periodExpenses || 0) + amount;
+                writeDb(db);
+                ctx.reply(`✅ مبلغ <code>${amount.toLocaleString('en-US')}</code> تومان با موفقیت به عنوان هزینه‌های این دوره ثبت شد.`, { parse_mode: 'HTML' });
+                adminSteps.delete(ctx.from.id);
+                return;
+            }
+
             // --- Admin DM Handle Text ---
             if (adminState.step === 'DM_GET_USER') {
                 adminSteps.set(ctx.from.id, { step: 'DM_GET_MSG', targetUserId: input });
@@ -2212,16 +2423,24 @@ function setupHandlers(bot) {
                 const db = readDb();
                 
                 let totalGB, expiryDays, isVip = false;
+                let planPrice = 0; // متغیر جدید برای ذخیره قیمت پلن
                 
                 if (planId === 'vip') {
                     totalGB = 100;
                     expiryDays = 30;
                     isVip = true;
+                    try {
+                        const usdtRate = await getUsdtRate();
+                        planPrice = (usdtRate && usdtRate > 0) ? usdtRate : 65000;
+                    } catch (e) {
+                        planPrice = 65000;
+                    }
                 } else {
                     const plan = (db.settings.plans || []).find(p => p.id === planId);
                     if (!plan) return ctx.reply('❌ پلن یافت نشد. لطفاً فرآیند را مجدداً شروع کنید.');
                     totalGB = plan.gb;
                     expiryDays = plan.days;
+                    planPrice = plan.price; // دریافت قیمت پلن از دیتابیس
                 }
                 
                 const targetServerId = (isVip && db.settings.activeVipServerId) 
@@ -2257,13 +2476,26 @@ function setupHandlers(bot) {
                     if (!freshDb.vipUsers.includes(targetUserId)) freshDb.vipUsers.push(targetUserId);
                 }
 
+                // --- بخش جدید: اضافه کردن مبلغ به حسابداری ---
+                if (!IGNORE_FINANCE_IDS || !IGNORE_FINANCE_IDS.includes(targetUserId.toString())) {
+                    freshDb.totalIncome = (freshDb.totalIncome || 0) + planPrice;
+                    freshDb.periodIncome = (freshDb.periodIncome || 0) + planPrice;
+                    freshDb.successfulSales = (freshDb.successfulSales || 0) + 1;
+                }
+
+                if (!freshDb.userStats) freshDb.userStats = {};
+                if (!freshDb.userStats[targetUserId]) freshDb.userStats[targetUserId] = { totalSpent: 0, buyCount: 0, renewCount: 0 };
+                freshDb.userStats[targetUserId].totalSpent += planPrice;
+                freshDb.userStats[targetUserId].buyCount++;
+                // ---------------------------------------------
+
                 writeDb(freshDb);
 
                 try {
                     await ctx.telegram.sendMessage(targetUserId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\nجهت دریافت کانفیگ‌های خود روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]]) });
-                    ctx.reply(`✅ خرید دستی با موفقیت ثبت و برای کاربر ارسال شد.\n🌐 سرور انتخاب شده: ${targetServer?.name || 'پیش‌فرض'}`);
+                    ctx.reply(`✅ خرید دستی با موفقیت ثبت و مبلغ ${planPrice.toLocaleString('en-US')} تومان به صندوق اضافه شد.\n🌐 سرور انتخاب شده: ${targetServer?.name || 'پیش‌فرض'}`);
                 } catch (e) {
-                    ctx.reply(`⚠️ ثبت شد اما کاربر ربات را بلاک کرده است.\n🌐 سرور انتخاب شده: ${targetServer?.name || 'پیش‌فرض'}`);
+                    ctx.reply(`⚠️ اکانت ساخته شد و مبلغ ${planPrice.toLocaleString('en-US')} تومان به صندوق اضافه شد، اما کاربر ربات را بلاک کرده است.\n🌐 سرور انتخاب شده: ${targetServer?.name || 'پیش‌فرض'}`);
                 }
                 adminSteps.delete(ctx.from.id);
                 return;
@@ -2576,10 +2808,16 @@ function setupHandlers(bot) {
         });
 
         const priceMatch = caption.match(/💵 مبلغ: ([\d,]+) تومان/);
-        if (priceMatch) { db.totalIncome = (db.totalIncome || 0) + parseInt(priceMatch[1].replace(/,/g, ''), 10); db.successfulSales = (db.successfulSales || 0) + 1; }
+        const priceVal = priceMatch ? parseInt(priceMatch[1].replace(/,/g, ''), 10) : 0;
+        
+        if (priceMatch && (!IGNORE_FINANCE_IDS || !IGNORE_FINANCE_IDS.includes(userId.toString()))) { 
+            db.totalIncome = (db.totalIncome || 0) + priceVal; 
+            db.periodIncome = (db.periodIncome || 0) + priceVal;
+            db.successfulSales = (db.successfulSales || 0) + 1; 
+        }
+
         if (!db.userStats) db.userStats = {};
         if (!db.userStats[userId]) db.userStats[userId] = { totalSpent: 0, buyCount: 0, renewCount: 0 };
-        const priceVal = priceMatch ? parseInt(priceMatch[1].replace(/,/g, ''), 10) : 0;
         db.userStats[userId].totalSpent += priceVal;
         db.userStats[userId].buyCount++;
         const pIndex = (db.settings.plans || []).findIndex(p => p.id === planId);
@@ -2708,10 +2946,16 @@ function setupHandlers(bot) {
         }
 
         const priceMatch = caption.match(/💵 مبلغ: ([\d,]+) تومان/);
-        if (priceMatch) { db.totalIncome = (db.totalIncome || 0) + parseInt(priceMatch[1].replace(/,/g, ''), 10); db.successfulSales = (db.successfulSales || 0) + 1; }
+        const priceVal = priceMatch ? parseInt(priceMatch[1].replace(/,/g, ''), 10) : 0;
+        
+        if (priceMatch && (!IGNORE_FINANCE_IDS || !IGNORE_FINANCE_IDS.includes(userId.toString()))) { 
+            db.totalIncome = (db.totalIncome || 0) + priceVal; 
+            db.periodIncome = (db.periodIncome || 0) + priceVal;
+            db.successfulSales = (db.successfulSales || 0) + 1; 
+        }
+
         if (!db.userStats) db.userStats = {};
         if (!db.userStats[userId]) db.userStats[userId] = { totalSpent: 0, buyCount: 0, renewCount: 0 };
-        const priceVal = priceMatch ? parseInt(priceMatch[1].replace(/,/g, ''), 10) : 0;
         db.userStats[userId].totalSpent += priceVal;
         db.userStats[userId].renewCount++;
 
@@ -2808,10 +3052,10 @@ function setupHandlers(bot) {
                         // مدیریت ارسال اخطارهای زمان و حجم
                         const renewBtn = { inline_keyboard: [[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)]] };
 
-                        if (diffDays <= 3 && diffDays > 0 && !conf.notified.days3) {
+                        if (diffDays > 2 && diffDays <= 3 && !conf.notified.days3) {
                             conf.notified.days3 = true;
                             userChanged = true;
-                            bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
+                            bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط <b>۳ روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
                         }
 
                         if (currentTotal > 0 && remainGB <= 1 && remainGB > 0 && !conf.notified.gb1) {

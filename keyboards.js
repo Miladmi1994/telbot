@@ -97,8 +97,18 @@ const adminUsersMenu = Markup.inlineKeyboard([
 // زیرمنوی مدیریت مالی
 const adminFinanceMenu = Markup.inlineKeyboard([
     [Markup.button.callback('🛒 ثبت دستی خرید', 'admin_manual_buy')],
+    [Markup.button.callback('📓 دفتر حساب‌وکتاب (تسویه)', 'admin_accounting_menu')],
     [Markup.button.callback('🧹 صفر کردن آمار مالی', 'reset_finance')],
     [Markup.button.callback('🔙 بازگشت', 'back_admin')]
+]);
+
+// منوی دفتر حساب‌وکتاب (تسویه حساب شرکا)
+const adminAccountingMenu = Markup.inlineKeyboard([
+    [Markup.button.callback('📊 وضعیت دوره فعلی', 'acc_status')],
+    [Markup.button.callback('➖ ثبت هزینه سرور', 'acc_add_expense')],
+    [Markup.button.callback('🤝 تسویه‌حساب (تقسیم سود)', 'acc_settle')],
+    [Markup.button.callback('🗂 تاریخچه تسویه‌ها', 'acc_history')],
+    [Markup.button.callback('🔙 بازگشت', 'admin_finance_menu')]
 ]);
 
 // منوی مدیریت VIP
@@ -122,5 +132,6 @@ module.exports = {
     adminUsersMenu,
     adminFinanceMenu,
     cancelBtn,
-    adminMarketingMenu
+    adminMarketingMenu,
+    adminAccountingMenu
 };

@@ -5,7 +5,9 @@ CREATE TABLE IF NOT EXISTS global_stats (
     total_income INTEGER NOT NULL DEFAULT 0,
     successful_sales INTEGER NOT NULL DEFAULT 0,
     abandoned_carts INTEGER NOT NULL DEFAULT 0,
-    test_to_buy_conversion INTEGER NOT NULL DEFAULT 0
+    test_to_buy_conversion INTEGER NOT NULL DEFAULT 0,
+    period_income INTEGER NOT NULL DEFAULT 0,
+    period_expenses INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -90,6 +92,15 @@ CREATE TABLE IF NOT EXISTS payments (
     order_id TEXT,
     config_name TEXT,
     type TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS settlements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date INTEGER NOT NULL,
+    income INTEGER NOT NULL,
+    expense INTEGER NOT NULL,
+    net_profit INTEGER NOT NULL,
+    partner_share INTEGER NOT NULL
 );
 
 INSERT OR IGNORE INTO global_stats (id) VALUES (1);

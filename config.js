@@ -7,6 +7,7 @@ const TOPIC_PAYMENT = process.env.TOPIC_PAYMENT;
 const TOPIC_ERROR = process.env.TOPIC_ERROR;
 const TOPIC_SUPPORT = process.env.TOPIC_SUPPORT;
 const ADMIN_IDS = [process.env.ADMIN_ID || '278963307'];
+const IGNORE_FINANCE_IDS = ['278963307'];
 
 const userSteps = new Map();
 const adminSteps = new Map(); 
@@ -19,6 +20,6 @@ const sampleConfigMtn = '{"dns":{"servers":["1.1.1.1","8.8.8.8"],"tag":"dns-modu
 
 module.exports = {
     GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, 
-    ADMIN_IDS,userSteps, adminSteps, sampleConfig, sampleConfigMtn,
+    ADMIN_IDS,userSteps, adminSteps, sampleConfig, sampleConfigMtn, IGNORE_FINANCE_IDS,
     CF_API_TOKEN: process.env.CF_API_TOKEN
 };
