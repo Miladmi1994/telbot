@@ -167,19 +167,6 @@ function saveState(db, data) {
 
     try {
         db.prepare(`
-<<<<<<< HEAD
-            UPDATE settings SET
-                sales_open = ?,
-                maintenance = ?,
-                active_server_id = ?,
-                active_vip_server_id = ?
-            WHERE id = 1
-        `).run(
-            data.settings?.salesOpen ? 1 : 0,
-            data.settings?.maintenance ? 1 : 0,
-            data.settings?.activeServerId || null,
-            data.settings?.activeVipServerId || null
-=======
             UPDATE global_stats SET
                 total_income = ?,
                 successful_sales = ?,
@@ -195,7 +182,6 @@ function saveState(db, data) {
             data.stats?.testToBuyConversion || 0,
             data.periodIncome || 0,
             data.periodExpenses || 0
->>>>>>> develop
         );
 
         db.prepare(`
