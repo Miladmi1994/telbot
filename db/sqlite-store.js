@@ -13,9 +13,9 @@ function openDatabase(dbFilePath) {
     db.exec('PRAGMA foreign_keys = ON');
     db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
 
-    try { db.exec("ALTER TABLE settings ADD COLUMN crisis_mode INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
-    try { db.exec("ALTER TABLE settings ADD COLUMN crisis_config TEXT;"); } catch (e) {}
-
+    try { db.exec("ALTER TABLE global_stats ADD COLUMN period_income INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE global_stats ADD COLUMN period_expenses INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    
     return db;
 }
 
@@ -125,7 +125,19 @@ function loadState(db) {
         };
     }
 
+    const settlements = db.prepare('SELECT * FROM settlements ORDER BY id ASC').all().map(row => ({
+        id: row.id,
+        date: row.date,
+        income: row.income,
+        expense: row.expense,
+        netProfit: row.net_profit,
+        partnerShare: row.partner_share
+    }));
+
     return {
+        periodIncome: global?.period_income || 0,
+        periodExpenses: global?.period_expenses || 0,
+        settlements: settlements,
         totalIncome: global?.total_income || 0,
         successfulSales: global?.successful_sales || 0,
         settings: {
@@ -159,13 +171,17 @@ function saveState(db, data) {
                 total_income = ?,
                 successful_sales = ?,
                 abandoned_carts = ?,
-                test_to_buy_conversion = ?
+                test_to_buy_conversion = ?,
+                period_income = ?,
+                period_expenses = ?
             WHERE id = 1
         `).run(
             data.totalIncome || 0,
             data.successfulSales || 0,
             data.stats?.abandonedCarts || 0,
-            data.stats?.testToBuyConversion || 0
+            data.stats?.testToBuyConversion || 0,
+            data.periodIncome || 0,
+            data.periodExpenses || 0
         );
 
         db.prepare(`
@@ -189,6 +205,7 @@ function saveState(db, data) {
         db.prepare('DELETE FROM admins').run();
         db.prepare('DELETE FROM servers').run();
         db.prepare('DELETE FROM plans').run();
+        db.prepare('DELETE FROM settlements').run();
 
         const insertPlan = db.prepare(`
             INSERT INTO plans (
@@ -322,6 +339,14 @@ function saveState(db, data) {
             );
         }
 
+        const insertSettlement = db.prepare(`
+            INSERT INTO settlements (id, date, income, expense, net_profit, partner_share)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        for (const s of data.settlements || []) {
+            insertSettlement.run(s.id, s.date, s.income, s.expense, s.netProfit, s.partnerShare);
+        }
+        
         db.exec('COMMIT');
     } catch (err) {
         db.exec('ROLLBACK');
