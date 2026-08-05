@@ -973,6 +973,83 @@ function setupHandlers(bot) {
             parse_mode: 'HTML', 
             reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت به منوی مالی', 'admin_finance_menu')]] }
         });
+    });// مرحله اول: نمایش پیش‌نمایش و درخواست تایید
+    bot.action('acc_settle', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const income = db.periodIncome || 0;
+        const expenses = db.periodExpenses || 0;
+        const netProfit = income - expenses;
+        const share = netProfit / 2;
+
+        if (income === 0 && expenses === 0) {
+            return ctx.answerCbQuery('⚠️ در این دوره هیچ تراکنش یا هزینه‌ای ثبت نشده است!', { show_alert: true });
+        }
+
+        const text = `⚠️ <b>پیش‌نمایش تسویه حساب شرکا</b>\n\n` +
+                     `💰 کل درآمد دوره: <code>${income.toLocaleString('en-US')}</code> تومان\n` +
+                     `➖ مجموع هزینه‌ها: <code>${expenses.toLocaleString('en-US')}</code> تومان\n` +
+                     `💵 سود خالص: <code>${netProfit.toLocaleString('en-US')}</code> تومان\n` +
+                     `〰️〰️〰️〰️〰️〰️\n` +
+                     `🤝 <b>سهم هر شریک: <code>${share.toLocaleString('en-US')}</code> تومان</b>\n\n` +
+                     `❓ آیا از انجام تسویه حساب و صفر شدن دوره اطمینان دارید؟`;
+
+        ctx.editMessageText(text, { 
+            parse_mode: 'HTML', 
+            reply_markup: { 
+                inline_keyboard: [
+                    [Markup.button.callback('✅ بله، تایید و تسویه نهایی', 'acc_settle_confirm')],
+                    [Markup.button.callback('❌ انصراف', 'admin_accounting_menu')]
+                ] 
+            }
+        });
+        ctx.answerCbQuery();
+    });
+
+    // مرحله دوم: انجام تسویه و صفر کردن دوره پس از تایید ادمین
+    bot.action('acc_settle_confirm', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const income = db.periodIncome || 0;
+        const expenses = db.periodExpenses || 0;
+        const netProfit = income - expenses;
+        const share = netProfit / 2;
+
+        if (income === 0 && expenses === 0) {
+            return ctx.answerCbQuery('⚠️ در این دوره هیچ تراکنش یا هزینه‌ای ثبت نشده است!', { show_alert: true });
+        }
+
+        if (!db.settlements) db.settlements = [];
+        
+        const newSettlement = {
+            id: (db.settlements.length > 0 ? db.settlements[db.settlements.length - 1].id + 1 : 1),
+            date: Date.now(),
+            income: income,
+            expense: expenses,
+            netProfit: netProfit,
+            partnerShare: share
+        };
+        db.settlements.push(newSettlement);
+
+        db.periodIncome = 0;
+        db.periodExpenses = 0;
+        writeDb(db);
+
+        const jalaaliDate = new Date().toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' });
+        
+        const text = `🧾 <b>فاکتور تسویه حساب شرکا (تایید و انجام شد)</b>\n📅 تاریخ: ${jalaaliDate}\n\n` +
+                     `💰 کل درآمد دوره: <code>${income.toLocaleString('en-US')}</code> تومان\n` +
+                     `➖ هزینه‌های کسر شده: <code>${expenses.toLocaleString('en-US')}</code> تومان\n` +
+                     `💵 سود خالص: <code>${netProfit.toLocaleString('en-US')}</code> تومان\n` +
+                     `〰️〰️〰️〰️〰️〰️\n` +
+                     `🤝 <b>سهم پرداختی هر شریک: <code>${share.toLocaleString('en-US')}</code> تومان</b>\n\n` +
+                     `✅ تسویه حساب با موفقیت ثبت شد و صندوق دوره از هم‌اکنون برای دوره جدید صفر گردید.`;
+
+        ctx.editMessageText(text, { 
+            parse_mode: 'HTML', 
+            reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت به منوی مالی', 'admin_finance_menu')]] }
+        });
+        ctx.answerCbQuery('تسویه حساب با موفقیت انجام شد.');
     });
 
     bot.action('acc_history', (ctx) => {
