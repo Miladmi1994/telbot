@@ -85,6 +85,33 @@ const adminServersMenu = Markup.inlineKeyboard([
     [Markup.button.callback('🔙 بازگشت', 'back_admin')]
 ]);
 
+// منوی مدیریت اختصاصی یک سرور
+const getServerManageMenu = (serverId) => Markup.inlineKeyboard([
+    [Markup.button.callback('⚙️ مدیریت اینباندها', `manage_inbounds_${serverId}`)],
+    [Markup.button.callback('✏️ ویرایش نام', `edit_srv_name_${serverId}`), Markup.button.callback('✏️ ویرایش آدرس', `edit_srv_url_${serverId}`)],
+    [Markup.button.callback('✏️ ویرایش توکن', `edit_srv_token_${serverId}`)],
+    [Markup.button.callback('🔙 لیست سرورها', 'admin_servers_menu')]
+]);
+
+// منوی لیست اینباندهای یک سرور
+const getInboundsMenu = (serverId, inbounds = []) => {
+    const buttons = inbounds.map((inb, index) => [
+        Markup.button.callback(`🔌 شناسه: ${inb.id} | ${inb.domain}`, `edit_inbound_${serverId}_${index}`)
+    ]);
+    buttons.push([Markup.button.callback('➕ افزودن اینباند جدید', `add_inbound_${serverId}`)]);
+    buttons.push([Markup.button.callback('🔙 بازگشت به مدیریت سرور', `manage_srv_${serverId}`)]);
+    return Markup.inlineKeyboard(buttons);
+};
+
+// منوی ویرایش یک اینباند خاص
+const getSingleInboundMenu = (serverId, inboundIndex) => Markup.inlineKeyboard([
+    [Markup.button.callback('✏️ ویرایش شناسه (ID)', `edit_inb_id_${serverId}_${inboundIndex}`)],
+    [Markup.button.callback('✏️ ویرایش دامنه', `edit_inb_domain_${serverId}_${inboundIndex}`), Markup.button.callback('✏️ ویرایش SNI', `edit_inb_sni_${serverId}_${inboundIndex}`)],
+    [Markup.button.callback('✏️ ویرایش مسیر (Path)', `edit_inb_path_${serverId}_${inboundIndex}`)],
+    [Markup.button.callback('🗑 حذف این اینباند', `del_inb_${serverId}_${inboundIndex}`)],
+    [Markup.button.callback('🔙 بازگشت به لیست اینباندها', `manage_inbounds_${serverId}`)]
+]);
+
 // زیرمنوی مدیریت کاربران
 const adminUsersMenu = Markup.inlineKeyboard([
     [Markup.button.callback('➖ حذف ادمین', 'admin_remove_admin'), Markup.button.callback('➕ افزودن ادمین جدید', 'admin_add_admin')],
@@ -133,5 +160,8 @@ module.exports = {
     adminFinanceMenu,
     cancelBtn,
     adminMarketingMenu,
-    adminAccountingMenu
+    adminAccountingMenu,
+    getServerManageMenu,
+    getInboundsMenu,
+    getSingleInboundMenu
 };
