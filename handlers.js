@@ -660,7 +660,7 @@ function setupHandlers(bot) {
             });
 
     // ورود به منوی ویرایش یک اینباند خاص
-    bot.action(/edit_inbound_(.+)_(\d+)$/, (ctx) => {
+    bot.action(/^edit_inbound_(.+)_(\d+)$/, (ctx) => {
         const srvId = ctx.match[1];
         const index = parseInt(ctx.match[2]);
         const db = readDb();
@@ -668,21 +668,21 @@ function setupHandlers(bot) {
         if (!server || !server.inbounds || !server.inbounds[index]) return ctx.answerCbQuery('اینباند یافت نشد!', {show_alert: true});
         
         const inb = server.inbounds[index];
-        const text = `⚙️ **ویرایش اینباند**\n\n` +
-                     `شناسه: ${inb.id}\n` +
-                     `دامنه: ${inb.domain}\n` +
-                     `اس‌ان‌آی: ${inb.sni}\n` +
-                     `مسیر: ${inb.path}\n\n` +
+        const text = `⚙️ <b>ویرایش اینباند</b>\n\n` +
+                     `شناسه: <code>${inb.id}</code>\n` +
+                     `دامنه: <code>${inb.domain}</code>\n` +
+                     `اس‌ان‌آی: <code>${inb.sni}</code>\n` +
+                     `مسیر: <code>${inb.path}</code>\n\n` +
                      `کدام بخش را می‌خواهید تغییر دهید؟`;
                      
         ctx.editMessageText(text, {
-            parse_mode: 'Markdown',
+            parse_mode: 'HTML',
             reply_markup: getSingleInboundMenu(srvId, index).reply_markup
         });
     });
 
     // حذف اینباند
-    bot.action(/del_inb_(.+)_(\d+)$/, (ctx) => {
+    bot.action(/^del_inb_(.+)_(\d+)$/, (ctx) => {
         const srvId = ctx.match[1];
         const index = parseInt(ctx.match[2]);
         const db = readDb();
@@ -692,8 +692,8 @@ function setupHandlers(bot) {
             db.servers[serverIndex].inbounds.splice(index, 1);
             writeDb(db);
             ctx.answerCbQuery('🗑 اینباند با موفقیت حذف شد.', {show_alert: true});
-            ctx.editMessageText(`🔌 **مدیریت اینباندهای سرور:** ${db.servers[serverIndex].name}`, {
-                parse_mode: 'Markdown',
+            ctx.editMessageText(`🔌 <b>مدیریت اینباندهای سرور:</b> ${db.servers[serverIndex].name}`, {
+                parse_mode: 'HTML',
                 reply_markup: getInboundsMenu(srvId, db.servers[serverIndex].inbounds).reply_markup
             });
         }
