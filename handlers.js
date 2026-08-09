@@ -2324,26 +2324,36 @@ function setupHandlers(bot) {
             }
 
                 if (adminState.step === 'EDIT_INB_FIELD') {
-                const { srvId, index, field } = adminState;
-                const db = readDb();
-                const serverIndex = db.servers.findIndex(s => s.id === srvId);
-                
-                if (serverIndex > -1 && db.servers[serverIndex].inbounds && db.servers[serverIndex].inbounds[index]) {
-                    let newValue = input;
-                    if (field === 'id') {
-                        newValue = parseInt(input);
-                        if (isNaN(newValue)) return ctx.reply('❌ لطفاً برای شناسه فقط عدد وارد کنید.');
+                    const { srvId, index, field } = adminState;
+                    const db = readDb();
+                    const serverIndex = db.servers.findIndex(s => s.id === srvId);
+                    
+                    if (serverIndex > -1 && db.servers[serverIndex].inbounds && db.servers[serverIndex].inbounds[index]) {
+                        let newValue = input;
+                        if (field === 'id') {
+                            newValue = parseInt(input);
+                            if (isNaN(newValue)) return ctx.reply('❌ لطفاً برای شناسه فقط عدد وارد کنید.');
+                        }
+                        
+                        db.servers[serverIndex].inbounds[index][field] = newValue;
+                        writeDb(db);
+                        adminSteps.delete(ctx.from.id);
+                        
+                        const updatedInb = db.servers[serverIndex].inbounds[index];
+                        const text = `✅ <b>تغییرات با موفقیت ذخیره شد.</b>\n\n` +
+                                    `⚙️ <b>ویرایش اینباند</b>\n\n` +
+                                    `شناسه: <code>${updatedInb.id}</code>\n` +
+                                    `دامنه: <code>${updatedInb.domain}</code>\n` +
+                                    `اس‌ان‌آی: <code>${updatedInb.sni}</code>\n` +
+                                    `مسیر: <code>${updatedInb.path}</code>\n\n` +
+                                    `کدام بخش را می‌خواهید تغییر دهید؟`;
+                                    
+                        return ctx.reply(text, {
+                            parse_mode: 'HTML',
+                            reply_markup: getSingleInboundMenu(srvId, index).reply_markup
+                        });
                     }
-                    
-                    db.servers[serverIndex].inbounds[index][field] = newValue;
-                    writeDb(db);
-                    adminSteps.delete(ctx.from.id);
-                    
-                    return ctx.reply('✅ تغییرات اینباند با موفقیت ذخیره شد.', {
-                        reply_markup: getSingleInboundMenu(srvId, index).reply_markup
-                    });
                 }
-            }
 
             if (adminState.step === 'EDIT_SRV_FIELD') {
                 const { srvId, field } = adminState;
