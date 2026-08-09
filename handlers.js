@@ -589,6 +589,19 @@ function setupHandlers(bot) {
             ctx.answerCbQuery();
         });
 
+        bot.action('admin_edit_server', (ctx) => {
+                const db = readDb();
+                const servers = db.servers || [];
+                if (servers.length === 0) return ctx.answerCbQuery('سروری وجود ندارد.', {show_alert:true});
+                
+                const buttons = servers.map(s => {
+                    return [Markup.button.callback(`✏️ ${s.name}`, `select_edit_srv_${s.id}`)];
+                });
+                
+                buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_servers_menu')]);
+                ctx.editMessageText('✏️ **کدام سرور را می‌خواهید ویرایش کنید؟**', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
+            });
+
             bot.action(/select_edit_srv_(.*)/, (ctx) => {
             const srvId = ctx.match[1];
             ctx.editMessageText('⚙️ **پنل مدیریت سرور**\n\nبخش مورد نظر برای ویرایش را انتخاب کنید:', {
