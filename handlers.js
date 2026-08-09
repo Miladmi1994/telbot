@@ -660,7 +660,7 @@ function setupHandlers(bot) {
             });
 
     // ورود به منوی ویرایش یک اینباند خاص
-    bot.action(/edit_inbound_(srv_\d+)_(\d+)/, (ctx) => {
+    bot.action(/edit_inbound_(.+)_(\d+)$/, (ctx) => {
         const srvId = ctx.match[1];
         const index = parseInt(ctx.match[2]);
         const db = readDb();
@@ -669,12 +669,12 @@ function setupHandlers(bot) {
         
         const inb = server.inbounds[index];
         const text = `⚙️ **ویرایش اینباند**\n\n` +
-                    `شناسه: ${inb.id}\n` +
-                    `دامنه: ${inb.domain}\n` +
-                    `اس‌ان‌آی: ${inb.sni}\n` +
-                    `مسیر: ${inb.path}\n\n` +
-                    `کدام بخش را می‌خواهید تغییر دهید؟`;
-                    
+                     `شناسه: ${inb.id}\n` +
+                     `دامنه: ${inb.domain}\n` +
+                     `اس‌ان‌آی: ${inb.sni}\n` +
+                     `مسیر: ${inb.path}\n\n` +
+                     `کدام بخش را می‌خواهید تغییر دهید؟`;
+                     
         ctx.editMessageText(text, {
             parse_mode: 'Markdown',
             reply_markup: getSingleInboundMenu(srvId, index).reply_markup
@@ -682,7 +682,7 @@ function setupHandlers(bot) {
     });
 
     // حذف اینباند
-    bot.action(/del_inb_(srv_\d+)_(\d+)/, (ctx) => {
+    bot.action(/del_inb_(.+)_(\d+)$/, (ctx) => {
         const srvId = ctx.match[1];
         const index = parseInt(ctx.match[2]);
         const db = readDb();
@@ -700,7 +700,7 @@ function setupHandlers(bot) {
     });
 
     // دریافت فیلد مورد نظر برای ویرایش اینباند
-    bot.action(/edit_inb_(id|domain|sni|path)_(srv_\d+)_(\d+)/, (ctx) => {
+    bot.action(/edit_inb_(id|domain|sni|path)_(.+)_(\d+)$/, (ctx) => {
         const field = ctx.match[1];
         const srvId = ctx.match[2];
         const index = parseInt(ctx.match[3]);
@@ -713,7 +713,7 @@ function setupHandlers(bot) {
     });
 
     // دریافت فیلد مورد نظر برای ویرایش اطلاعات پایه سرور
-    bot.action(/edit_srv_(name|url|token)_(srv_\d+)/, (ctx) => {
+    bot.action(/edit_srv_(name|url|token)_(.+)$/, (ctx) => {
         const field = ctx.match[1];
         const srvId = ctx.match[2];
         
@@ -722,7 +722,7 @@ function setupHandlers(bot) {
         const fieldNames = { name: 'نام سرور', url: 'آدرس پنل', token: 'توکن API' };
         ctx.reply(`✏️ لطفاً مقدار جدید را برای **${fieldNames[field]}** ارسال کنید:`, { parse_mode: 'Markdown' });
         ctx.answerCbQuery();
-    });       
+    });      
 
     bot.action('admin_list_servers', (ctx) => {
         const db = readDb();
