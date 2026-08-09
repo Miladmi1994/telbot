@@ -1813,13 +1813,11 @@ function setupHandlers(bot) {
             return ctx.reply('❌ هیچ کانفیگ فعالی برای این اکانت یافت نشد. (عدم اتصال کلاینت به اینباندها)');
         }
         
-        // ۴. ارسال کانفیگ‌ها با ظاهر جمع‌وجور (expandable)
         for (let i = 0; i < configs.length; i++) {
-            await ctx.reply(`⚙️ <b>کانفیگ ${i + 1}:</b>\n👇 <i>برای کپی روی متن زیر ضربه بزنید:</i>\n<blockquote expandable><code>${configs[i]}</code></blockquote>`, { parse_mode: 'HTML' });
+            await ctx.reply(`⚙️ <b>کانفیگ ${i + 1}:</b>\n👇 <i>برای کپی روی لینک کانفیگ ضربه بزنید:</i>\n<blockquote expandable><code>${configs[i]}</code></blockquote>`, { parse_mode: 'HTML' });
         }
 
-        // ۵. پیام توصیه نهایی
-        await ctx.reply(`💡 <b>توصیه مهم:</b>\nلطفاً <b>تمام کانفیگ‌های بالا</b> را در اپلیکیشن خود اضافه کنید. از آنجایی که شرایط شبکه متغیر است، هر کانفیگ ممکن است روی اینترنت‌های مختلف (همراه اول، ایرانسل، وای‌فای و...) عملکرد بهتری داشته باشد.`, { parse_mode: 'HTML' });
+        await ctx.reply(`💡 <b>نکته:</b>\nلطفاً <b>تمام کانفیگ‌ها</b> را اضافه کنید. به دلیل شرایط متغیر شبکه، هر کانفیگ ممکن است روی یک نوع اینترنت خاص عملکرد بهتری داشته باشد.`, { parse_mode: 'HTML' });
     });
 
     bot.hears('🛒 خرید مستقیم (بدون شماره)', (ctx) => {
