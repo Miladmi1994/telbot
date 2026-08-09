@@ -169,6 +169,24 @@ async function getClientTraffic(email, server = null) {
     }
 }
 
+async function getClientActiveInboundIds(email, server = null) {
+    const apiClient = getApiClient(server); // فرض بر این است که این تابع در فایل شما وجود دارد
+    try {
+        const res = await apiClient.get(`panel/api/inbounds/getClientTraffics/${encodeURIComponent(email)}`);
+        if (res.data && res.data.success && res.data.obj) {
+            const dataObj = res.data.obj;
+            if (Array.isArray(dataObj)) {
+                // استخراج و برگرداندن شناسه (ID) اینباندهایی که این کلاینت روی آن‌ها وجود دارد
+                return dataObj.map(stat => stat.inboundId);
+            }
+        }
+        return [];
+    } catch (error) {
+        console.error("❌ Error fetching active inbounds:", error.message);
+        return [];
+    }
+}
+
 async function renewClient(uuid, oldEmail, newEmail, finalTotalGB, finalExpiryDays, server = null) {
     const apiClient = getApiClient(server);
     let inboundIds = [DEFAULT_INBOUND_ID];
@@ -352,4 +370,4 @@ async function updateDnsRecord(zoneId, recordId, name, type, content, proxied) {
 }
 
 // حتماً یادت نره تابع تست رو هم اکسپورت کنی
-module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord };
+module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds };

@@ -2,7 +2,7 @@ const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
 const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, adminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu } = require('./keyboards');
 const { readDb, writeDb } = require('./db');
-const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord } = require('./api');
+const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds } = require('./api');
 const fs = require('fs');
 const path = require('path');
 
@@ -1784,21 +1784,40 @@ function setupHandlers(bot) {
     });
 
     bot.action(/get_configs_(.+)/, async (ctx) => {
-    const uuid = ctx.match[1];
-    await ctx.answerCbQuery('✅ در حال ارسال...', { show_alert: false });
-    
-    const db = readDb();
-    const userConfigs = db.users[ctx.from.id] || [];
-    const conf = userConfigs.find(c => c.uuid === uuid);
-    const currentConfigName = conf ? conf.name : "CypherNET💎"; 
-    const targetServer = getTargetServer(db, conf);
+        const uuid = ctx.match[1];
+        await ctx.answerCbQuery('✅ در حال بررسی اتصال و ارسال...', { show_alert: false });
+        
+        const db = readDb();
+        const userConfigs = db.users[ctx.from.id] || [];
+        const conf = userConfigs.find(c => c.uuid === uuid);
+        
+        if (!conf) return ctx.reply('❌ اکانت یافت نشد.');
+        
+        const currentConfigName = conf ? conf.name : "CypherNET💎"; 
+        const targetServer = getTargetServer(db, conf);
 
-    const configs = generateAllConfigs(uuid, currentConfigName, targetServer);
-    
-    for (let i = 0; i < configs.length; i++) {
-        await ctx.reply(`⚙️ <b>کانفیگ ${i + 1}:</b>\n<blockquote expandable><code>${configs[i]}</code></blockquote>`, { parse_mode: 'HTML' });
-    }
-    }); 
+        // ۱. دریافت لیست ID اینباندهای فعال برای این کلاینت مستقیماً از پنل
+        const activeInboundIds = await getClientActiveInboundIds(conf.email, targetServer);
+
+        // ۲. ساخت یک کپی موقت از سرور برای فیلتر کردن اینباندهای غیرفعال
+        let tempServer = JSON.parse(JSON.stringify(targetServer));
+        
+        if (activeInboundIds && activeInboundIds.length > 0 && tempServer.inbounds) {
+            // نگه داشتن اینباندهایی که هم در ربات تعریف شده‌اند و هم در پنل به این کلاینت متصل هستند
+            tempServer.inbounds = tempServer.inbounds.filter(inb => activeInboundIds.includes(inb.id));
+        }
+
+        // ۳. تولید کانفیگ‌ها فقط برای اینباندهای فیلتر شده
+        const configs = generateAllConfigs(uuid, currentConfigName, tempServer);
+        
+        if (!configs || configs.length === 0) {
+            return ctx.reply('❌ هیچ کانفیگ فعالی برای این اکانت یافت نشد. (عدم اتصال کلاینت به اینباندها)');
+        }
+        
+        for (let i = 0; i < configs.length; i++) {
+            await ctx.reply(`⚙️ <b>کانفیگ ${i + 1}:</b>\n<pre><code class="language-config">${configs[i]}</code></pre>`, { parse_mode: 'HTML' });
+        }
+    });
 
     bot.hears('🛒 خرید مستقیم (بدون شماره)', (ctx) => {
         const db = readDb();
