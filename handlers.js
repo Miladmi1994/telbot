@@ -603,21 +603,42 @@ function setupHandlers(bot) {
             });
 
             bot.action(/select_edit_srv_(.*)/, (ctx) => {
-            const srvId = ctx.match[1];
-            ctx.editMessageText('⚙️ **پنل مدیریت سرور**\n\nبخش مورد نظر برای ویرایش را انتخاب کنید:', {
-                parse_mode: 'Markdown',
-                reply_markup: getServerManageMenu(srvId).reply_markup
-            });
-        });
+        const srvId = ctx.match[1];
+        const db = readDb();
+        const server = (db.servers || []).find(s => s.id === srvId);
+        if (!server) return ctx.answerCbQuery('سرور یافت نشد!', {show_alert: true});
 
-        // دکمه بازگشت به مدیریت سرور
-            bot.action(/manage_srv_(.*)/, (ctx) => {
-                const srvId = ctx.match[1];
-                ctx.editMessageText('⚙️ **پنل مدیریت سرور**\n\nبخش مورد نظر برای ویرایش را انتخاب کنید:', {
-                    parse_mode: 'Markdown',
-                    reply_markup: getServerManageMenu(srvId).reply_markup
-                });
-            });
+        const text = `⚙️ **پنل مدیریت سرور**\n\n` +
+                     `🖥 **نام:** ${server.name}\n` +
+                     `🔗 **آدرس:** ${server.panelUrl}\n` +
+                     `🔑 **توکن:** ${server.apiToken ? 'ثبت شده ✅' : 'ندارد ❌'}\n` +
+                     `🔌 **تعداد اینباندها:** ${(server.inbounds || []).length} عدد\n\n` +
+                     `بخش مورد نظر برای ویرایش را انتخاب کنید:`;
+
+        ctx.editMessageText(text, {
+            parse_mode: 'Markdown',
+            reply_markup: getServerManageMenu(srvId).reply_markup
+        });
+    });
+
+    bot.action(/manage_srv_(.*)/, (ctx) => {
+        const srvId = ctx.match[1];
+        const db = readDb();
+        const server = (db.servers || []).find(s => s.id === srvId);
+        if (!server) return ctx.answerCbQuery('سرور یافت نشد!', {show_alert: true});
+
+        const text = `⚙️ **پنل مدیریت سرور**\n\n` +
+                     `🖥 **نام:** ${server.name}\n` +
+                     `🔗 **آدرس:** ${server.panelUrl}\n` +
+                     `🔑 **توکن:** ${server.apiToken ? 'ثبت شده ✅' : 'ندارد ❌'}\n` +
+                     `🔌 **تعداد اینباندها:** ${(server.inbounds || []).length} عدد\n\n` +
+                     `بخش مورد نظر برای ویرایش را انتخاب کنید:`;
+
+        ctx.editMessageText(text, {
+            parse_mode: 'Markdown',
+            reply_markup: getServerManageMenu(srvId).reply_markup
+        });
+    });
 
             bot.action(/manage_inbounds_(.*)/, (ctx) => {
             const srvId = ctx.match[1];

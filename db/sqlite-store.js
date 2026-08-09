@@ -15,7 +15,17 @@ function openDatabase(dbFilePath) {
 
     try { db.exec("ALTER TABLE global_stats ADD COLUMN period_income INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
     try { db.exec("ALTER TABLE global_stats ADD COLUMN period_expenses INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
-    
+    // ایجاد جدول اختصاصی اینباندها
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS server_inbounds (
+            server_id TEXT REFERENCES servers(id) ON DELETE CASCADE,
+            inbound_id INTEGER NOT NULL,
+            domain TEXT NOT NULL,
+            sni TEXT NOT NULL,
+            path TEXT NOT NULL
+        );
+    `);
+
     return db;
 }
 
@@ -88,6 +98,31 @@ function loadState(db) {
     const settingsRow = db.prepare('SELECT * FROM settings WHERE id = 1').get();
     const plans = db.prepare('SELECT * FROM plans ORDER BY sort_order ASC, id ASC').all().map(rowToPlan);
     const servers = db.prepare('SELECT * FROM servers ORDER BY id ASC').all().map(rowToServer);
+    
+    // خواندن اینباندها از دیتابیس
+    const inboundsRows = db.prepare('SELECT * FROM server_inbounds').all();
+    
+    servers.forEach(srv => {
+        srv.inbounds = inboundsRows
+            .filter(row => row.server_id === srv.id)
+            .map(row => ({
+                id: row.inbound_id,
+                domain: row.domain,
+                sni: row.sni,
+                path: row.path
+            }));
+            
+        // انتقال اتوماتیک اینباند قدیمی به ساختار جدید (برای سرورهایی که از قبل ثبت شده‌اند)
+        if (srv.inbounds.length === 0 && srv.domain && srv.sni) {
+             srv.inbounds.push({
+                 id: srv.inboundId || 1,
+                 domain: srv.domain,
+                 sni: srv.sni,
+                 path: srv.path || ''
+             });
+        }
+    });
+    
     const admins = db.prepare('SELECT * FROM admins ORDER BY telegram_id ASC').all()
         .map((row) => ({ id: row.telegram_id, name: row.name }));
 
@@ -204,6 +239,7 @@ function saveState(db, data) {
         db.prepare('DELETE FROM users').run();
         db.prepare('DELETE FROM admins').run();
         db.prepare('DELETE FROM servers').run();
+        db.prepare('DELETE FROM server_inbounds').run();
         db.prepare('DELETE FROM plans').run();
         db.prepare('DELETE FROM settlements').run();
 
@@ -237,6 +273,11 @@ function saveState(db, data) {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
+        const insertInbound = db.prepare(`
+            INSERT INTO server_inbounds (server_id, inbound_id, domain, sni, path)
+            VALUES (?, ?, ?, ?, ?)
+        `);
+
         for (const server of data.servers || []) {
             insertServer.run(
                 server.id,
@@ -245,11 +286,16 @@ function saveState(db, data) {
                 server.webBasePath ?? '',
                 server.apiToken,
                 server.inboundId ?? 1,
-                server.domain,
-                server.sni,
-                server.path,
+                server.domain || '',
+                server.sni || '',
+                server.path || '',
                 server.isMigrating ? 1 : 0
             );
+            
+            // ذخیره لیست اینباندهای هر سرور
+            for (const inb of server.inbounds || []) {
+                insertInbound.run(server.id, inb.id, inb.domain, inb.sni, inb.path);
+            }
         }
 
         const insertAdmin = db.prepare('INSERT INTO admins (telegram_id, name) VALUES (?, ?)');
