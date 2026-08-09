@@ -80,13 +80,18 @@ async function createClient(email, totalGB, expiryDays, server = null) {
     const uuid = crypto.randomUUID();
     const subId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
     
-    const inboundId = server?.inboundId || DEFAULT_INBOUND_ID;
+    let inboundIds = [DEFAULT_INBOUND_ID];
+    if (server && server.inbounds && server.inbounds.length > 0) {
+        inboundIds = server.inbounds.map(inb => inb.id);
+    } else if (server && server.inboundId) {
+        inboundIds = [server.inboundId];
+    }
     const apiClient = getApiClient(server);
 
     try {
         const res = await apiClient.post('panel/api/clients/add', {
             client: { id: uuid, email, totalGB: bytesTotal, expiryTime, enable: true, limitIp: 0, subId },
-            inboundIds: [inboundId]
+            inboundIds: inboundIds
         });
         if (res.data && !res.data.success) {
             console.error("❌ ارور پنل موقع ساخت اکانت:", res.data.msg);
@@ -166,23 +171,23 @@ async function getClientTraffic(email, server = null) {
 
 async function renewClient(uuid, oldEmail, newEmail, finalTotalGB, finalExpiryDays, server = null) {
     const apiClient = getApiClient(server);
-    const inboundId = server?.inboundId || DEFAULT_INBOUND_ID;
+    let inboundIds = [DEFAULT_INBOUND_ID];
+    if (server && server.inbounds && server.inbounds.length > 0) {
+        inboundIds = server.inbounds.map(inb => inb.id);
+    } else if (server && server.inboundId) {
+        inboundIds = [server.inboundId];
+    }
 
     try {
-        // تبدیل مستقیم اعدادی که هندلر محاسبه کرده به فرمت قابل فهم برای پنل
         const newTotalBytes = Math.floor(finalTotalGB * 1073741824);
         const newExpiryTime = Date.now() + (finalExpiryDays * 24 * 60 * 60 * 1000);
 
-        // تلاش برای حذف کاربر قدیمی (با مدیریت خطای اکانت‌های منقضی و حذف شده)
         try {
             await apiClient.post(`panel/api/clients/del/${encodeURIComponent(oldEmail)}?keepTraffic=0`);
-        } catch (e) {
-            // نادیده گرفتن خطا اگر اکانت از قبل در پنل وجود نداشته باشد
-        }
+        } catch (e) {}
 
         const subId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
         
-        // ساخت کاربر جدید با اطلاعات و مقادیر نهایی
         await apiClient.post('panel/api/clients/add', {
             client: {
                 id: uuid,
@@ -193,9 +198,8 @@ async function renewClient(uuid, oldEmail, newEmail, finalTotalGB, finalExpiryDa
                 limitIp: 0,
                 subId: subId
             },
-            inboundIds: [inboundId]
+            inboundIds: inboundIds
         });
-
         return { success: true, log: "OK" };
 
     } catch (error) {
@@ -204,165 +208,102 @@ async function renewClient(uuid, oldEmail, newEmail, finalTotalGB, finalExpiryDa
     }
 }
 
-function generateMciConfig(uuid, configName = "CypherNET💎", server = null) {
-    const remark = encodeURIComponent(configName + " 2");
-    const domain = server?.domain || "ns.crrc.ir";
-    const sni = server?.sni || "css.2net.ir";
-    // انکود کردن مسیر برای پشتیبانی از ایموجی و کاراکترهای خاص
-    const path = server?.path ? encodeURIComponent(server.path) : "%2FCypher_Net"; 
-    
-    return `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=xhttp&path=${path}&mode=packet-up#${remark}`;
-}
-
-function generateMtnConfig(uuid, configName = "CypherNET💎", server = null) {
-    const domain = server?.domain || "ns.crrc.ir";
-    const sni = server?.sni || "css.2net.ir";
-    const pathStr = server?.path ? server.path : "/Cypher_Net";
-
+function generateJsonConfig(uuid, configName, domain, sni, pathStr, typeNum) {
     const config = {
-        "dns": {
-            "servers": [
-                "localhost"
-            ]
-        },
-        "inbounds": [
-            {
-                "listen": "127.0.0.1",
-                "port": 10808,
-                "protocol": "socks",
-                "settings": {
-                    "auth": "noauth",
-                    "udp": true,
-                    "userLevel": 8
-                },
-                "sniffing": {
-                    "destOverride": [
-                        "http",
-                        "tls",
-                        "quic"
-                    ],
-                    "enabled": true,
-                    "routeOnly": true
-                },
-                "tag": "socks"
-            }
-        ],
-        "log": {
-            "loglevel": "warning"
-        },
+        "dns": { "servers": ["localhost"] },
+        "inbounds": [{
+            "listen": "127.0.0.1", "port": 10808, "protocol": "socks",
+            "settings": { "auth": "noauth", "udp": true, "userLevel": 8 },
+            "sniffing": { "destOverride": ["http", "tls", "quic"], "enabled": true, "routeOnly": true },
+            "tag": "socks"
+        }],
+        "log": { "loglevel": "warning" },
         "outbounds": [
             {
-                "mux": {
-                    "concurrency": -1,
-                    "enabled": false
-                },
+                "mux": { "concurrency": -1, "enabled": false },
                 "protocol": "vless",
                 "settings": {
-                    "vnext": [
-                        {
-                            "address": domain, // متغیر دامنه
-                            "port": 443,
-                            "users": [
-                                {
-                                    "encryption": "none",
-                                    "id": uuid, // متغیر شناسه کاربر
-                                    "level": 8
-                                }
-                            ]
-                        }
-                    ]
+                    "vnext": [{
+                        "address": domain,
+                        "port": 443,
+                        "users": [{ "encryption": "none", "id": uuid, "level": 8 }]
+                    }]
                 },
                 "streamSettings": {
-                    "finalmask": { // اضافه شدن تنظیمات فرگمنت
+                    "finalmask": {
                         "tcp": [
-                            {
-                                "type": "fragment",
-                                "settings": {
-                                    "delay": "2-4",
-                                    "length": "20-25",
-                                    "packets": "tlshello"
-                                }
-                            }
+                            { "type": "fragment", "settings": { "delay": "2-4", "length": "20-25", "packets": "tlshello" } }
                         ],
                         "udp": [
-                            {
-                                "type": "noise",
-                                "settings": {
-                                    "delay": "10-16",
-                                    "length": "10-20"
-                                }
-                            }
+                            { "type": "noise", "settings": { "delay": "10-16", "length": "10-20" } }
                         ]
                     },
                     "network": "xhttp",
                     "security": "tls",
                     "sockopt": {
                         "domainStrategy": "UseIP",
-                        "happyEyeballs": {
-                            "interleave": 2,
-                            "maxConcurrentTry": 4,
-                            "prioritizeIPv6": false,
-                            "tryDelayMs": 250
-                        }
+                        "happyEyeballs": { "interleave": 2, "maxConcurrentTry": 4, "prioritizeIPv6": false, "tryDelayMs": 250 }
                     },
-                    "tlsSettings": {
-                        "allowInsecure": false,
-                        "alpn": [
-                            "h3",
-                            "h2"
-                        ],
-                        "fingerprint": "chrome",
-                        "serverName": sni // متغیر SNI
-                    },
-                    "xhttpSettings": {
-                        "host": "",
-                        "mode": "packet-up",
-                        "path": pathStr // متغیر مسیر
-                    }
+                    "tlsSettings": { "allowInsecure": false, "alpn": ["h3", "h2"], "fingerprint": "chrome", "serverName": sni },
+                    "xhttpSettings": { "host": "", "mode": "packet-up", "path": pathStr }
                 },
                 "tag": "proxy"
             },
-            {
-                "protocol": "freedom",
-                "streamSettings": {
-                    "network": "tcp",
-                    "sockopt": {
-                        "domainStrategy": "UseIP"
-                    }
-                },
-                "tag": "direct"
-            },
-            {
-                "protocol": "blackhole",
-                "settings": {
-                    "response": {
-                        "type": "http"
-                    }
-                },
-                "tag": "block"
-            }
+            { "protocol": "freedom", "streamSettings": { "network": "tcp", "sockopt": { "domainStrategy": "UseIP" } }, "tag": "direct" },
+            { "protocol": "blackhole", "settings": { "response": { "type": "http" } }, "tag": "block" }
         ],
-        "remarks": configName + " 1", // متغیر نام کانفیگ
+        "remarks": `${configName} ${typeNum}`,
         "routing": {
             "domainStrategy": "AsIs",
             "rules": [
-                {
-                    "network": "udp",
-                    "outboundTag": "block",
-                    "port": "443",
-                    "type": "field"
-                },
-                {
-                    "port": "0-65535",
-                    "outboundTag": "proxy",
-                    "type": "field"
-                }
+                { "network": "udp", "outboundTag": "block", "port": "443", "type": "field" },
+                { "port": "0-65535", "outboundTag": "proxy", "type": "field" }
             ]
         }
     };
-
     return JSON.stringify(config);
 }
+
+function generateVlessLink(uuid, configName, domain, sni, pathStr, typeNum) {
+    const remark = encodeURIComponent(`${configName} ${typeNum}`);
+    const encPath = encodeURIComponent(pathStr);
+    return `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=xhttp&path=${encPath}&mode=packet-up#${remark}`;
+}
+
+function generateFinalMaskLink(uuid, configName, domain, sni, pathStr, typeNum) {
+    const remark = encodeURIComponent(`${configName} ${typeNum}`);
+    const encPath = encodeURIComponent(pathStr);
+    const fmObj = {
+        "tcp": [
+            { "type": "fragment", "settings": { "packets": "tlshello", "lengths": ["5","94", "1"], "delays": ["0"], "maxSplit": "0" } },
+            { "type": "fragment", "settings": { "packets": "1-1", "lengths": ["109", "1"], "delays": ["1"], "maxSplit": "355" } }
+        ]
+    };
+    const encFm = encodeURIComponent(JSON.stringify(fmObj));
+    return `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=xhttp&path=${encPath}&mode=packet-up&fm=${encFm}#${remark}`;
+}
+
+function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
+    const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [{
+        domain: server?.domain || "ns.crrc.ir",
+        sni: server?.sni || "css.2net.ir",
+        path: server?.path || "/Cypher_Net"
+    }];
+
+    let results = [];
+    inbounds.forEach(inb => {
+        const domain = inb.domain;
+        const sni = inb.sni;
+        const pathStr = inb.path;
+        
+        results.push(generateJsonConfig(uuid, configName, domain, sni, pathStr, 1));
+        results.push(generateVlessLink(uuid, configName, domain, sni, pathStr, 2));
+        results.push(generateFinalMaskLink(uuid, configName, domain, sni, pathStr, 3));
+    });
+    
+    return results;
+}
+
 
 // --- Cloudflare API Functions ---
 
@@ -411,4 +352,4 @@ async function updateDnsRecord(zoneId, recordId, name, type, content, proxied) {
 }
 
 // حتماً یادت نره تابع تست رو هم اکسپورت کنی
-module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateMciConfig, generateMtnConfig, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord };
+module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord };

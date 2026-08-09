@@ -2,7 +2,7 @@ const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
 const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, adminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu } = require('./keyboards');
 const { readDb, writeDb } = require('./db');
-const { createClient, deleteClient, renewClient, getClientTraffic, generateMciConfig, generateMtnConfig, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord } = require('./api');
+const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord } = require('./api');
 const fs = require('fs');
 const path = require('path');
 
@@ -1784,24 +1784,21 @@ function setupHandlers(bot) {
     });
 
     bot.action(/get_configs_(.+)/, async (ctx) => {
-        const uuid = ctx.match[1];
-        await ctx.answerCbQuery('✅ در حال ارسال...', { show_alert: false });
-        
-        const db = readDb();
-        const userConfigs = db.users[ctx.from.id] || [];
-        const conf = userConfigs.find(c => c.uuid === uuid);
-        const currentConfigName = conf ? conf.name : "CypherNET💎"; 
-        const targetServer = getTargetServer(db, conf);
+    const uuid = ctx.match[1];
+    await ctx.answerCbQuery('✅ در حال ارسال...', { show_alert: false });
+    
+    const db = readDb();
+    const userConfigs = db.users[ctx.from.id] || [];
+    const conf = userConfigs.find(c => c.uuid === uuid);
+    const currentConfigName = conf ? conf.name : "CypherNET💎"; 
+    const targetServer = getTargetServer(db, conf);
 
-        const config1 = generateMtnConfig(uuid, currentConfigName, targetServer);
-        const config2 = generateMciConfig(uuid, currentConfigName, targetServer);
-        
-        const msg1 = `🟡 <b>کانفیگ شماره ۱:</b>\nبرای کپی کردن کانفیگ روی آن ضربه بزنید:\n\n<blockquote expandable><code>${config1}</code></blockquote>`;
-        const msg2 = `🔵 <b>کانفیگ شماره ۲:</b>\nبرای کپی کردن کانفیگ روی آن ضربه بزنید:\n\n<blockquote expandable><code>${config2}</code></blockquote>\n\n⚠️ <b>نکته مهم:</b>\nلطفاً هر دو کانفیگ را به برنامه اضافه کنید و هرکدام که سرعت و پایداری بهتری داشت را متصل شوید. (ممکن است هر کانفیگ روی اپراتورهای خاصی عملکرد بهتری داشته باشد)`;
-        
-        await ctx.reply(msg1, { parse_mode: 'HTML' });
-        await ctx.reply(msg2, { parse_mode: 'HTML' });
-    });
+    const configs = generateAllConfigs(uuid, currentConfigName, targetServer);
+    
+    for (let i = 0; i < configs.length; i++) {
+        await ctx.reply(`⚙️ <b>کانفیگ ${i + 1}:</b>\n<blockquote expandable><code>${configs[i]}</code></blockquote>`, { parse_mode: 'HTML' });
+    }
+    }); 
 
     bot.hears('🛒 خرید مستقیم (بدون شماره)', (ctx) => {
         const db = readDb();
