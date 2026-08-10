@@ -100,7 +100,7 @@ async function createClient(email, totalGB, expiryDays, server) {
         expiryTime: expiryTime,
         enable: true,
         tgId: 0,
-        subId: ''
+        subId: subId
     };
 
     if (!server.inbounds || server.inbounds.length === 0) {
@@ -293,7 +293,7 @@ async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server
                     expiryTime: expiryTime,
                     enable: true,
                     tgId: 0,
-                    subId: ''
+                    subId: subId
                 });
             }
 
@@ -330,7 +330,7 @@ async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server
     }
 }
 
-function generateJsonConfig(uuid, configName, domain, sni, pathStr, network, typeNum) {
+function generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, typeNum) {
     const config = {
         "dns": { "servers": ["localhost"] },
         "inbounds": [{
@@ -347,7 +347,7 @@ function generateJsonConfig(uuid, configName, domain, sni, pathStr, network, typ
                 "settings": {
                     "vnext": [{
                         "address": domain,
-                        "port": 443,
+                        "port": port,
                         "users": [{ "encryption": "none", "id": uuid, "level": 8 }]
                     }]
                 },
@@ -371,17 +371,11 @@ function generateJsonConfig(uuid, configName, domain, sni, pathStr, network, typ
         }
     };
 
-    // اعمال تنظیمات اختصاصی شبکه (ws یا xhttp) برای JSON
     if (network === 'xhttp') {
-        config.outbounds[0].streamSettings.xhttpSettings = { "host": "", "mode": "packet-up", "path": pathStr };
+        config.outbounds[0].streamSettings.xhttpSettings = { "host": domain, "mode": "auto", "path": pathStr };
         config.outbounds[0].streamSettings.sockopt = {
             "domainStrategy": "UseIP",
             "happyEyeballs": { "interleave": 2, "maxConcurrentTry": 4, "prioritizeIPv6": false, "tryDelayMs": 250 }
-        };
-        // اضافه کردن finalmask برای xhttp
-        config.outbounds[0].streamSettings.finalmask = {
-            "tcp": [ { "type": "fragment", "settings": { "delay": "2-4", "length": "20-25", "packets": "tlshello" } } ],
-            "udp": [ { "type": "noise", "settings": { "delay": "10-16", "length": "10-20" } } ]
         };
     } else if (network === 'ws') {
         config.outbounds[0].streamSettings.wsSettings = { "headers": { "Host": domain }, "path": pathStr };
@@ -390,17 +384,17 @@ function generateJsonConfig(uuid, configName, domain, sni, pathStr, network, typ
     return JSON.stringify(config);
 }
 
-function generateVlessLink(uuid, configName, domain, sni, pathStr, network, typeNum) {
+function generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, typeNum) {
     const remark = encodeURIComponent(`${configName} ${typeNum}`);
     const encPath = encodeURIComponent(pathStr);
-    const modeParam = network === 'xhttp' ? '&mode=packet-up' : '';
-    return `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${sni}&type=${network}&host=${domain}&path=${encPath}${modeParam}#${remark}`;
+    const modeParam = network === 'xhttp' ? '&mode=auto' : '';
+    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&type=${network}&host=${domain}&path=${encPath}${modeParam}#${remark}`;
 }
 
-function generateFinalMaskLink(uuid, configName, domain, sni, pathStr, network, typeNum) {
+function generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, typeNum) {
     const remark = encodeURIComponent(`${configName} ${typeNum}`);
     const encPath = encodeURIComponent(pathStr);
-    const modeParam = network === 'xhttp' ? '&mode=packet-up' : '';
+    const modeParam = network === 'xhttp' ? '&mode=auto' : '';
     const fmObj = {
         "tcp": [
             { "type": "fragment", "settings": { "packets": "tlshello", "lengths": ["5","94", "1"], "delays": ["0"], "maxSplit": "0" } },
@@ -408,27 +402,23 @@ function generateFinalMaskLink(uuid, configName, domain, sni, pathStr, network, 
         ]
     };
     const encFm = encodeURIComponent(JSON.stringify(fmObj));
-    return `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=${network}&path=${encPath}${modeParam}&fm=${encFm}#${remark}`;
+    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=${network}&path=${encPath}${modeParam}&fm=${encFm}#${remark}`;
 }
 
 function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
-    const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [{
-        domain: server?.domain || "ns.crrc.ir",
-        sni: server?.sni || "css.2net.ir",
-        path: server?.path || "/Cypher_Net",
-        network: "ws"
-    }];
-
+    const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [];
     let results = [];
-    inbounds.forEach(inb => {
-        const domain = inb.domain;
-        const sni = inb.sni;
-        const pathStr = inb.path;
+    
+    inbounds.forEach((inb, index) => {
+        const domain = inb.domain || "ns.crrc.ir";
+        const port = inb.port || 443;
+        const sni = inb.sni || domain;
+        const pathStr = inb.path || "/Cypher_Net";
         const network = inb.network || "ws"; 
         
-        results.push(generateJsonConfig(uuid, configName, domain, sni, pathStr, network, 1));
-        results.push(generateVlessLink(uuid, configName, domain, sni, pathStr, network, 2));
-        results.push(generateFinalMaskLink(uuid, configName, domain, sni, pathStr, network, 3));
+        results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, index + 1));
+        results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, index + 1));
+        results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, index + 1));
     });
     
     return results;
