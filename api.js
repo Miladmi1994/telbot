@@ -12,11 +12,23 @@ const DEFAULT_INBOUND_ID = 1;
 // تابع ساخت کلاینت داینامیک برای هر سرور
 function getApiClient(server) {
     const url = server?.panelUrl || DEFAULT_PANEL_URL;
-    const path = server?.webBasePath !== undefined ? server.webBasePath : DEFAULT_WEB_BASE_PATH;
+    
+    // رفع مشکل 404: جلوگیری از افزودن مسیر سرور قدیمی به سرورهای جدید
+    let path = '';
+    if (server?.webBasePath !== undefined) {
+        path = server.webBasePath;
+    } else if (!server || server.id === 'srv_364212' || server.id === 'default') {
+        path = DEFAULT_WEB_BASE_PATH;
+    }
+
+    // تضمین فرمت صحیح اسلش‌ها
+    let baseURL = url.endsWith('/') ? url.slice(0, -1) : url;
+    if (path && !path.startsWith('/')) path = '/' + path;
+    
     const token = server?.apiToken || DEFAULT_API_TOKEN;
 
     return axios.create({
-        baseURL: `${url}${path}/`,
+        baseURL: `${baseURL}${path}/`,
         headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -74,40 +86,55 @@ async function testServerConnection(panelUrl, webBasePath, apiToken) {
     }
 }
 
-async function createClient(email, totalGB, expiryDays, server = null) {
-    const expiryTime = expiryDays > 0 ? Date.now() + (expiryDays * 24 * 60 * 60 * 1000) : 0;
-    const bytesTotal = Math.floor(totalGB * 1073741824);
-    const uuid = crypto.randomUUID();
-    const subId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
-    
-    let inboundIds = [DEFAULT_INBOUND_ID];
-    if (server && server.inbounds && server.inbounds.length > 0) {
-        inboundIds = server.inbounds.map(inb => inb.id);
-    } else if (server && server.inboundId) {
-        inboundIds = [server.inboundId];
-    }
+async function createClient(email, totalGB, expiryDays, server) {
     const apiClient = getApiClient(server);
+    const uuid = crypto.randomUUID(); 
+    const subId = crypto.randomBytes(8).toString('hex');
+    
+    const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
+    const expiryTime = expiryDays === 0 ? 0 : Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
+
+    if (!server.inbounds || server.inbounds.length === 0) {
+        console.error("❌ No inbounds defined for this server.");
+        return false;
+    }
+
+    // استخراج هوشمند تمام آیدی‌های اینباند این سرور
+    const inboundIds = server.inbounds.map(inb => inb.id);
+
+    const payload = {
+        client: {
+            id: uuid,
+            email: email,
+            limitIp: 0,
+            totalGB: totalByte,
+            expiryTime: expiryTime,
+            enable: true,
+            tgId: 0,
+            subId: subId
+        },
+        inboundIds: inboundIds // اختصاص همزمان کلاینت به تمام اینباندها (WS و XHTTP)
+    };
 
     try {
-        const res = await apiClient.post('panel/api/clients/add', {
-            client: { id: uuid, email, totalGB: bytesTotal, expiryTime, enable: true, limitIp: 0, subId },
-            inboundIds: inboundIds
-        });
-        if (res.data && !res.data.success) {
-            console.error("❌ ارور پنل موقع ساخت اکانت:", res.data.msg);
-            return null;
+        const res = await apiClient.post('panel/api/clients/add', payload);
+        if (res.data && res.data.success) {
+            return uuid;
+        } else {
+            console.error("❌ Panel rejected add client:", res.data.msg);
+            return false;
         }
-        return uuid;
     } catch (error) {
-        console.error("❌ خطای API موقع ساخت:", error.response?.data ? JSON.stringify(error.response.data) : error.message);
-        return null;
+        console.error("❌ API Error adding client:", error.message);
+        return false;
     }
 }
 
-async function deleteClient(email, server = null) {
+async function deleteClient(identifier, server = null) {
     const apiClient = getApiClient(server);
     try {
-        await apiClient.post(`panel/api/clients/del/${email}?keepTraffic=0`);
+        // حذف کلاینت از تمام اینباندها به صورت بومی
+        await apiClient.post(`panel/api/clients/del/${identifier}`);
         return true;
     } catch (error) {
         return false;
@@ -170,15 +197,20 @@ async function getClientTraffic(email, server = null) {
 }
 
 async function getClientActiveInboundIds(email, server = null) {
-    const apiClient = getApiClient(server); // فرض بر این است که این تابع در فایل شما وجود دارد
+    const apiClient = getApiClient(server);
     try {
-        const res = await apiClient.get(`panel/api/inbounds/getClientTraffics/${encodeURIComponent(email)}`);
-        if (res.data && res.data.success && res.data.obj) {
-            const dataObj = res.data.obj;
-            if (Array.isArray(dataObj)) {
-                // استخراج و برگرداندن شناسه (ID) اینباندهایی که این کلاینت روی آن‌ها وجود دارد
-                return dataObj.map(stat => stat.inboundId);
-            }
+        const res = await apiClient.get('panel/api/inbounds/list');
+        if (res.data && res.data.success && Array.isArray(res.data.obj)) {
+            const activeInboundIds = [];
+            res.data.obj.forEach(inbound => {
+                if (inbound.clientStats && Array.isArray(inbound.clientStats)) {
+                    const exists = inbound.clientStats.some(stat => stat.email === email);
+                    if (exists) {
+                        activeInboundIds.push(inbound.id);
+                    }
+                }
+            });
+            return activeInboundIds;
         }
         return [];
     } catch (error) {
@@ -187,46 +219,54 @@ async function getClientActiveInboundIds(email, server = null) {
     }
 }
 
-async function renewClient(uuid, oldEmail, newEmail, finalTotalGB, finalExpiryDays, server = null) {
+async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server) {
     const apiClient = getApiClient(server);
-    let inboundIds = [DEFAULT_INBOUND_ID];
-    if (server && server.inbounds && server.inbounds.length > 0) {
-        inboundIds = server.inbounds.map(inb => inb.id);
-    } else if (server && server.inboundId) {
-        inboundIds = [server.inboundId];
+    
+    const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
+    const expiryTime = expiryDays === 0 ? 0 : Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
+    const subId = crypto.randomBytes(8).toString('hex');
+
+    if (!server.inbounds || server.inbounds.length === 0) {
+        return { success: false, log: 'اینباندی برای این سرور یافت نشد.' };
     }
 
+    const inboundIds = server.inbounds.map(inb => inb.id);
+
     try {
-        const newTotalBytes = Math.floor(finalTotalGB * 1073741824);
-        const newExpiryTime = Date.now() + (finalExpiryDays * 24 * 60 * 60 * 1000);
+        // ۱. عملیات خودترمیمی (Self-Healing): حذف کامل کلاینت با UUID
+        // این کار باعث می‌شود تمام ردیف‌های تکراری و زامبیِ داخل عکس، یک‌جا از دیتابیس پنل پاک شوند
+        await apiClient.post(`panel/api/clients/del/${uuid}`).catch(() => {});
+        await apiClient.post(`panel/api/clients/del/${oldEmail}`).catch(() => {});
 
-        try {
-            await apiClient.post(`panel/api/clients/del/${encodeURIComponent(oldEmail)}?keepTraffic=0`);
-        } catch (e) {}
-
-        const subId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
-        
-        await apiClient.post('panel/api/clients/add', {
+        // ۲. ساخت مجدد کلاینت با ایمیل و حجم جدید روی تمام اینباندها به صورت همزمان
+        const payload = {
             client: {
-                id: uuid,
+                id: uuid, // UUID ثابت می‌ماند تا کانفیگ کاربر قطع نشود
                 email: newEmail,
-                totalGB: newTotalBytes,
-                expiryTime: newExpiryTime,
-                enable: true,
                 limitIp: 0,
+                totalGB: totalByte,
+                expiryTime: expiryTime,
+                enable: true,
+                tgId: 0,
                 subId: subId
             },
             inboundIds: inboundIds
-        });
-        return { success: true, log: "OK" };
+        };
 
+        const res = await apiClient.post('panel/api/clients/add', payload);
+        
+        if (res.data && res.data.success) {
+            return { success: true, log: 'تمدید با موفقیت انجام شد' };
+        } else {
+            return { success: false, log: res.data?.msg || 'خطا در ثبت کلاینت جدید در پنل' };
+        }
     } catch (error) {
-        const errDetail = error.response?.data ? JSON.stringify(error.response.data) : error.message;
-        return { success: false, log: errDetail };
+        console.error(`❌ Error renewing client:`, error.message);
+        return { success: false, log: error.message };
     }
 }
 
-function generateJsonConfig(uuid, configName, domain, sni, pathStr, typeNum) {
+function generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, suffix) {
     const config = {
         "dns": { "servers": ["localhost"] },
         "inbounds": [{
@@ -243,34 +283,21 @@ function generateJsonConfig(uuid, configName, domain, sni, pathStr, typeNum) {
                 "settings": {
                     "vnext": [{
                         "address": domain,
-                        "port": 443,
+                        "port": port,
                         "users": [{ "encryption": "none", "id": uuid, "level": 8 }]
                     }]
                 },
                 "streamSettings": {
-                    "finalmask": {
-                        "tcp": [
-                            { "type": "fragment", "settings": { "delay": "2-4", "length": "20-25", "packets": "tlshello" } }
-                        ],
-                        "udp": [
-                            { "type": "noise", "settings": { "delay": "10-16", "length": "10-20" } }
-                        ]
-                    },
-                    "network": "xhttp",
+                    "network": network,
                     "security": "tls",
-                    "sockopt": {
-                        "domainStrategy": "UseIP",
-                        "happyEyeballs": { "interleave": 2, "maxConcurrentTry": 4, "prioritizeIPv6": false, "tryDelayMs": 250 }
-                    },
-                    "tlsSettings": { "allowInsecure": false, "alpn": ["h3", "h2"], "fingerprint": "chrome", "serverName": sni },
-                    "xhttpSettings": { "host": "", "mode": "packet-up", "path": pathStr }
+                    "tlsSettings": { "allowInsecure": false, "alpn": ["h3", "h2"], "fingerprint": "chrome", "serverName": sni }
                 },
                 "tag": "proxy"
             },
             { "protocol": "freedom", "streamSettings": { "network": "tcp", "sockopt": { "domainStrategy": "UseIP" } }, "tag": "direct" },
             { "protocol": "blackhole", "settings": { "response": { "type": "http" } }, "tag": "block" }
         ],
-        "remarks": `${configName} ${typeNum}`,
+        "remarks": `${configName} ${suffix}`,
         "routing": {
             "domainStrategy": "AsIs",
             "rules": [
@@ -279,18 +306,32 @@ function generateJsonConfig(uuid, configName, domain, sni, pathStr, typeNum) {
             ]
         }
     };
+
+    if (network === 'xhttp') {
+        config.outbounds[0].streamSettings.xhttpSettings = { "mode": "auto", "path": pathStr };
+        config.outbounds[0].streamSettings.sockopt = {
+            "domainStrategy": "UseIP",
+            "happyEyeballs": { "interleave": 2, "maxConcurrentTry": 4, "prioritizeIPv6": false, "tryDelayMs": 250 }
+        };
+    } else if (network === 'ws') {
+        config.outbounds[0].streamSettings.wsSettings = { "headers": {}, "path": pathStr };
+    }
+
     return JSON.stringify(config);
 }
 
-function generateVlessLink(uuid, configName, domain, sni, pathStr, typeNum) {
-    const remark = encodeURIComponent(`${configName} ${typeNum}`);
+function generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, suffix) {
+    const remark = encodeURIComponent(`${configName} ${suffix}`);
     const encPath = encodeURIComponent(pathStr);
-    return `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=xhttp&path=${encPath}&mode=packet-up#${remark}`;
+    const modeParam = network === 'xhttp' ? '&mode=auto' : '';
+    // پارامتر host به صورت کامل حذف شد
+    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&type=${network}&path=${encPath}${modeParam}#${remark}`;
 }
 
-function generateFinalMaskLink(uuid, configName, domain, sni, pathStr, typeNum) {
-    const remark = encodeURIComponent(`${configName} ${typeNum}`);
+function generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, suffix) {
+    const remark = encodeURIComponent(`${configName} ${suffix}`);
     const encPath = encodeURIComponent(pathStr);
+    const modeParam = network === 'xhttp' ? '&mode=auto' : '';
     const fmObj = {
         "tcp": [
             { "type": "fragment", "settings": { "packets": "tlshello", "lengths": ["5","94", "1"], "delays": ["0"], "maxSplit": "0" } },
@@ -298,25 +339,50 @@ function generateFinalMaskLink(uuid, configName, domain, sni, pathStr, typeNum) 
         ]
     };
     const encFm = encodeURIComponent(JSON.stringify(fmObj));
-    return `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=xhttp&path=${encPath}&mode=packet-up&fm=${encFm}#${remark}`;
+    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=${network}&path=${encPath}${modeParam}&fm=${encFm}#${remark}`;
 }
 
 function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
-    const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [{
-        domain: server?.domain || "ns.crrc.ir",
-        sni: server?.sni || "css.2net.ir",
-        path: server?.path || "/Cypher_Net"
-    }];
-
+    const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [];
     let results = [];
-    inbounds.forEach(inb => {
-        const domain = inb.domain;
-        const sni = inb.sni;
-        const pathStr = inb.path;
+    
+    // شمارنده‌های مجزا برای کل خروجی‌ها
+    let wsCounter = 1;
+    let otherCounter = 1;
+    
+    inbounds.forEach((inb) => {
+        const network = (inb.network || inb.streamSettings?.network || "xhttp").toLowerCase();
+        const port = inb.port || 443;
         
-        results.push(generateJsonConfig(uuid, configName, domain, sni, pathStr, 1));
-        results.push(generateVlessLink(uuid, configName, domain, sni, pathStr, 2));
-        results.push(generateFinalMaskLink(uuid, configName, domain, sni, pathStr, 3));
+        let domain = inb.domain;
+        let sni = inb.sni;
+        let pathStr = inb.path;
+
+        if (network === 'xhttp') {
+            const xhttp = inb.streamSettings?.xhttpSettings || {};
+            pathStr = pathStr || xhttp.path || "/Cypher_Net";
+            domain = domain || xhttp.host || "ns.crrc.ir";
+        } else if (network === 'ws') {
+            const ws = inb.streamSettings?.wsSettings || {};
+            pathStr = pathStr || ws.path || "/Cypher_Net";
+            domain = domain || ws.host || "ns.crrc.ir";
+        }
+
+        sni = sni || inb.streamSettings?.tlsSettings?.serverName || domain;
+        domain = domain || "ns.crrc.ir";
+        
+        // تابع کمکی برای دریافت پسوند و افزایش شمارنده به ازای هر کانفیگ
+        const getNextSuffix = () => {
+            if (network === 'ws') {
+                return `ws-${wsCounter++}`;
+            } else {
+                return `${otherCounter++}`;
+            }
+        };
+        
+        results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+        results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+        results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
     });
     
     return results;

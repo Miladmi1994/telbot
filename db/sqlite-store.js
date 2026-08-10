@@ -25,6 +25,8 @@ function openDatabase(dbFilePath) {
             path TEXT NOT NULL
         );
     `);
+    
+    try { db.exec("ALTER TABLE server_inbounds ADD COLUMN network TEXT NOT NULL DEFAULT 'ws';"); } catch (e) {}
 
     return db;
 }
@@ -109,16 +111,18 @@ function loadState(db) {
                 id: row.inbound_id,
                 domain: row.domain,
                 sni: row.sni,
-                path: row.path
+                path: row.path,
+                network: row.network // <--- این خط باید اضافه شود
             }));
             
-        // انتقال اتوماتیک اینباند قدیمی به ساختار جدید (برای سرورهایی که از قبل ثبت شده‌اند)
+        // انتقال اتوماتیک اینباند قدیمی به ساختار جدید
         if (srv.inbounds.length === 0 && srv.domain && srv.sni) {
              srv.inbounds.push({
                  id: srv.inboundId || 1,
                  domain: srv.domain,
                  sni: srv.sni,
-                 path: srv.path || ''
+                 path: srv.path || '',
+                 network: 'ws' // <--- مقدار پیش‌فرض را اینجا هم بدهید
              });
         }
     });
@@ -273,9 +277,10 @@ function saveState(db, data) {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
+        // کد قبلی را با این جایگزین کنید (اضافه شدن network)
         const insertInbound = db.prepare(`
-            INSERT INTO server_inbounds (server_id, inbound_id, domain, sni, path)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO server_inbounds (server_id, inbound_id, domain, sni, path, network)
+            VALUES (?, ?, ?, ?, ?, ?)
         `);
 
         for (const server of data.servers || []) {
@@ -292,9 +297,9 @@ function saveState(db, data) {
                 server.isMigrating ? 1 : 0
             );
             
-            // ذخیره لیست اینباندهای هر سرور
+            // ذخیره لیست اینباندهای هر سرور همراه با فیلد شبکه
             for (const inb of server.inbounds || []) {
-                insertInbound.run(server.id, inb.id, inb.domain, inb.sni, inb.path);
+                insertInbound.run(server.id, inb.id, inb.domain, inb.sni, inb.path, inb.network || 'ws');
             }
         }
 

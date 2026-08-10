@@ -177,6 +177,25 @@ function setupHandlers(bot) {
     await ctx.reply('لطفاً SNI جدید را ارسال کنید:');
 });
 
+bot.command('dbtest', (ctx) => {
+    if (!isUserAdmin(ctx.from.id.toString())) return;
+    const db = readDb();
+    
+    let text = `⚙️ <b>تنظیمات فعال:</b>\n`;
+    text += `🔹 Active Server ID: <code>${db.settings?.activeServerId}</code>\n\n`;
+    text += `📋 <b>کل سرورهای دیتابیس (${(db.servers || []).length} عدد):</b>\n\n`;
+
+    (db.servers || []).forEach((srv, i) => {
+        text += `🌐 <b>سرور ${i + 1} (${srv.name}):</b>\n`;
+        text += `▫️ شناسه: <code>${srv.id}</code>\n`;
+        text += `▫️ آدرس: <code>${srv.panelUrl}</code>\n`;
+        text += `▫️ تعداد اینباند: <b>${(srv.inbounds || []).length}</b> عدد\n`;
+        text += `〰️〰️〰️〰️〰️\n`;
+    });
+
+    ctx.reply(text, { parse_mode: 'HTML' });
+});
+
     bot.action('admin_broadcast', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.editMessageText('📢 لطفاً گروه هدف برای ارسال پیام را انتخاب کنید:', { 
@@ -660,6 +679,7 @@ function setupHandlers(bot) {
             });
 
     // ورود به منوی ویرایش یک اینباند خاص
+    // ورود به منوی ویرایش یک اینباند خاص
     bot.action(/^edit_inbound_(.+)_(\d+)$/, (ctx) => {
         const srvId = ctx.match[1];
         const index = parseInt(ctx.match[2]);
@@ -668,11 +688,13 @@ function setupHandlers(bot) {
         if (!server || !server.inbounds || !server.inbounds[index]) return ctx.answerCbQuery('اینباند یافت نشد!', {show_alert: true});
         
         const inb = server.inbounds[index];
+        const networkType = inb.network || 'ws'; // نمایش ws به عنوان پیش‌فرض در صورت ثبت نشدن
         const text = `⚙️ <b>ویرایش اینباند</b>\n\n` +
                      `شناسه: <code>${inb.id}</code>\n` +
                      `دامنه: <code>${inb.domain}</code>\n` +
                      `اس‌ان‌آی: <code>${inb.sni}</code>\n` +
-                     `مسیر: <code>${inb.path}</code>\n\n` +
+                     `مسیر: <code>${inb.path}</code>\n` +
+                     `شبکه: <code>${networkType}</code>\n\n` +
                      `کدام بخش را می‌خواهید تغییر دهید؟`;
                      
         ctx.editMessageText(text, {
@@ -723,6 +745,91 @@ function setupHandlers(bot) {
         ctx.reply(`✏️ لطفاً مقدار جدید را برای **${fieldNames[field]}** ارسال کنید:`, { parse_mode: 'Markdown' });
         ctx.answerCbQuery();
     });      
+
+    // ثبت نهایی اینباند جدید با نوع شبکه
+    bot.action(/set_net_(ws|xhttp)_(.+)/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const netType = ctx.match[1];
+        const srvId = ctx.match[2];
+        
+        const adminState = adminSteps.get(ctx.from.id);
+        if (!adminState || adminState.step !== 'ADD_INB_NET') return ctx.answerCbQuery('❌ اطلاعات یافت نشد.', {show_alert: true});
+        
+        const db = readDb();
+        const serverIndex = db.servers.findIndex(s => s.id === srvId);
+        
+        if (serverIndex > -1) {
+            if (!db.servers[serverIndex].inbounds) db.servers[serverIndex].inbounds = [];
+            
+            db.servers[serverIndex].inbounds.push({
+                id: adminState.inbId,
+                domain: adminState.domain,
+                sni: adminState.sni,
+                path: adminState.path,
+                network: netType // ثبت نوع شبکه
+            });
+            writeDb(db);
+            
+            adminSteps.delete(ctx.from.id);
+            await ctx.editMessageText(`✅ اینباند جدید (نوع: ${netType}) با موفقیت اضافه شد.`, {
+                reply_markup: getInboundsMenu(srvId, db.servers[serverIndex].inbounds).reply_markup
+            });
+        } else {
+            adminSteps.delete(ctx.from.id);
+            await ctx.editMessageText('❌ سرور یافت نشد.');
+        }
+    });
+
+    // ورود به منوی ویرایش نوع شبکه
+    bot.action(/edit_inb_net_(.+)_(\d+)$/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const srvId = ctx.match[1];
+        const index = parseInt(ctx.match[2]);
+        
+        adminSteps.set(ctx.from.id, { step: 'EDIT_INB_NET', srvId, index });
+        
+        ctx.editMessageText('🌐 لطفاً نوع شبکه (Transmission) جدید را انتخاب کنید:', {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: 'WebSocket (ws)', callback_data: `update_net_ws_${srvId}_${index}` }],
+                    [{ text: 'xHTTP (xhttp)', callback_data: `update_net_xhttp_${srvId}_${index}` }],
+                    [{ text: '🔙 بازگشت', callback_data: `edit_inbound_${srvId}_${index}` }]
+                ]
+            }
+        });
+    });
+
+    // ثبت تغییرات در ویرایش نوع شبکه
+    bot.action(/update_net_(ws|xhttp)_(.+)_(\d+)$/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const netType = ctx.match[1];
+        const srvId = ctx.match[2];
+        const index = parseInt(ctx.match[3]);
+        
+        const db = readDb();
+        const serverIndex = db.servers.findIndex(s => s.id === srvId);
+        
+        if (serverIndex > -1 && db.servers[serverIndex].inbounds && db.servers[serverIndex].inbounds[index]) {
+            db.servers[serverIndex].inbounds[index].network = netType;
+            writeDb(db);
+            adminSteps.delete(ctx.from.id);
+            
+            const updatedInb = db.servers[serverIndex].inbounds[index];
+            const text = `✅ <b>تغییرات با موفقیت ذخیره شد.</b>\n\n` +
+                         `⚙️ <b>ویرایش اینباند</b>\n\n` +
+                         `شناسه: <code>${updatedInb.id}</code>\n` +
+                         `دامنه: <code>${updatedInb.domain}</code>\n` +
+                         `اس‌ان‌آی: <code>${updatedInb.sni}</code>\n` +
+                         `مسیر: <code>${updatedInb.path}</code>\n` +
+                         `شبکه: <code>${updatedInb.network}</code>\n\n` +
+                         `کدام بخش را می‌خواهید تغییر دهید؟`;
+                         
+            await ctx.editMessageText(text, {
+                parse_mode: 'HTML',
+                reply_markup: getSingleInboundMenu(srvId, index).reply_markup
+            });
+        }
+    });
 
     bot.action('admin_list_servers', (ctx) => {
         const db = readDb();
@@ -1814,7 +1921,8 @@ function setupHandlers(bot) {
         }
         
         for (let i = 0; i < configs.length; i++) {
-            await ctx.reply(`⚙️ <b>کانفیگ ${i + 1}:</b>\n👇 <i>برای کپی روی لینک کانفیگ ضربه بزنید:</i>\n<blockquote expandable><code>${configs[i]}</code></blockquote>`, { parse_mode: 'HTML' });
+            const safeConfig = configs[i].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            await ctx.reply(`⚙️ <b>کانفیگ ${i + 1}:</b>\n👇 <i>برای کپی روی لینک کانفیگ ضربه بزنید:</i>\n<blockquote expandable><code>${safeConfig}</code></blockquote>`, { parse_mode: 'HTML' });
         }
 
         await ctx.reply(`💡 <b>نکته:</b>\nلطفاً <b>تمام کانفیگ‌ها</b> را اضافه کنید. به دلیل شرایط متغیر شبکه، هر کانفیگ ممکن است روی یک نوع اینترنت خاص عملکرد بهتری داشته باشد.`, { parse_mode: 'HTML' });
@@ -2191,23 +2299,39 @@ function setupHandlers(bot) {
             }
 
             if (adminState.step === 'ADD_SRV_TOKEN') {
-                const newServer = {
-                    id: 'srv_' + Math.floor(Math.random() * 900000),
-                    name: adminState.srvName,
-                    panelUrl: adminState.srvUrl,
-                    apiToken: input,
-                    inbounds: [] // آرایه خالی برای اینباندها
-                };
+                const srvUrl = adminState.srvUrl;
+                const apiToken = input;
+                const webBasePath = ''; // در صورت نیاز به مسیر سفارشی، این متغیر می‌تواند بعداً از ادمین دریافت شود
 
-                const db = readDb();
-                if (!db.servers) db.servers = [];
-                db.servers.push(newServer);
-                writeDb(db);
-                
-                adminSteps.delete(ctx.from.id);
-                return ctx.reply(`✅ سرور پایه با موفقیت ثبت شد.\n\nاکنون برای افزودن کانکشن‌ها، روی دکمه "مدیریت اینباندها" کلیک کنید:`, {
-                    reply_markup: getServerManageMenu(newServer.id).reply_markup
+                // نمایش پیام انتظار به ادمین
+                ctx.reply('⏳ در حال بررسی ارتباط با سرور...');
+
+                testServerConnection(srvUrl, webBasePath, apiToken).then(async (testResult) => {
+                    if (!testResult.success) {
+                        adminSteps.delete(ctx.from.id);
+                        return ctx.reply(`❌ اتصال به سرور برقرار نشد!\nدلیل خطا: ${testResult.msg}\n\nلطفاً اطلاعات را بررسی کرده و مجدداً سرور را ثبت کنید.`);
+                    }
+
+                    const newServer = {
+                        id: 'srv_' + Math.floor(Math.random() * 900000),
+                        name: adminState.srvName,
+                        panelUrl: srvUrl,
+                        apiToken: apiToken,
+                        webBasePath: '', // <--- اضافه شدن این خط برای جلوگیری از ارور 404 در آینده
+                        inbounds: [] // آرایه خالی برای اینباندها
+                    };
+
+                    const db = readDb();
+                    if (!db.servers) db.servers = [];
+                    db.servers.push(newServer);
+                    writeDb(db);
+                    
+                    adminSteps.delete(ctx.from.id);
+                    await ctx.reply(`✅ تست اتصال موفقیت‌آمیز بود.\nسرور پایه با موفقیت ثبت شد.\n\nاکنون برای افزودن کانکشن‌ها، روی دکمه "مدیریت اینباندها" کلیک کنید:`, {
+                        reply_markup: getServerManageMenu(newServer.id).reply_markup
+                    });
                 });
+                return;
             }
 
             if (adminState.step === 'ADD_INB_ID') {
@@ -2224,33 +2348,20 @@ function setupHandlers(bot) {
 
             if (adminState.step === 'ADD_INB_SNI') {
                 adminSteps.set(ctx.from.id, { ...adminState, step: 'ADD_INB_PATH', sni: input });
-                return ctx.reply('📁 لطفاً **مسیر کانفیگ (Path)** را ارسال کنید (مثلاً: /Cypher_Net):', { parse_mode: 'Markdown' });
+                return ctx.reply('📁 لطفاً <b>مسیر کانفیگ (Path)</b> را ارسال کنید (مثلاً: /Cypher_Net):', { parse_mode: 'HTML' });
             }
 
             if (adminState.step === 'ADD_INB_PATH') {
-                const db = readDb();
-                const serverIndex = db.servers.findIndex(s => s.id === adminState.srvId);
-                
-                if (serverIndex > -1) {
-                    if (!db.servers[serverIndex].inbounds) db.servers[serverIndex].inbounds = [];
-                    
-                    db.servers[serverIndex].inbounds.push({
-                        id: adminState.inbId,
-                        domain: adminState.domain,
-                        sni: adminState.sni,
-                        path: input
-                    });
-                    writeDb(db);
-                    
-                    adminSteps.delete(ctx.from.id);
-                    return ctx.reply('✅ اینباند جدید با موفقیت اضافه شد.', {
-                        reply_markup: getInboundsMenu(adminState.srvId, db.servers[serverIndex].inbounds).reply_markup
-                    });
-                } else {
-                    adminSteps.delete(ctx.from.id);
-                    return ctx.reply('❌ سرور یافت نشد.');
+            adminSteps.set(ctx.from.id, { ...adminState, step: 'ADD_INB_NET', path: input });
+            return ctx.reply('🌐 لطفاً نوع شبکه (Transmission) این اینباند را انتخاب کنید:', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'WebSocket (ws)', callback_data: `set_net_ws_${adminState.srvId}` }],
+                        [{ text: 'xHTTP (xhttp)', callback_data: `set_net_xhttp_${adminState.srvId}` }]
+                    ]
                 }
-            }
+            });
+        }
 
             if (adminState.step === 'EDIT_SERVER_FORMAT') {
                 try {
@@ -2357,13 +2468,15 @@ function setupHandlers(bot) {
                         adminSteps.delete(ctx.from.id);
                         
                         const updatedInb = db.servers[serverIndex].inbounds[index];
+                        const networkType = updatedInb.network || 'ws';
                         const text = `✅ <b>تغییرات با موفقیت ذخیره شد.</b>\n\n` +
-                                    `⚙️ <b>ویرایش اینباند</b>\n\n` +
-                                    `شناسه: <code>${updatedInb.id}</code>\n` +
-                                    `دامنه: <code>${updatedInb.domain}</code>\n` +
-                                    `اس‌ان‌آی: <code>${updatedInb.sni}</code>\n` +
-                                    `مسیر: <code>${updatedInb.path}</code>\n\n` +
-                                    `کدام بخش را می‌خواهید تغییر دهید؟`;
+                                `⚙️ <b>ویرایش اینباند</b>\n\n` +
+                                `شناسه: <code>${updatedInb.id}</code>\n` +
+                                `دامنه: <code>${updatedInb.domain}</code>\n` +
+                                `اس‌ان‌آی: <code>${updatedInb.sni}</code>\n` +
+                                `مسیر: <code>${updatedInb.path}</code>\n` +
+                                `شبکه: <code>${networkType}</code>\n\n` +
+                                `کدام بخش را می‌خواهید تغییر دهید؟`;
                                     
                         return ctx.reply(text, {
                             parse_mode: 'HTML',
@@ -2383,12 +2496,25 @@ function setupHandlers(bot) {
                         newValue = 'http://' + newValue;
                     }
                     
+                    const currentServer = db.servers[serverIndex];
+                    const testUrl = field === 'url' ? newValue : currentServer.panelUrl;
+                    const testToken = field === 'token' ? newValue : currentServer.apiToken;
+                    const webBasePath = currentServer.webBasePath || '';
+
+                    ctx.reply('⏳ در حال بررسی اتصال با اطلاعات جدید...');
+
+                    const testRes = await testServerConnection(testUrl, webBasePath, testToken);
+                    if (!testRes.success) {
+                        adminSteps.delete(ctx.from.id);
+                        return ctx.reply(`❌ اتصال با اطلاعات جدید برقرار نشد!\nخطا: ${testRes.msg}\n\nتغییرات ذخیره نشد.`);
+                    }
+
                     const dbFieldMap = { name: 'name', url: 'panelUrl', token: 'apiToken' };
                     db.servers[serverIndex][dbFieldMap[field]] = newValue;
                     writeDb(db);
                     adminSteps.delete(ctx.from.id);
                     
-                    return ctx.reply('✅ اطلاعات پایه سرور با موفقیت به‌روزرسانی شد.', {
+                    return ctx.reply('✅ اتصال موفقیت‌آمیز بود و اطلاعات پایه سرور به‌روزرسانی شد.', {
                         reply_markup: getServerManageMenu(srvId).reply_markup
                     });
                 }
@@ -3046,15 +3172,21 @@ function setupHandlers(bot) {
                 const totalOldGB = traffic.total / 1073741824;
                 const usedOldGB = (traffic.up + traffic.down) / 1073741824;
                 
-                if (traffic.total > 0 && totalOldGB > usedOldGB) {
-                    remainGB = totalOldGB - usedOldGB;
-                }
+                let isTimeExpired = false;
                 
+                // ابتدا وضعیت زمان بررسی می‌شود
                 if (traffic.expiryTime > 0) {
                     const diffMs = traffic.expiryTime - Date.now();
                     if (diffMs > 0) {
                         remainDays = diffMs / (1000 * 60 * 60 * 24);
+                    } else {
+                        isTimeExpired = true; // زمان کاملاً تمام شده است
                     }
+                }
+                
+                // حجم فقط در صورتی منتقل می‌شود که زمان منقضی نشده باشد
+                if (!isTimeExpired && traffic.total > 0 && totalOldGB > usedOldGB) {
+                    remainGB = totalOldGB - usedOldGB;
                 }
             }
         }
@@ -3070,6 +3202,11 @@ function setupHandlers(bot) {
                 }
             } else {
                 finalDays = expiryDays + Math.ceil(remainDays);
+                
+                // اعمال محدودیت سقف ۹۰ روز فقط برای پکیج‌های عادی کمتر از ۱۰۰ گیگ
+                if (totalGB < 100 && finalDays > 90) {
+                    finalDays = 90;
+                }
             }
 
             if (currentServerId !== targetServerId) {
