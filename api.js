@@ -88,18 +88,11 @@ async function testServerConnection(panelUrl, webBasePath, apiToken) {
 
 async function createClient(email, totalGB, expiryDays, server) {
     const apiClient = getApiClient(server);
-    let successCount = 0;
-    
-    // تولید اتوماتیک UUID
     const uuid = crypto.randomUUID(); 
-    
-    // تبدیل گیگابایت به بایت برای پنل سنایی
     const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
-    
-    // تبدیل تعداد روز به تایم‌ستمپ (میلی‌ثانیه)
     const expiryTime = expiryDays === 0 ? 0 : Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
 
-    const clientData = {
+    const newClient = {
         id: uuid,
         email: email,
         limitIp: 0,
@@ -115,26 +108,43 @@ async function createClient(email, totalGB, expiryDays, server) {
         return false;
     }
 
-    // 🔥 این خط اضافه شده تا آدرس دقیق رو تو لاگ ببینیم
-    console.log(`🔗 [DEBUG] Request URL: ${apiClient.defaults.baseURL}panel/api/inbounds/addClient`);
+    let successCount = 0;
 
-    // ارسال کاربر به تمام اینباندهای سرور
     for (const inbound of server.inbounds) {
-        const settings = { clients: [clientData] };
         try {
-            const res = await apiClient.post('panel/api/inbounds/addClient', {
-                id: inbound.id,
-                settings: JSON.stringify(settings)
-            });
-            if (res.data && res.data.success) {
+            const getRes = await apiClient.get(`panel/api/inbounds/get/${inbound.id}`);
+            if (!getRes.data || !getRes.data.success || !getRes.data.obj) continue;
+            
+            const inboundData = getRes.data.obj;
+            let settings = typeof inboundData.settings === 'string' 
+                ? JSON.parse(inboundData.settings) 
+                : (inboundData.settings || { clients: [] });
+            
+            if (!settings.clients) settings.clients = [];
+            settings.clients.push(newClient);
+
+            const payload = {
+                enable: inboundData.enable,
+                remark: inboundData.remark,
+                listen: inboundData.listen || "",
+                port: inboundData.port,
+                protocol: inboundData.protocol,
+                expiryTime: inboundData.expiryTime || 0,
+                total: inboundData.total || 0,
+                settings: settings,
+                streamSettings: inboundData.streamSettings,
+                sniffing: inboundData.sniffing
+            };
+
+            const updateRes = await apiClient.post(`panel/api/inbounds/update/${inbound.id}`, payload);
+            if (updateRes.data && updateRes.data.success) {
                 successCount++;
             }
         } catch (error) {
-            console.error(`❌ API Error adding client to inbound ${inbound.id}:`, error.message);
+            console.error(`❌ Error adding client to inbound ${inbound.id}:`, error.message);
         }
     }
-    
-    // هندلر ربات شما منتظر دریافت UUID است
+
     return successCount > 0 ? uuid : false; 
 }
 
@@ -223,38 +233,65 @@ async function getClientActiveInboundIds(email, server = null) {
 
 async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server) {
     const apiClient = getApiClient(server);
-    let successCount = 0;
-
-    // تبدیل گیگابایت به بایت
     const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
-    
-    // تبدیل تعداد روز به تایم‌ستمپ
     const expiryTime = expiryDays === 0 ? 0 : Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
-
-    const clientData = {
-        id: uuid,
-        email: newEmail,
-        limitIp: 0,
-        totalGB: totalByte,
-        expiryTime: expiryTime,
-        enable: true,
-        tgId: '',
-        subId: ''
-    };
 
     if (!server.inbounds || server.inbounds.length === 0) {
         return { success: false, log: 'اینباندی برای این سرور یافت نشد.' };
     }
 
-    // آپدیت مشخصات کاربر روی تمام اینباندها
+    let successCount = 0;
+
     for (const inbound of server.inbounds) {
-        const settings = { clients: [clientData] };
         try {
-            const res = await apiClient.post(`panel/api/inbounds/updateClient/${uuid}`, {
-                id: inbound.id,
-                settings: JSON.stringify(settings)
-            });
-            if (res.data && res.data.success) {
+            const getRes = await apiClient.get(`panel/api/inbounds/get/${inbound.id}`);
+            if (!getRes.data || !getRes.data.success || !getRes.data.obj) continue;
+
+            const inboundData = getRes.data.obj;
+            let settings = typeof inboundData.settings === 'string' 
+                ? JSON.parse(inboundData.settings) 
+                : (inboundData.settings || { clients: [] });
+
+            if (!settings.clients) settings.clients = [];
+            
+            const clientIndex = settings.clients.findIndex(c => c.id === uuid || c.email === oldEmail);
+            if (clientIndex > -1) {
+                settings.clients[clientIndex] = {
+                    ...settings.clients[clientIndex],
+                    id: uuid,
+                    email: newEmail,
+                    totalGB: totalByte,
+                    expiryTime: expiryTime,
+                    enable: true
+                };
+            } else {
+                settings.clients.push({
+                    id: uuid,
+                    email: newEmail,
+                    limitIp: 0,
+                    totalGB: totalByte,
+                    expiryTime: expiryTime,
+                    enable: true,
+                    tgId: '',
+                    subId: ''
+                });
+            }
+
+            const payload = {
+                enable: inboundData.enable,
+                remark: inboundData.remark,
+                listen: inboundData.listen || "",
+                port: inboundData.port,
+                protocol: inboundData.protocol,
+                expiryTime: inboundData.expiryTime || 0,
+                total: inboundData.total || 0,
+                settings: settings,
+                streamSettings: inboundData.streamSettings,
+                sniffing: inboundData.sniffing
+            };
+
+            const updateRes = await apiClient.post(`panel/api/inbounds/update/${inbound.id}`, payload);
+            if (updateRes.data && updateRes.data.success) {
                 successCount++;
             }
         } catch (error) {
@@ -262,12 +299,10 @@ async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server
         }
     }
     
-    // ریست کردن ترافیک مصرفی کلاینت در پنل سنایی
     try {
         await apiClient.post(`panel/api/inbounds/resetClientTraffic/${newEmail}`);
     } catch (e) {}
     
-    // بازگرداندن فرمت آبجکتی که فایل handlers.js به آن نیاز دارد
     if (successCount > 0) {
         return { success: true, log: 'تمدید با موفقیت انجام شد' };
     } else {
