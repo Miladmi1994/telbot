@@ -411,7 +411,7 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
     const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [];
     let results = [];
     
-    // شمارنده‌های مجزا
+    // شمارنده‌های مجزا برای کل خروجی‌ها
     let wsCounter = 1;
     let otherCounter = 1;
     
@@ -422,16 +422,6 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
         let domain = inb.domain;
         let sni = inb.sni;
         let pathStr = inb.path;
-
-        // تنظیم نام‌گذاری با استفاده از شمارنده‌های تفکیک‌شده
-        let suffix;
-        if (network === 'ws') {
-            suffix = `ws-${wsCounter}`;
-            wsCounter++;
-        } else {
-            suffix = `${otherCounter}`;
-            otherCounter++;
-        }
 
         if (network === 'xhttp') {
             const xhttp = inb.streamSettings?.xhttpSettings || {};
@@ -446,9 +436,18 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
         sni = sni || inb.streamSettings?.tlsSettings?.serverName || domain;
         domain = domain || "ns.crrc.ir";
         
-        results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, suffix));
-        results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, suffix));
-        results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, suffix));
+        // تابع کمکی برای دریافت پسوند و افزایش شمارنده به ازای هر کانفیگ
+        const getNextSuffix = () => {
+            if (network === 'ws') {
+                return `ws-${wsCounter++}`;
+            } else {
+                return `${otherCounter++}`;
+            }
+        };
+        
+        results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+        results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+        results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
     });
     
     return results;
