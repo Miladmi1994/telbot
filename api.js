@@ -160,12 +160,63 @@ async function createClient(email, totalGB, expiryDays, server) {
 
 async function deleteClient(email, server = null) {
     const apiClient = getApiClient(server);
-    try {
-        await apiClient.post(`panel/api/clients/del/${email}?keepTraffic=0`);
-        return true;
-    } catch (error) {
+    
+    if (!server || !server.inbounds || server.inbounds.length === 0) {
         return false;
     }
+
+    let successCount = 0;
+
+    for (const inbound of server.inbounds) {
+        try {
+            // ۱. دریافت کل اطلاعات اینباند
+            const getRes = await apiClient.get(`panel/api/inbounds/get/${inbound.id}`);
+            if (!getRes.data || !getRes.data.success || !getRes.data.obj) continue;
+
+            const inboundData = getRes.data.obj;
+            let settings = typeof inboundData.settings === 'string' 
+                ? JSON.parse(inboundData.settings) 
+                : (inboundData.settings || { clients: [] });
+
+            if (!settings.clients || settings.clients.length === 0) continue;
+
+            // ۲. فیلتر کردن آرایه و حذف کلاینت مورد نظر
+            const initialLength = settings.clients.length;
+            settings.clients = settings.clients.filter(c => c.email !== email);
+
+            // اگر کلاینتی با این ایمیل پیدا نشد، نیاز به آپدیت نیست و به اینباند بعدی می‌رویم
+            if (settings.clients.length === initialLength) continue;
+
+            // ۳. پاکسازی کلاینت‌های باقی‌مانده (جلوگیری از خطای تایپ داده در دیتابیس گو)
+            settings.clients.forEach(c => {
+                if (c.tgId === '' || c.tgId === null) c.tgId = 0;
+                if (!c.subId) c.subId = crypto.randomBytes(8).toString('hex');
+            });
+
+            const payload = {
+                enable: inboundData.enable,
+                remark: inboundData.remark,
+                listen: inboundData.listen || "",
+                port: inboundData.port,
+                protocol: inboundData.protocol,
+                expiryTime: inboundData.expiryTime || 0,
+                total: inboundData.total || 0,
+                settings: settings,
+                streamSettings: inboundData.streamSettings,
+                sniffing: inboundData.sniffing
+            };
+
+            // ۴. ارسال تنظیمات جدید (بدون کلاینت قدیمی) به پنل
+            const updateRes = await apiClient.post(`panel/api/inbounds/update/${inbound.id}`, payload);
+            if (updateRes.data && updateRes.data.success) {
+                successCount++;
+            }
+        } catch (error) {
+            console.error(`❌ Error deleting client from inbound ${inbound.id}:`, error.message);
+        }
+    }
+
+    return successCount > 0;
 }
 
 async function getClientTraffic(email, server = null) {
