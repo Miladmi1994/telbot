@@ -2496,12 +2496,25 @@ bot.command('dbtest', (ctx) => {
                         newValue = 'http://' + newValue;
                     }
                     
+                    const currentServer = db.servers[serverIndex];
+                    const testUrl = field === 'url' ? newValue : currentServer.panelUrl;
+                    const testToken = field === 'token' ? newValue : currentServer.apiToken;
+                    const webBasePath = currentServer.webBasePath || '';
+
+                    ctx.reply('⏳ در حال بررسی اتصال با اطلاعات جدید...');
+
+                    const testRes = await testServerConnection(testUrl, webBasePath, testToken);
+                    if (!testRes.success) {
+                        adminSteps.delete(ctx.from.id);
+                        return ctx.reply(`❌ اتصال با اطلاعات جدید برقرار نشد!\nخطا: ${testRes.msg}\n\nتغییرات ذخیره نشد.`);
+                    }
+
                     const dbFieldMap = { name: 'name', url: 'panelUrl', token: 'apiToken' };
                     db.servers[serverIndex][dbFieldMap[field]] = newValue;
                     writeDb(db);
                     adminSteps.delete(ctx.from.id);
                     
-                    return ctx.reply('✅ اطلاعات پایه سرور با موفقیت به‌روزرسانی شد.', {
+                    return ctx.reply('✅ اتصال موفقیت‌آمیز بود و اطلاعات پایه سرور به‌روزرسانی شد.', {
                         reply_markup: getServerManageMenu(srvId).reply_markup
                     });
                 }
