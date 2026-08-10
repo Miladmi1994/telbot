@@ -724,6 +724,91 @@ function setupHandlers(bot) {
         ctx.answerCbQuery();
     });      
 
+    // ثبت نهایی اینباند جدید با نوع شبکه
+    bot.action(/set_net_(ws|xhttp)_(.+)/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const netType = ctx.match[1];
+        const srvId = ctx.match[2];
+        
+        const adminState = adminSteps.get(ctx.from.id);
+        if (!adminState || adminState.step !== 'ADD_INB_NET') return ctx.answerCbQuery('❌ اطلاعات یافت نشد.', {show_alert: true});
+        
+        const db = readDb();
+        const serverIndex = db.servers.findIndex(s => s.id === srvId);
+        
+        if (serverIndex > -1) {
+            if (!db.servers[serverIndex].inbounds) db.servers[serverIndex].inbounds = [];
+            
+            db.servers[serverIndex].inbounds.push({
+                id: adminState.inbId,
+                domain: adminState.domain,
+                sni: adminState.sni,
+                path: adminState.path,
+                network: netType // ثبت نوع شبکه
+            });
+            writeDb(db);
+            
+            adminSteps.delete(ctx.from.id);
+            await ctx.editMessageText(`✅ اینباند جدید (نوع: ${netType}) با موفقیت اضافه شد.`, {
+                reply_markup: getInboundsMenu(srvId, db.servers[serverIndex].inbounds).reply_markup
+            });
+        } else {
+            adminSteps.delete(ctx.from.id);
+            await ctx.editMessageText('❌ سرور یافت نشد.');
+        }
+    });
+
+    // ورود به منوی ویرایش نوع شبکه
+    bot.action(/edit_inb_net_(.+)_(\d+)$/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const srvId = ctx.match[1];
+        const index = parseInt(ctx.match[2]);
+        
+        adminSteps.set(ctx.from.id, { step: 'EDIT_INB_NET', srvId, index });
+        
+        ctx.editMessageText('🌐 لطفاً نوع شبکه (Transmission) جدید را انتخاب کنید:', {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: 'WebSocket (ws)', callback_data: `update_net_ws_${srvId}_${index}` }],
+                    [{ text: 'xHTTP (xhttp)', callback_data: `update_net_xhttp_${srvId}_${index}` }],
+                    [{ text: '🔙 بازگشت', callback_data: `edit_inbound_${srvId}_${index}` }]
+                ]
+            }
+        });
+    });
+
+    // ثبت تغییرات در ویرایش نوع شبکه
+    bot.action(/update_net_(ws|xhttp)_(.+)_(\d+)$/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const netType = ctx.match[1];
+        const srvId = ctx.match[2];
+        const index = parseInt(ctx.match[3]);
+        
+        const db = readDb();
+        const serverIndex = db.servers.findIndex(s => s.id === srvId);
+        
+        if (serverIndex > -1 && db.servers[serverIndex].inbounds && db.servers[serverIndex].inbounds[index]) {
+            db.servers[serverIndex].inbounds[index].network = netType;
+            writeDb(db);
+            adminSteps.delete(ctx.from.id);
+            
+            const updatedInb = db.servers[serverIndex].inbounds[index];
+            const text = `✅ <b>تغییرات با موفقیت ذخیره شد.</b>\n\n` +
+                         `⚙️ <b>ویرایش اینباند</b>\n\n` +
+                         `شناسه: <code>${updatedInb.id}</code>\n` +
+                         `دامنه: <code>${updatedInb.domain}</code>\n` +
+                         `اس‌ان‌آی: <code>${updatedInb.sni}</code>\n` +
+                         `مسیر: <code>${updatedInb.path}</code>\n` +
+                         `شبکه: <code>${updatedInb.network}</code>\n\n` +
+                         `کدام بخش را می‌خواهید تغییر دهید؟`;
+                         
+            await ctx.editMessageText(text, {
+                parse_mode: 'HTML',
+                reply_markup: getSingleInboundMenu(srvId, index).reply_markup
+            });
+        }
+    });
+
     bot.action('admin_list_servers', (ctx) => {
         const db = readDb();
         const servers = db.servers || [];
@@ -2191,23 +2276,38 @@ function setupHandlers(bot) {
             }
 
             if (adminState.step === 'ADD_SRV_TOKEN') {
-                const newServer = {
-                    id: 'srv_' + Math.floor(Math.random() * 900000),
-                    name: adminState.srvName,
-                    panelUrl: adminState.srvUrl,
-                    apiToken: input,
-                    inbounds: [] // آرایه خالی برای اینباندها
-                };
+                const srvUrl = adminState.srvUrl;
+                const apiToken = input;
+                const webBasePath = ''; // در صورت نیاز به مسیر سفارشی، این متغیر می‌تواند بعداً از ادمین دریافت شود
 
-                const db = readDb();
-                if (!db.servers) db.servers = [];
-                db.servers.push(newServer);
-                writeDb(db);
-                
-                adminSteps.delete(ctx.from.id);
-                return ctx.reply(`✅ سرور پایه با موفقیت ثبت شد.\n\nاکنون برای افزودن کانکشن‌ها، روی دکمه "مدیریت اینباندها" کلیک کنید:`, {
-                    reply_markup: getServerManageMenu(newServer.id).reply_markup
+                // نمایش پیام انتظار به ادمین
+                ctx.reply('⏳ در حال بررسی ارتباط با سرور...');
+
+                testServerConnection(srvUrl, webBasePath, apiToken).then(async (testResult) => {
+                    if (!testResult.success) {
+                        adminSteps.delete(ctx.from.id);
+                        return ctx.reply(`❌ اتصال به سرور برقرار نشد!\nدلیل خطا: ${testResult.msg}\n\nلطفاً اطلاعات را بررسی کرده و مجدداً سرور را ثبت کنید.`);
+                    }
+
+                    const newServer = {
+                        id: 'srv_' + Math.floor(Math.random() * 900000),
+                        name: adminState.srvName,
+                        panelUrl: srvUrl,
+                        apiToken: apiToken,
+                        inbounds: [] // آرایه خالی برای اینباندها
+                    };
+
+                    const db = readDb();
+                    if (!db.servers) db.servers = [];
+                    db.servers.push(newServer);
+                    writeDb(db);
+                    
+                    adminSteps.delete(ctx.from.id);
+                    await ctx.reply(`✅ تست اتصال موفقیت‌آمیز بود.\nسرور پایه با موفقیت ثبت شد.\n\nاکنون برای افزودن کانکشن‌ها، روی دکمه "مدیریت اینباندها" کلیک کنید:`, {
+                        reply_markup: getServerManageMenu(newServer.id).reply_markup
+                    });
                 });
+                return;
             }
 
             if (adminState.step === 'ADD_INB_ID') {
@@ -2228,29 +2328,16 @@ function setupHandlers(bot) {
             }
 
             if (adminState.step === 'ADD_INB_PATH') {
-                const db = readDb();
-                const serverIndex = db.servers.findIndex(s => s.id === adminState.srvId);
-                
-                if (serverIndex > -1) {
-                    if (!db.servers[serverIndex].inbounds) db.servers[serverIndex].inbounds = [];
-                    
-                    db.servers[serverIndex].inbounds.push({
-                        id: adminState.inbId,
-                        domain: adminState.domain,
-                        sni: adminState.sni,
-                        path: input
-                    });
-                    writeDb(db);
-                    
-                    adminSteps.delete(ctx.from.id);
-                    return ctx.reply('✅ اینباند جدید با موفقیت اضافه شد.', {
-                        reply_markup: getInboundsMenu(adminState.srvId, db.servers[serverIndex].inbounds).reply_markup
-                    });
-                } else {
-                    adminSteps.delete(ctx.from.id);
-                    return ctx.reply('❌ سرور یافت نشد.');
+            adminSteps.set(ctx.from.id, { ...adminState, step: 'ADD_INB_NET', path: input });
+            return ctx.reply('🌐 لطفاً نوع شبکه (Transmission) این اینباند را انتخاب کنید:', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'WebSocket (ws)', callback_data: `set_net_ws_${adminState.srvId}` }],
+                        [{ text: 'xHTTP (xhttp)', callback_data: `set_net_xhttp_${adminState.srvId}` }]
+                    ]
                 }
-            }
+            });
+        }
 
             if (adminState.step === 'EDIT_SERVER_FORMAT') {
                 try {
