@@ -145,59 +145,56 @@ async function deleteClient(email, server = null) {
     }
 }
 
-async function getClientTraffic(email, server = null) {
+async function createClient(email, totalGB, expiryDays, server) {
     const apiClient = getApiClient(server);
-    try {
-        const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
-        let total = 0, expiryTime = 0;
-        
-        if (clientRes.data && clientRes.data.success && clientRes.data.obj) {
-            const obj = clientRes.data.obj;
-            total = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
-            expiryTime = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
-        } else {
-            return null; 
-        }
+    let successCount = 0;
+    
+    // تولید اتوماتیک UUID
+    const uuid = crypto.randomUUID(); 
+    
+    // تبدیل گیگابایت به بایت برای پنل سنایی
+    const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
+    
+    // تبدیل تعداد روز به تایم‌ستمپ (میلی‌ثانیه)
+    const expiryTime = expiryDays === 0 ? 0 : Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
 
-        let up = 0, down = 0;
-        let trafficFound = false;
+    const clientData = {
+        id: uuid,
+        email: email,
+        limitIp: 0,
+        totalGB: totalByte,
+        expiryTime: expiryTime,
+        enable: true,
+        tgId: '',
+        subId: ''
+    };
 
-        try {
-            const trafficRes = await apiClient.get(`panel/api/inbounds/getClientTraffics/${encodeURIComponent(email)}`);
-            if (trafficRes.data && trafficRes.data.success && trafficRes.data.obj) {
-                const tObj = Array.isArray(trafficRes.data.obj) ? trafficRes.data.obj[0] : trafficRes.data.obj;
-                if (tObj) {
-                    up = tObj.up || 0;
-                    down = tObj.down || 0;
-                    if (total === 0 && tObj.total) total = tObj.total;
-                    trafficFound = true;
-                }
-            }
-        } catch (trafficErr) {}
-
-        if (!trafficFound) {
-            try {
-                const listRes = await apiClient.get('panel/api/inbounds/list');
-                if (listRes.data && listRes.data.success && listRes.data.obj) {
-                    for (const inbound of listRes.data.obj) {
-                        if (inbound.clientStats) {
-                            const cStats = inbound.clientStats.find(c => c.email === email);
-                            if (cStats) {
-                                up += cStats.up || 0;
-                                down += cStats.down || 0;
-                                if (total === 0 && cStats.total) total = cStats.total;
-                                trafficFound = true;
-                            }
-                        }
-                    }
-                }
-            } catch (fallbackErr) {}
-        }
-
-        return { total, up, down, expiryTime };
-    } catch (error) {
-        return null;
+    if (!server.inbounds || server.inbounds.length === 0) {
+        console.error("❌ No inbounds defined for this server.");
+        return false;
     }
+
+    // 🔥 این خط اضافه شده تا آدرس دقیق رو تو لاگ ببینیم
+    console.log(`🔗 [DEBUG] Request URL: ${apiClient.defaults.baseURL}panel/api/inbounds/addClient`);
+
+    // ارسال کاربر به تمام اینباندهای سرور
+    for (const inbound of server.inbounds) {
+        const settings = { clients: [clientData] };
+        try {
+            const res = await apiClient.post('panel/api/inbounds/addClient', {
+                id: inbound.id,
+                settings: JSON.stringify(settings)
+            });
+            if (res.data && res.data.success) {
+                successCount++;
+            }
+        } catch (error) {
+            console.error(`❌ API Error adding client to inbound ${inbound.id}:`, error.message);
+        }
+    }
+    
+    // هندلر ربات شما منتظر دریافت UUID است
+    return successCount > 0 ? uuid : false; 
 }
 
 async function getClientActiveInboundIds(email, server = null) {
