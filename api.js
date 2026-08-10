@@ -89,134 +89,56 @@ async function testServerConnection(panelUrl, webBasePath, apiToken) {
 async function createClient(email, totalGB, expiryDays, server) {
     const apiClient = getApiClient(server);
     const uuid = crypto.randomUUID(); 
+    const subId = crypto.randomBytes(8).toString('hex');
+    
     const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
     const expiryTime = expiryDays === 0 ? 0 : Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
-    
-    // تعریف شناسه اشتراک برای لینک‌ها
-    const subId = crypto.randomBytes(8).toString('hex'); 
-
-    const newClient = {
-        id: uuid,
-        email: email,
-        limitIp: 0,
-        totalGB: totalByte,
-        expiryTime: expiryTime,
-        enable: true,
-        tgId: 0,
-        subId: subId
-    };
 
     if (!server.inbounds || server.inbounds.length === 0) {
         console.error("❌ No inbounds defined for this server.");
         return false;
     }
 
-    let successCount = 0;
+    // استخراج هوشمند تمام آیدی‌های اینباند این سرور
+    const inboundIds = server.inbounds.map(inb => inb.id);
 
-    for (const inbound of server.inbounds) {
-        try {
-            const getRes = await apiClient.get(`panel/api/inbounds/get/${inbound.id}`);
-            if (!getRes.data || !getRes.data.success || !getRes.data.obj) continue;
-            
-            const inboundData = getRes.data.obj;
-            let settings = typeof inboundData.settings === 'string' 
-                ? JSON.parse(inboundData.settings) 
-                : (inboundData.settings || { clients: [] });
-            
-            if (!settings.clients) settings.clients = [];
-            
-            // 🔥 پاکسازی کلاینت‌های قبلی برای جلوگیری از ارور دیتابیس پنل سنایی
-            settings.clients.forEach(c => {
-                if (c.tgId === '' || c.tgId === null) c.tgId = 0;
-                if (!c.subId) c.subId = crypto.randomBytes(8).toString('hex');
-            });
+    const payload = {
+        client: {
+            id: uuid,
+            email: email,
+            limitIp: 0,
+            totalGB: totalByte,
+            expiryTime: expiryTime,
+            enable: true,
+            tgId: 0,
+            subId: subId
+        },
+        inboundIds: inboundIds // اختصاص همزمان کلاینت به تمام اینباندها (WS و XHTTP)
+    };
 
-            settings.clients.push(newClient);
-
-            const payload = {
-                enable: inboundData.enable,
-                remark: inboundData.remark,
-                listen: inboundData.listen || "",
-                port: inboundData.port,
-                protocol: inboundData.protocol,
-                expiryTime: inboundData.expiryTime || 0,
-                total: inboundData.total || 0,
-                settings: settings,
-                streamSettings: inboundData.streamSettings,
-                sniffing: inboundData.sniffing
-            };
-
-            const updateRes = await apiClient.post(`panel/api/inbounds/update/${inbound.id}`, payload);
-            if (updateRes.data && updateRes.data.success) {
-                successCount++;
-            }
-        } catch (error) {
-            console.error(`❌ Error adding client to inbound ${inbound.id}:`, error.message);
+    try {
+        const res = await apiClient.post('panel/api/clients/add', payload);
+        if (res.data && res.data.success) {
+            return uuid;
+        } else {
+            console.error("❌ Panel rejected add client:", res.data.msg);
+            return false;
         }
-    }
-
-    return successCount > 0 ? uuid : false; 
-}
-
-async function deleteClient(email, server = null) {
-    const apiClient = getApiClient(server);
-    
-    if (!server || !server.inbounds || server.inbounds.length === 0) {
+    } catch (error) {
+        console.error("❌ API Error adding client:", error.message);
         return false;
     }
+}
 
-    let successCount = 0;
-
-    for (const inbound of server.inbounds) {
-        try {
-            // ۱. دریافت کل اطلاعات اینباند
-            const getRes = await apiClient.get(`panel/api/inbounds/get/${inbound.id}`);
-            if (!getRes.data || !getRes.data.success || !getRes.data.obj) continue;
-
-            const inboundData = getRes.data.obj;
-            let settings = typeof inboundData.settings === 'string' 
-                ? JSON.parse(inboundData.settings) 
-                : (inboundData.settings || { clients: [] });
-
-            if (!settings.clients || settings.clients.length === 0) continue;
-
-            // ۲. فیلتر کردن آرایه و حذف کلاینت مورد نظر
-            const initialLength = settings.clients.length;
-            settings.clients = settings.clients.filter(c => c.email !== email);
-
-            // اگر کلاینتی با این ایمیل پیدا نشد، نیاز به آپدیت نیست و به اینباند بعدی می‌رویم
-            if (settings.clients.length === initialLength) continue;
-
-            // ۳. پاکسازی کلاینت‌های باقی‌مانده (جلوگیری از خطای تایپ داده در دیتابیس گو)
-            settings.clients.forEach(c => {
-                if (c.tgId === '' || c.tgId === null) c.tgId = 0;
-                if (!c.subId) c.subId = crypto.randomBytes(8).toString('hex');
-            });
-
-            const payload = {
-                enable: inboundData.enable,
-                remark: inboundData.remark,
-                listen: inboundData.listen || "",
-                port: inboundData.port,
-                protocol: inboundData.protocol,
-                expiryTime: inboundData.expiryTime || 0,
-                total: inboundData.total || 0,
-                settings: settings,
-                streamSettings: inboundData.streamSettings,
-                sniffing: inboundData.sniffing
-            };
-
-            // ۴. ارسال تنظیمات جدید (بدون کلاینت قدیمی) به پنل
-            const updateRes = await apiClient.post(`panel/api/inbounds/update/${inbound.id}`, payload);
-            if (updateRes.data && updateRes.data.success) {
-                successCount++;
-            }
-        } catch (error) {
-            console.error(`❌ Error deleting client from inbound ${inbound.id}:`, error.message);
-        }
+async function deleteClient(identifier, server = null) {
+    const apiClient = getApiClient(server);
+    try {
+        // حذف کلاینت از تمام اینباندها به صورت بومی
+        await apiClient.post(`panel/api/clients/del/${identifier}`);
+        return true;
+    } catch (error) {
+        return false;
     }
-
-    return successCount > 0;
 }
 
 async function getClientTraffic(email, server = null) {
@@ -299,86 +221,48 @@ async function getClientActiveInboundIds(email, server = null) {
 
 async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server) {
     const apiClient = getApiClient(server);
+    
     const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
     const expiryTime = expiryDays === 0 ? 0 : Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
+    const subId = crypto.randomBytes(8).toString('hex');
 
     if (!server.inbounds || server.inbounds.length === 0) {
         return { success: false, log: 'اینباندی برای این سرور یافت نشد.' };
     }
 
-    let successCount = 0;
+    const inboundIds = server.inbounds.map(inb => inb.id);
 
-    for (const inbound of server.inbounds) {
-        try {
-            const getRes = await apiClient.get(`panel/api/inbounds/get/${inbound.id}`);
-            if (!getRes.data || !getRes.data.success || !getRes.data.obj) continue;
-
-            const inboundData = getRes.data.obj;
-            let settings = typeof inboundData.settings === 'string' 
-                ? JSON.parse(inboundData.settings) 
-                : (inboundData.settings || { clients: [] });
-
-            if (!settings.clients) settings.clients = [];
-            
-            // 🔥 پاکسازی کلاینت‌های قبلی 
-            settings.clients.forEach(c => {
-                if (c.tgId === '' || c.tgId === null) c.tgId = 0;
-                if (!c.subId) c.subId = crypto.randomBytes(8).toString('hex');
-            });
-            
-            const clientIndex = settings.clients.findIndex(c => c.id === uuid || c.email === oldEmail);
-            if (clientIndex > -1) {
-                settings.clients[clientIndex] = {
-                    ...settings.clients[clientIndex],
-                    id: uuid,
-                    email: newEmail,
-                    totalGB: totalByte,
-                    expiryTime: expiryTime,
-                    enable: true
-                };
-            } else {
-                settings.clients.push({
-                    id: uuid,
-                    email: newEmail,
-                    limitIp: 0,
-                    totalGB: totalByte,
-                    expiryTime: expiryTime,
-                    enable: true,
-                    tgId: 0,
-                    subId: crypto.randomBytes(8).toString('hex')
-                });
-            }
-
-            const payload = {
-                enable: inboundData.enable,
-                remark: inboundData.remark,
-                listen: inboundData.listen || "",
-                port: inboundData.port,
-                protocol: inboundData.protocol,
-                expiryTime: inboundData.expiryTime || 0,
-                total: inboundData.total || 0,
-                settings: settings,
-                streamSettings: inboundData.streamSettings,
-                sniffing: inboundData.sniffing
-            };
-
-            const updateRes = await apiClient.post(`panel/api/inbounds/update/${inbound.id}`, payload);
-            if (updateRes.data && updateRes.data.success) {
-                successCount++;
-            }
-        } catch (error) {
-            console.error(`❌ Error updating client on inbound ${inbound.id}:`, error.message);
-        }
-    }
-    
     try {
-        await apiClient.post(`panel/api/inbounds/resetClientTraffic/${newEmail}`);
-    } catch (e) {}
-    
-    if (successCount > 0) {
-        return { success: true, log: 'تمدید با موفقیت انجام شد' };
-    } else {
-        return { success: false, log: 'ارتباط با پنل سرور برقرار نشد یا اکانت یافت نشد.' };
+        // ۱. عملیات خودترمیمی (Self-Healing): حذف کامل کلاینت با UUID
+        // این کار باعث می‌شود تمام ردیف‌های تکراری و زامبیِ داخل عکس، یک‌جا از دیتابیس پنل پاک شوند
+        await apiClient.post(`panel/api/clients/del/${uuid}`).catch(() => {});
+        await apiClient.post(`panel/api/clients/del/${oldEmail}`).catch(() => {});
+
+        // ۲. ساخت مجدد کلاینت با ایمیل و حجم جدید روی تمام اینباندها به صورت همزمان
+        const payload = {
+            client: {
+                id: uuid, // UUID ثابت می‌ماند تا کانفیگ کاربر قطع نشود
+                email: newEmail,
+                limitIp: 0,
+                totalGB: totalByte,
+                expiryTime: expiryTime,
+                enable: true,
+                tgId: 0,
+                subId: subId
+            },
+            inboundIds: inboundIds
+        };
+
+        const res = await apiClient.post('panel/api/clients/add', payload);
+        
+        if (res.data && res.data.success) {
+            return { success: true, log: 'تمدید با موفقیت انجام شد' };
+        } else {
+            return { success: false, log: res.data?.msg || 'خطا در ثبت کلاینت جدید در پنل' };
+        }
+    } catch (error) {
+        console.error(`❌ Error renewing client:`, error.message);
+        return { success: false, log: error.message };
     }
 }
 
