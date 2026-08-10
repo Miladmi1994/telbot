@@ -99,7 +99,7 @@ async function createClient(email, totalGB, expiryDays, server) {
         totalGB: totalByte,
         expiryTime: expiryTime,
         enable: true,
-        tgId: '',
+        tgId: 0,
         subId: ''
     };
 
@@ -292,7 +292,7 @@ async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server
                     totalGB: totalByte,
                     expiryTime: expiryTime,
                     enable: true,
-                    tgId: '',
+                    tgId: 0,
                     subId: ''
                 });
             }
