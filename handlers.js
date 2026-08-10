@@ -3172,15 +3172,21 @@ bot.command('dbtest', (ctx) => {
                 const totalOldGB = traffic.total / 1073741824;
                 const usedOldGB = (traffic.up + traffic.down) / 1073741824;
                 
-                if (traffic.total > 0 && totalOldGB > usedOldGB) {
-                    remainGB = totalOldGB - usedOldGB;
-                }
+                let isTimeExpired = false;
                 
+                // ابتدا وضعیت زمان بررسی می‌شود
                 if (traffic.expiryTime > 0) {
                     const diffMs = traffic.expiryTime - Date.now();
                     if (diffMs > 0) {
                         remainDays = diffMs / (1000 * 60 * 60 * 24);
+                    } else {
+                        isTimeExpired = true; // زمان کاملاً تمام شده است
                     }
+                }
+                
+                // حجم فقط در صورتی منتقل می‌شود که زمان منقضی نشده باشد
+                if (!isTimeExpired && traffic.total > 0 && totalOldGB > usedOldGB) {
+                    remainGB = totalOldGB - usedOldGB;
                 }
             }
         }
