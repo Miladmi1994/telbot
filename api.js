@@ -12,11 +12,23 @@ const DEFAULT_INBOUND_ID = 1;
 // تابع ساخت کلاینت داینامیک برای هر سرور
 function getApiClient(server) {
     const url = server?.panelUrl || DEFAULT_PANEL_URL;
-    const path = server?.webBasePath !== undefined ? server.webBasePath : DEFAULT_WEB_BASE_PATH;
+    
+    // رفع مشکل 404: جلوگیری از افزودن مسیر سرور قدیمی به سرورهای جدید
+    let path = '';
+    if (server?.webBasePath !== undefined) {
+        path = server.webBasePath;
+    } else if (!server || server.id === 'srv_364212' || server.id === 'default') {
+        path = DEFAULT_WEB_BASE_PATH;
+    }
+
+    // تضمین فرمت صحیح اسلش‌ها
+    let baseURL = url.endsWith('/') ? url.slice(0, -1) : url;
+    if (path && !path.startsWith('/')) path = '/' + path;
+    
     const token = server?.apiToken || DEFAULT_API_TOKEN;
 
     return axios.create({
-        baseURL: `${url}${path}/`,
+        baseURL: `${baseURL}${path}/`,
         headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

@@ -1902,7 +1902,8 @@ function setupHandlers(bot) {
         }
         
         for (let i = 0; i < configs.length; i++) {
-            await ctx.reply(`⚙️ <b>کانفیگ ${i + 1}:</b>\n👇 <i>برای کپی روی لینک کانفیگ ضربه بزنید:</i>\n<blockquote expandable><code>${configs[i]}</code></blockquote>`, { parse_mode: 'HTML' });
+            const safeConfig = configs[i].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            await ctx.reply(`⚙️ <b>کانفیگ ${i + 1}:</b>\n👇 <i>برای کپی روی لینک کانفیگ ضربه بزنید:</i>\n<blockquote expandable><code>${safeConfig}</code></blockquote>`, { parse_mode: 'HTML' });
         }
 
         await ctx.reply(`💡 <b>نکته:</b>\nلطفاً <b>تمام کانفیگ‌ها</b> را اضافه کنید. به دلیل شرایط متغیر شبکه، هر کانفیگ ممکن است روی یک نوع اینترنت خاص عملکرد بهتری داشته باشد.`, { parse_mode: 'HTML' });
@@ -2297,6 +2298,7 @@ function setupHandlers(bot) {
                         name: adminState.srvName,
                         panelUrl: srvUrl,
                         apiToken: apiToken,
+                        webBasePath: '', // <--- اضافه شدن این خط برای جلوگیری از ارور 404 در آینده
                         inbounds: [] // آرایه خالی برای اینباندها
                     };
 
