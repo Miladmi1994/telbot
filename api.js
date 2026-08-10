@@ -214,15 +214,20 @@ async function getClientTraffic(email, server = null) {
 }
 
 async function getClientActiveInboundIds(email, server = null) {
-    const apiClient = getApiClient(server); // فرض بر این است که این تابع در فایل شما وجود دارد
+    const apiClient = getApiClient(server);
     try {
-        const res = await apiClient.get(`panel/api/inbounds/getClientTraffics/${encodeURIComponent(email)}`);
-        if (res.data && res.data.success && res.data.obj) {
-            const dataObj = res.data.obj;
-            if (Array.isArray(dataObj)) {
-                // استخراج و برگرداندن شناسه (ID) اینباندهایی که این کلاینت روی آن‌ها وجود دارد
-                return dataObj.map(stat => stat.inboundId);
-            }
+        const res = await apiClient.get('panel/api/inbounds/list');
+        if (res.data && res.data.success && Array.isArray(res.data.obj)) {
+            const activeInboundIds = [];
+            res.data.obj.forEach(inbound => {
+                if (inbound.clientStats && Array.isArray(inbound.clientStats)) {
+                    const exists = inbound.clientStats.some(stat => stat.email === email);
+                    if (exists) {
+                        activeInboundIds.push(inbound.id);
+                    }
+                }
+            });
+            return activeInboundIds;
         }
         return [];
     } catch (error) {
