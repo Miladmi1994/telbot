@@ -412,7 +412,7 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
     let results = [];
     
     inbounds.forEach((inb, index) => {
-        const network = (inb.network || inb.streamSettings?.network || "ws").toLowerCase();
+        const network = (inb.network || inb.streamSettings?.network || "xhttp").toLowerCase();
         const port = inb.port || 443;
         
         let domain = inb.domain;
