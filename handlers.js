@@ -660,6 +660,7 @@ function setupHandlers(bot) {
             });
 
     // ورود به منوی ویرایش یک اینباند خاص
+    // ورود به منوی ویرایش یک اینباند خاص
     bot.action(/^edit_inbound_(.+)_(\d+)$/, (ctx) => {
         const srvId = ctx.match[1];
         const index = parseInt(ctx.match[2]);
@@ -668,11 +669,13 @@ function setupHandlers(bot) {
         if (!server || !server.inbounds || !server.inbounds[index]) return ctx.answerCbQuery('اینباند یافت نشد!', {show_alert: true});
         
         const inb = server.inbounds[index];
+        const networkType = inb.network || 'ws'; // نمایش ws به عنوان پیش‌فرض در صورت ثبت نشدن
         const text = `⚙️ <b>ویرایش اینباند</b>\n\n` +
                      `شناسه: <code>${inb.id}</code>\n` +
                      `دامنه: <code>${inb.domain}</code>\n` +
                      `اس‌ان‌آی: <code>${inb.sni}</code>\n` +
-                     `مسیر: <code>${inb.path}</code>\n\n` +
+                     `مسیر: <code>${inb.path}</code>\n` +
+                     `شبکه: <code>${networkType}</code>\n\n` +
                      `کدام بخش را می‌خواهید تغییر دهید؟`;
                      
         ctx.editMessageText(text, {
@@ -2444,13 +2447,15 @@ function setupHandlers(bot) {
                         adminSteps.delete(ctx.from.id);
                         
                         const updatedInb = db.servers[serverIndex].inbounds[index];
+                        const networkType = updatedInb.network || 'ws';
                         const text = `✅ <b>تغییرات با موفقیت ذخیره شد.</b>\n\n` +
-                                    `⚙️ <b>ویرایش اینباند</b>\n\n` +
-                                    `شناسه: <code>${updatedInb.id}</code>\n` +
-                                    `دامنه: <code>${updatedInb.domain}</code>\n` +
-                                    `اس‌ان‌آی: <code>${updatedInb.sni}</code>\n` +
-                                    `مسیر: <code>${updatedInb.path}</code>\n\n` +
-                                    `کدام بخش را می‌خواهید تغییر دهید؟`;
+                                `⚙️ <b>ویرایش اینباند</b>\n\n` +
+                                `شناسه: <code>${updatedInb.id}</code>\n` +
+                                `دامنه: <code>${updatedInb.domain}</code>\n` +
+                                `اس‌ان‌آی: <code>${updatedInb.sni}</code>\n` +
+                                `مسیر: <code>${updatedInb.path}</code>\n` +
+                                `شبکه: <code>${networkType}</code>\n\n` +
+                                `کدام بخش را می‌خواهید تغییر دهید؟`;
                                     
                         return ctx.reply(text, {
                             parse_mode: 'HTML',
