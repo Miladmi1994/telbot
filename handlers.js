@@ -2327,7 +2327,7 @@ function setupHandlers(bot) {
 
             if (adminState.step === 'ADD_INB_SNI') {
                 adminSteps.set(ctx.from.id, { ...adminState, step: 'ADD_INB_PATH', sni: input });
-                return ctx.reply('📁 لطفاً **مسیر کانفیگ (Path)** را ارسال کنید (مثلاً: /Cypher_Net):', { parse_mode: 'Markdown' });
+                return ctx.reply('📁 لطفاً <b>مسیر کانفیگ (Path)</b> را ارسال کنید (مثلاً: /Cypher_Net):', { parse_mode: 'HTML' });
             }
 
             if (adminState.step === 'ADD_INB_PATH') {
