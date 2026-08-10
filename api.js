@@ -411,7 +411,11 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
     const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [];
     let results = [];
     
-    inbounds.forEach((inb, index) => {
+    // شمارنده‌های مجزا
+    let wsCounter = 1;
+    let otherCounter = 1;
+    
+    inbounds.forEach((inb) => {
         const network = (inb.network || inb.streamSettings?.network || "xhttp").toLowerCase();
         const port = inb.port || 443;
         
@@ -419,8 +423,15 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
         let sni = inb.sni;
         let pathStr = inb.path;
 
-        // تنظیم نام‌گذاری بر اساس نوع شبکه
-        const suffix = network === 'ws' ? `ws-${index + 1}` : `${index + 1}`;
+        // تنظیم نام‌گذاری با استفاده از شمارنده‌های تفکیک‌شده
+        let suffix;
+        if (network === 'ws') {
+            suffix = `ws-${wsCounter}`;
+            wsCounter++;
+        } else {
+            suffix = `${otherCounter}`;
+            otherCounter++;
+        }
 
         if (network === 'xhttp') {
             const xhttp = inb.streamSettings?.xhttpSettings || {};
