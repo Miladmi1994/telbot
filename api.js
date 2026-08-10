@@ -331,7 +331,7 @@ async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server
     }
 }
 
-function generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, typeNum) {
+function generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, suffix) {
     const config = {
         "dns": { "servers": ["localhost"] },
         "inbounds": [{
@@ -362,7 +362,7 @@ function generateJsonConfig(uuid, configName, domain, port, sni, pathStr, networ
             { "protocol": "freedom", "streamSettings": { "network": "tcp", "sockopt": { "domainStrategy": "UseIP" } }, "tag": "direct" },
             { "protocol": "blackhole", "settings": { "response": { "type": "http" } }, "tag": "block" }
         ],
-        "remarks": `${configName} ${typeNum}`,
+        "remarks": `${configName} ${suffix}`,
         "routing": {
             "domainStrategy": "AsIs",
             "rules": [
@@ -373,27 +373,28 @@ function generateJsonConfig(uuid, configName, domain, port, sni, pathStr, networ
     };
 
     if (network === 'xhttp') {
-        config.outbounds[0].streamSettings.xhttpSettings = { "host": domain, "mode": "auto", "path": pathStr };
+        config.outbounds[0].streamSettings.xhttpSettings = { "mode": "auto", "path": pathStr };
         config.outbounds[0].streamSettings.sockopt = {
             "domainStrategy": "UseIP",
             "happyEyeballs": { "interleave": 2, "maxConcurrentTry": 4, "prioritizeIPv6": false, "tryDelayMs": 250 }
         };
     } else if (network === 'ws') {
-        config.outbounds[0].streamSettings.wsSettings = { "headers": { "Host": domain }, "path": pathStr };
+        config.outbounds[0].streamSettings.wsSettings = { "headers": {}, "path": pathStr };
     }
 
     return JSON.stringify(config);
 }
 
-function generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, typeNum) {
-    const remark = encodeURIComponent(`${configName} ${typeNum}`);
+function generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, suffix) {
+    const remark = encodeURIComponent(`${configName} ${suffix}`);
     const encPath = encodeURIComponent(pathStr);
     const modeParam = network === 'xhttp' ? '&mode=auto' : '';
-    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&type=${network}&host=${domain}&path=${encPath}${modeParam}#${remark}`;
+    // پارامتر host به صورت کامل حذف شد
+    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&type=${network}&path=${encPath}${modeParam}#${remark}`;
 }
 
-function generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, typeNum) {
-    const remark = encodeURIComponent(`${configName} ${typeNum}`);
+function generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, suffix) {
+    const remark = encodeURIComponent(`${configName} ${suffix}`);
     const encPath = encodeURIComponent(pathStr);
     const modeParam = network === 'xhttp' ? '&mode=auto' : '';
     const fmObj = {
@@ -411,13 +412,15 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
     let results = [];
     
     inbounds.forEach((inb, index) => {
-        // تشخیص دقیق نوع شبکه (پشتیبانی از ساختار ربات و پنل)
         const network = (inb.network || inb.streamSettings?.network || "ws").toLowerCase();
         const port = inb.port || 443;
         
         let domain = inb.domain;
         let sni = inb.sni;
         let pathStr = inb.path;
+
+        // تنظیم نام‌گذاری بر اساس نوع شبکه
+        const suffix = network === 'ws' ? `ws-${index + 1}` : `${index + 1}`;
 
         if (network === 'xhttp') {
             const xhttp = inb.streamSettings?.xhttpSettings || {};
@@ -432,9 +435,9 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
         sni = sni || inb.streamSettings?.tlsSettings?.serverName || domain;
         domain = domain || "ns.crrc.ir";
         
-        results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, index + 1));
-        results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, index + 1));
-        results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, index + 1));
+        results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, suffix));
+        results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, suffix));
+        results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, suffix));
     });
     
     return results;
