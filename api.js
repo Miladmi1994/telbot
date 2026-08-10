@@ -91,6 +91,9 @@ async function createClient(email, totalGB, expiryDays, server) {
     const uuid = crypto.randomUUID(); 
     const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
     const expiryTime = expiryDays === 0 ? 0 : Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
+    
+    // تعریف شناسه اشتراک برای لینک‌ها
+    const subId = crypto.randomBytes(8).toString('hex'); 
 
     const newClient = {
         id: uuid,
@@ -112,25 +115,22 @@ async function createClient(email, totalGB, expiryDays, server) {
 
     for (const inbound of server.inbounds) {
         try {
-            console.log(`🔍 [DEBUG] Fetching inbound ID: ${inbound.id}`);
             const getRes = await apiClient.get(`panel/api/inbounds/get/${inbound.id}`);
-            
-            if (!getRes.data || !getRes.data.success) {
-                console.error(`❌ Failed to get inbound ${inbound.id}:`, getRes.data);
-                continue;
-            }
+            if (!getRes.data || !getRes.data.success || !getRes.data.obj) continue;
             
             const inboundData = getRes.data.obj;
-            if (!inboundData) {
-                console.error(`❌ Inbound object is null for ID ${inbound.id}`);
-                continue;
-            }
-
             let settings = typeof inboundData.settings === 'string' 
                 ? JSON.parse(inboundData.settings) 
                 : (inboundData.settings || { clients: [] });
             
             if (!settings.clients) settings.clients = [];
+            
+            // 🔥 پاکسازی کلاینت‌های قبلی برای جلوگیری از ارور دیتابیس پنل سنایی
+            settings.clients.forEach(c => {
+                if (c.tgId === '' || c.tgId === null) c.tgId = 0;
+                if (!c.subId) c.subId = crypto.randomBytes(8).toString('hex');
+            });
+
             settings.clients.push(newClient);
 
             const payload = {
@@ -146,17 +146,12 @@ async function createClient(email, totalGB, expiryDays, server) {
                 sniffing: inboundData.sniffing
             };
 
-            console.log(`📤 [DEBUG] Updating inbound ID: ${inbound.id}`);
             const updateRes = await apiClient.post(`panel/api/inbounds/update/${inbound.id}`, payload);
-            
             if (updateRes.data && updateRes.data.success) {
                 successCount++;
-                console.log(`✅ Client added successfully to inbound ${inbound.id}`);
-            } else {
-                console.error(`❌ Panel rejected update for inbound ${inbound.id}:`, updateRes.data);
             }
         } catch (error) {
-            console.error(`❌ API Error adding client to inbound ${inbound.id}:`, error.message, error.response?.data);
+            console.error(`❌ Error adding client to inbound ${inbound.id}:`, error.message);
         }
     }
 
@@ -274,6 +269,12 @@ async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server
 
             if (!settings.clients) settings.clients = [];
             
+            // 🔥 پاکسازی کلاینت‌های قبلی 
+            settings.clients.forEach(c => {
+                if (c.tgId === '' || c.tgId === null) c.tgId = 0;
+                if (!c.subId) c.subId = crypto.randomBytes(8).toString('hex');
+            });
+            
             const clientIndex = settings.clients.findIndex(c => c.id === uuid || c.email === oldEmail);
             if (clientIndex > -1) {
                 settings.clients[clientIndex] = {
@@ -293,7 +294,7 @@ async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server
                     expiryTime: expiryTime,
                     enable: true,
                     tgId: 0,
-                    subId: subId
+                    subId: crypto.randomBytes(8).toString('hex')
                 });
             }
 
