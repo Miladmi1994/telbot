@@ -178,32 +178,23 @@ function setupHandlers(bot) {
 });
 
 bot.command('dbtest', (ctx) => {
-        if (!isUserAdmin(ctx.from.id.toString())) return;
-        const db = readDb();
-        const server = db.servers?.find(s => s.id === db.settings.activeServerId) || db.servers?.[0];
-        
-        if (!server) return ctx.reply('❌ هیچ سروری در دیتابیس یافت نشد.');
+    if (!isUserAdmin(ctx.from.id.toString())) return;
+    const db = readDb();
+    
+    let text = `⚙️ <b>تنظیمات فعال:</b>\n`;
+    text += `🔹 Active Server ID: <code>${db.settings?.activeServerId}</code>\n\n`;
+    text += `📋 <b>کل سرورهای دیتابیس (${(db.servers || []).length} عدد):</b>\n\n`;
 
-        let text = `🖥 <b>نام سرور:</b> ${server.name}\n`;
-        text += `🔗 <b>آدرس پنل:</b> <code>${server.panelUrl}</code>\n`;
-        text += `📂 <b>مسیر پنل:</b> <code>${server.webBasePath || 'خالی'}</code>\n\n`;
-        text += `🔌 <b>لیست اینباندها (${(server.inbounds || []).length} عدد):</b>\n`;
-
-        (server.inbounds || []).forEach((inb, index) => {
-            text += `\n--- اینباند شماره ${index + 1} ---\n`;
-            text += `🔹 شناسه (ID): <code>${inb.id}</code>\n`;
-            text += `🔹 دامنه: <code>${inb.domain}</code>\n`;
-            text += `🔹 اس‌ان‌آی: <code>${inb.sni}</code>\n`;
-            text += `🔹 مسیر (Path): <code>${inb.path}</code>\n`;
-            text += `🔹 شبکه (Network): <code>${inb.network || 'ws (پیش‌فرض)'}</code>\n`;
-        });
-
-        // ارسال به صورت متن در تلگرام برای بررسی دقیق
-        ctx.reply(text, { parse_mode: 'HTML' });
-        
-        // چاپ کامل ساختار JSON در کنسول سرور (pm2 logs)
-        console.log("📊 [DB DEBUG] Server & Inbounds JSON:", JSON.stringify(server, null, 2));
+    (db.servers || []).forEach((srv, i) => {
+        text += `🌐 <b>سرور ${i + 1} (${srv.name}):</b>\n`;
+        text += `▫️ شناسه: <code>${srv.id}</code>\n`;
+        text += `▫️ آدرس: <code>${srv.panelUrl}</code>\n`;
+        text += `▫️ تعداد اینباند: <b>${(srv.inbounds || []).length}</b> عدد\n`;
+        text += `〰️〰️〰️〰️〰️\n`;
     });
+
+    ctx.reply(text, { parse_mode: 'HTML' });
+});
 
     bot.action('admin_broadcast', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
