@@ -410,11 +410,26 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
     let results = [];
     
     inbounds.forEach((inb, index) => {
-        const domain = inb.domain || "ns.crrc.ir";
+        // تشخیص دقیق نوع شبکه (پشتیبانی از ساختار ربات و پنل)
+        const network = (inb.network || inb.streamSettings?.network || "ws").toLowerCase();
         const port = inb.port || 443;
-        const sni = inb.sni || domain;
-        const pathStr = inb.path || "/Cypher_Net";
-        const network = inb.network || "ws"; 
+        
+        let domain = inb.domain;
+        let sni = inb.sni;
+        let pathStr = inb.path;
+
+        if (network === 'xhttp') {
+            const xhttp = inb.streamSettings?.xhttpSettings || {};
+            pathStr = pathStr || xhttp.path || "/Cypher_Net";
+            domain = domain || xhttp.host || "ns.crrc.ir";
+        } else if (network === 'ws') {
+            const ws = inb.streamSettings?.wsSettings || {};
+            pathStr = pathStr || ws.path || "/Cypher_Net";
+            domain = domain || ws.host || "ns.crrc.ir";
+        }
+
+        sni = sni || inb.streamSettings?.tlsSettings?.serverName || domain;
+        domain = domain || "ns.crrc.ir";
         
         results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, index + 1));
         results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, index + 1));
