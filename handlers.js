@@ -177,6 +177,34 @@ function setupHandlers(bot) {
     await ctx.reply('لطفاً SNI جدید را ارسال کنید:');
 });
 
+bot.command('dbtest', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const server = db.servers?.find(s => s.id === db.settings.activeServerId) || db.servers?.[0];
+        
+        if (!server) return ctx.reply('❌ هیچ سروری در دیتابیس یافت نشد.');
+
+        let text = `🖥 <b>نام سرور:</b> ${server.name}\n`;
+        text += `🔗 <b>آدرس پنل:</b> <code>${server.panelUrl}</code>\n`;
+        text += `📂 <b>مسیر پنل:</b> <code>${server.webBasePath || 'خالی'}</code>\n\n`;
+        text += `🔌 <b>لیست اینباندها (${(server.inbounds || []).length} عدد):</b>\n`;
+
+        (server.inbounds || []).forEach((inb, index) => {
+            text += `\n--- اینباند شماره ${index + 1} ---\n`;
+            text += `🔹 شناسه (ID): <code>${inb.id}</code>\n`;
+            text += `🔹 دامنه: <code>${inb.domain}</code>\n`;
+            text += `🔹 اس‌ان‌آی: <code>${inb.sni}</code>\n`;
+            text += `🔹 مسیر (Path): <code>${inb.path}</code>\n`;
+            text += `🔹 شبکه (Network): <code>${inb.network || 'ws (پیش‌فرض)'}</code>\n`;
+        });
+
+        // ارسال به صورت متن در تلگرام برای بررسی دقیق
+        ctx.reply(text, { parse_mode: 'HTML' });
+        
+        // چاپ کامل ساختار JSON در کنسول سرور (pm2 logs)
+        console.log("📊 [DB DEBUG] Server & Inbounds JSON:", JSON.stringify(server, null, 2));
+    });
+
     bot.action('admin_broadcast', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.editMessageText('📢 لطفاً گروه هدف برای ارسال پیام را انتخاب کنید:', { 
