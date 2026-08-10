@@ -3202,6 +3202,11 @@ bot.command('dbtest', (ctx) => {
                 }
             } else {
                 finalDays = expiryDays + Math.ceil(remainDays);
+                
+                // اعمال محدودیت سقف ۹۰ روز فقط برای پکیج‌های عادی کمتر از ۱۰۰ گیگ
+                if (totalGB < 100 && finalDays > 90) {
+                    finalDays = 90;
+                }
             }
 
             if (currentServerId !== targetServerId) {
