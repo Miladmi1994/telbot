@@ -288,6 +288,27 @@ function generateJsonConfig(uuid, configName, domain, port, sni, pathStr, networ
                     }]
                 },
                 "streamSettings": {
+                    "finalmask": {
+                        "tcp": [
+                            {
+                                "type": "fragment",
+                                "settings": {
+                                    "delay": "2-4",
+                                    "length": "20-25",
+                                    "packets": "tlshello"
+                                }
+                            }
+                        ],
+                        "udp": [
+                            {
+                                "type": "noise",
+                                "settings": {
+                                    "delay": "10-16",
+                                    "length": "10-20"
+                                }
+                            }
+                        ]
+                    },
                     "network": network,
                     "security": "tls",
                     "tlsSettings": { "allowInsecure": false, "alpn": ["h3", "h2"], "fingerprint": "chrome", "serverName": sni }
@@ -308,7 +329,7 @@ function generateJsonConfig(uuid, configName, domain, port, sni, pathStr, networ
     };
 
     if (network === 'xhttp') {
-        config.outbounds[0].streamSettings.xhttpSettings = { "mode": "auto", "path": pathStr };
+        config.outbounds[0].streamSettings.xhttpSettings = { "host": "", "mode": "packet-up", "path": pathStr };
         config.outbounds[0].streamSettings.sockopt = {
             "domainStrategy": "UseIP",
             "happyEyeballs": { "interleave": 2, "maxConcurrentTry": 4, "prioritizeIPv6": false, "tryDelayMs": 250 }
@@ -323,22 +344,23 @@ function generateJsonConfig(uuid, configName, domain, port, sni, pathStr, networ
 function generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, suffix) {
     const remark = encodeURIComponent(`${configName} ${suffix}`);
     const encPath = encodeURIComponent(pathStr);
-    const modeParam = network === 'xhttp' ? '&mode=auto' : '';
-    // پارامتر host به صورت کامل حذف شد
-    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&type=${network}&path=${encPath}${modeParam}#${remark}`;
+    const modeParam = network === 'xhttp' ? '&mode=packet-up' : '';
+    // پارامتر host کاملا حذف شد
+    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=${network}&path=${encPath}${modeParam}#${remark}`;
 }
 
 function generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, suffix) {
     const remark = encodeURIComponent(`${configName} ${suffix}`);
     const encPath = encodeURIComponent(pathStr);
-    const modeParam = network === 'xhttp' ? '&mode=auto' : '';
+    const modeParam = network === 'xhttp' ? '&mode=packet-up' : '';
     const fmObj = {
         "tcp": [
-            { "type": "fragment", "settings": { "packets": "tlshello", "lengths": ["5","94", "1"], "delays": ["0"], "maxSplit": "0" } },
+            { "type": "fragment", "settings": { "packets": "tlshello", "lengths": ["5", "94", "1"], "delays": ["0"], "maxSplit": "0" } },
             { "type": "fragment", "settings": { "packets": "1-1", "lengths": ["109", "1"], "delays": ["1"], "maxSplit": "355" } }
         ]
     };
     const encFm = encodeURIComponent(JSON.stringify(fmObj));
+    // پارامتر host حذف شد و ساختار fm دقیقاً روی لینک شماره ۳ اعمال شد
     return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=${network}&path=${encPath}${modeParam}&fm=${encFm}#${remark}`;
 }
 
@@ -346,7 +368,6 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
     const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [];
     let results = [];
     
-    // شمارنده‌های مجزا برای کل خروجی‌ها
     let wsCounter = 1;
     let otherCounter = 1;
     
@@ -371,7 +392,6 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
         sni = sni || inb.streamSettings?.tlsSettings?.serverName || domain;
         domain = domain || "ns.crrc.ir";
         
-        // تابع کمکی برای دریافت پسوند و افزایش شمارنده به ازای هر کانفیگ
         const getNextSuffix = () => {
             if (network === 'ws') {
                 return `ws-${wsCounter++}`;
