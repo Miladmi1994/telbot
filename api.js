@@ -74,15 +74,24 @@ async function testServerConnection(panelUrl, webBasePath, apiToken) {
     }
 }
 
-async function createClient(email, uuid, limitIp, totalGB, expiryTime, server) {
+async function createClient(email, totalGB, expiryDays, server) {
     const apiClient = getApiClient(server);
     let successCount = 0;
+    
+    // تولید اتوماتیک UUID
+    const uuid = crypto.randomUUID(); 
+    
+    // تبدیل گیگابایت به بایت برای پنل سنایی
+    const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
+    
+    // تبدیل تعداد روز به تایم‌ستمپ (میلی‌ثانیه)
+    const expiryTime = expiryDays === 0 ? 0 : Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
 
     const clientData = {
         id: uuid,
         email: email,
-        limitIp: limitIp,
-        totalGB: totalGB,
+        limitIp: 0,
+        totalGB: totalByte,
         expiryTime: expiryTime,
         enable: true,
         tgId: '',
@@ -104,16 +113,14 @@ async function createClient(email, uuid, limitIp, totalGB, expiryTime, server) {
             });
             if (res.data && res.data.success) {
                 successCount++;
-            } else {
-                console.error(`❌ Error adding client to inbound ${inbound.id}:`, res.data ? res.data.msg : 'Unknown');
             }
         } catch (error) {
             console.error(`❌ API Error adding client to inbound ${inbound.id}:`, error.message);
         }
     }
     
-    // اگر حداقل روی یک اینباند ساخته شده باشد، عملیات موفق است
-    return successCount > 0; 
+    // هندلر ربات شما منتظر دریافت UUID است
+    return successCount > 0 ? uuid : false; 
 }
 
 async function deleteClient(email, server = null) {
@@ -199,22 +206,30 @@ async function getClientActiveInboundIds(email, server = null) {
     }
 }
 
-async function renewClient(uuid, email, limitIp, totalGB, expiryTime, server) {
+async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server) {
     const apiClient = getApiClient(server);
     let successCount = 0;
 
+    // تبدیل گیگابایت به بایت
+    const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
+    
+    // تبدیل تعداد روز به تایم‌ستمپ
+    const expiryTime = expiryDays === 0 ? 0 : Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
+
     const clientData = {
         id: uuid,
-        email: email,
-        limitIp: limitIp,
-        totalGB: totalGB,
+        email: newEmail,
+        limitIp: 0,
+        totalGB: totalByte,
         expiryTime: expiryTime,
         enable: true,
         tgId: '',
         subId: ''
     };
 
-    if (!server.inbounds || server.inbounds.length === 0) return false;
+    if (!server.inbounds || server.inbounds.length === 0) {
+        return { success: false, log: 'اینباندی برای این سرور یافت نشد.' };
+    }
 
     // آپدیت مشخصات کاربر روی تمام اینباندها
     for (const inbound of server.inbounds) {
@@ -234,12 +249,15 @@ async function renewClient(uuid, email, limitIp, totalGB, expiryTime, server) {
     
     // ریست کردن ترافیک مصرفی کلاینت در پنل سنایی
     try {
-        await apiClient.post(`panel/api/inbounds/resetClientTraffic/${email}`);
-    } catch (e) {
-        console.error("❌ Error resetting traffic:", e.message);
-    }
+        await apiClient.post(`panel/api/inbounds/resetClientTraffic/${newEmail}`);
+    } catch (e) {}
     
-    return successCount > 0;
+    // بازگرداندن فرمت آبجکتی که فایل handlers.js به آن نیاز دارد
+    if (successCount > 0) {
+        return { success: true, log: 'تمدید با موفقیت انجام شد' };
+    } else {
+        return { success: false, log: 'ارتباط با پنل سرور برقرار نشد یا اکانت یافت نشد.' };
+    }
 }
 
 function generateJsonConfig(uuid, configName, domain, sni, pathStr, network, typeNum) {
