@@ -3260,6 +3260,7 @@ bot.command('dbtest', (ctx) => {
 
 
    // سیستم یکپارچه همگام‌سازی ترافیک، اخطارها و پاکسازی (اجرا هر ۱ ساعت)
+    // سیستم یکپارچه همگام‌سازی ترافیک، اخطارها و پاکسازی (اجرا هر ۱ ساعت)
     setInterval(async () => {
         try {
             const db = readDb();
@@ -3305,6 +3306,25 @@ bot.command('dbtest', (ctx) => {
                         const currentUsed = traffic.up + traffic.down;
                         const currentExpiry = traffic.expiryTime;
 
+                        // بررسی افزایش حجم یا زمان (شارژ دستی مستقیم از پنل)
+                        if (conf.panelStats) {
+                            let updatedMsg = [];
+                            if (currentTotal > conf.panelStats.total) {
+                                const addedGB = (currentTotal - conf.panelStats.total) / 1073741824;
+                                updatedMsg.push(`🔋 <b>${addedGB.toFixed(2)} گیگابایت</b> حجم`);
+                            }
+                            if (currentExpiry > conf.panelStats.expiry && currentExpiry > 0) {
+                                const addedDays = (currentExpiry - conf.panelStats.expiry) / (1000 * 60 * 60 * 24);
+                                updatedMsg.push(`⏳ <b>${Math.ceil(addedDays)} روز</b> زمان`);
+                            }
+                            
+                            if (updatedMsg.length > 0) {
+                                // ریست کردن اخطارها برای سرویس شارژ شده
+                                conf.notified = { days3: false, gb85: false, gb1: false };
+                                bot.telegram.sendMessage(userId, `♻️ <b>بروزرسانی سرویس</b>\nسرویس شما (${conf.name}) با موفقیت شارژ شد و ${updatedMsg.join(' و ')} به آن اضافه گردید.`, { parse_mode: 'HTML' }).catch(()=>{});
+                            }
+                        }
+
                         if (!conf.panelStats || currentExpiry > conf.panelStats.expiry || currentTotal > conf.panelStats.total) {
                             conf.panelStats = { total: currentTotal, used: currentUsed, expiry: currentExpiry, email: conf.email };
                             userChanged = true;
@@ -3342,17 +3362,21 @@ bot.command('dbtest', (ctx) => {
                         // مدیریت ارسال اخطارهای زمان و حجم
                         const renewBtn = { inline_keyboard: [[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)]] };
 
-                        if (diffDays > 2 && diffDays <= 3 && !conf.notified.days3) {
+                        // شرط هشدار ۳ روز مانده
+                        if (currentExpiry > 0 && diffDays > 0 && diffDays <= 3 && !conf.notified.days3) {
                             conf.notified.days3 = true;
                             userChanged = true;
-                            bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط <b>۳ روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
+                            bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط حدود <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
                         }
 
+                        // هشدار اتمام حجم
                         if (currentTotal > 0 && remainGB <= 1 && remainGB > 0 && !conf.notified.gb1) {
                             conf.notified.gb1 = true;
                             userChanged = true;
                             bot.telegram.sendMessage(userId, `⚠️ <b>هشدار اتمام حجم</b>\n📉 کمتر از <b>۱ گیگابایت</b> (${remainGB.toFixed(2)} GB) از کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
-                        } else if (currentTotal > 0 && (usedGB / totalGB) >= 0.85 && remainGB > 1 && !conf.notified.gb85) {
+                        } 
+                        // هشدار مصرف ۸۵ درصد حجم
+                        else if (currentTotal > 0 && (usedGB / totalGB) >= 0.85 && remainGB > 1 && !conf.notified.gb85) {
                             conf.notified.gb85 = true;
                             userChanged = true;
                             bot.telegram.sendMessage(userId, `⚠️ <b>هشدار مصرف حجم</b>\n📉 <b>۸۵٪</b> از حجم کانفیگ (${conf.name}) مصرف شده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
