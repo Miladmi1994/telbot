@@ -3210,7 +3210,7 @@ bot.command('dbtest', (ctx) => {
             }
 
             if (currentServerId !== targetServerId) {
-            if (oldServer) await deleteClient(oldEmail, oldServer); 
+            if (oldServer) await deleteClient(conf.uuid, oldServer);
             
             const newUuid = await createClient(newEmail, finalGB, finalDays, targetServer || null);
             if (!newUuid) return ctx.reply('❌ خطا در کوچ کانفیگ به سرور جدید.');
@@ -3261,8 +3261,8 @@ bot.command('dbtest', (ctx) => {
 
    // سیستم یکپارچه همگام‌سازی ترافیک، اخطارها و پاکسازی (اجرا هر ۱ ساعت)
     // سیستم یکپارچه همگام‌سازی ترافیک، اخطارها و پاکسازی (اجرا هر ۱ ساعت)
-    setInterval(async () => {
-        try {
+    async function runSyncJob() {
+    try {
             const db = readDb();
             let dbChanged = false;
             const now = Date.now();
@@ -3295,8 +3295,12 @@ bot.command('dbtest', (ctx) => {
                         }
 
                         const traffic = await getClientTraffic(conf.email, targetServer);
-                        if (!traffic) {
-                            conf.deletedFromPanel = true;
+                            if (traffic === undefined) {
+                                updatedConfigs.push(conf);
+                                continue;
+                            }
+                            if (!traffic) {
+                                conf.deletedFromPanel = true;
                             updatedConfigs.push(conf);
                             userChanged = true;
                             continue;
@@ -3347,7 +3351,7 @@ bot.command('dbtest', (ctx) => {
 
                             // پاکسازی اکانت‌های تاریخ گذشته در پنل
                             if ((isTest && diffDays < -2) || (!isTest && diffDays < -14)) {
-                                await deleteClient(conf.email, targetServer).catch(()=>{});
+                               await deleteClient(conf.uuid, targetServer).catch(()=>{});
                                 conf.deletedFromPanel = true;
                                 userChanged = true;
                             }
@@ -3394,9 +3398,12 @@ bot.command('dbtest', (ctx) => {
 
             if (dbChanged) writeDb(db);
         } catch (error) {
-            logError('Cron Job (1 Hour)', error);
-        }
-    }, 60 * 60 * 1000);
+        logError('Cron Job (1 Hour)', error);
+    }
+}
+
+runSyncJob();
+setInterval(runSyncJob, 60 * 60 * 1000);
 }
 
 module.exports = setupHandlers;
