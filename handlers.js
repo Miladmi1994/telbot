@@ -171,11 +171,6 @@ function setupHandlers(bot) {
         return next();
     });
 
-    bot.command('send_backup_config', async (ctx) => {
-    if (!isUserAdmin(ctx.from.id.toString())) return; 
-    adminSteps.set(ctx.from.id, { step: 'waiting_for_backup_sni' });
-    await ctx.reply('لطفاً SNI جدید را ارسال کنید:');
-});
 
 bot.command('dbtest', (ctx) => {
     if (!isUserAdmin(ctx.from.id.toString())) return;
@@ -2159,50 +2154,6 @@ bot.command('dbtest', (ctx) => {
         const adminState = adminSteps.get(ctx.from.id);
         const state = userSteps.get(ctx.from.id);
 
-        if (isUserAdmin(userId) && adminState && adminState.step === 'waiting_for_backup_sni') {
-            adminSteps.delete(ctx.from.id);
-            const newSni = ctx.message.text.trim();
-            if (!newSni) return ctx.reply('❌ مقدار SNI نمی‌تواند خالی باشد.');
-
-            const db = readDb();
-            let count = 0;
-            const oldFlags = ['🇳🇱', '🇩🇪', '🇮🇹', '🇫🇷', '🇬🇧', '🇹🇷', '🌍', '🇫🇮'];
-
-            for (const uid in db.users) {
-                if (!db.vipUsers || !db.vipUsers.map(String).includes(String(uid))) continue;
-                if (!Array.isArray(db.users[uid])) continue;
-                
-                for (const conf of db.users[uid]) {
-                    if (conf.name === 'سرویس قبلی' || conf.deletedFromPanel) continue;
-                    
-                    let targetServer = db.servers?.find(s => s.id === conf.serverId);
-                    if (!targetServer) targetServer = db.servers?.find(s => s.id === db.settings.activeVipServerId) || db.servers?.find(s => s.id === db.settings.activeServerId);
-                    if (!targetServer) continue;
-
-                    const newServerObj = { ...targetServer, sni: newSni };
-                    
-                    // --- حذف پرچم‌های قدیمی و اضافه کردن پرچم هلند ---
-                    let newName = conf.name;
-                    oldFlags.forEach(f => { newName = newName.replace(f, '').trim(); });
-                    newName = `${newName} 🇳🇱`.trim();
-                    // ----------------------------------------------------
-                    
-                    const config1 = generateMtnConfig(conf.uuid, newName, newServerObj);
-                    const config2 = generateMciConfig(conf.uuid, newName, newServerObj);
-                    
-                    const message = `🔄 <b>کانفیگ‌های سرور جدید (هلند)</b>\n\nکاربر گرامی، جهت اتصال پس از انتقال به سرور جدید، لطفاً کانفیگ‌های زیر را در برنامه خود وارد کنید:\n\n🟡 <b>کانفیگ شماره ۱:</b>\n<blockquote expandable><code>${config1}</code></blockquote>\n\n🔵 <b>کانفیگ شماره ۲:</b>\n<blockquote expandable><code>${config2}</code></blockquote>`;
-                    
-                    try {
-                        await bot.telegram.sendMessage(uid, message, { parse_mode: 'HTML' });
-                        count++;
-                    } catch (e) {
-                        logError('Send New Server Config', e);
-                    }
-                }
-            }
-            return ctx.reply(`✅ کانفیگ‌های سرور جدید با پرچم هلند فقط برای کاربران VIP (${count} کانفیگ) ارسال شد.`);
-        }
-
         const ignoreTexts = ['🛒 خرید مستقیم (بدون شماره)', '🛠 پشتیبانی و گزارش خطا', '❌ خروج از چت پشتیبانی', '👤 داشبورد من', '📚 آموزش‌ها', '🔄 تمدید سرویس'];
         if (ignoreTexts.includes(ctx.message.text)) return;
 
@@ -3249,7 +3200,7 @@ bot.command('dbtest', (ctx) => {
         db.userStats[userId].totalSpent += priceVal;
         db.userStats[userId].renewCount++;
 
-        conf.notified = { days3: false, gb85: false };
+        conf.notified = { days3: false, gb85: false, gb1: false };
         delete db.payments[payToken];
         writeDb(db);
         await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تمدید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } }).catch(()=>{});
