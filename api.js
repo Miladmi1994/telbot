@@ -101,98 +101,91 @@ async function createClient(email, totalGB, expiryDays, server) {
 
     const inboundIds = server.inbounds.map(inb => inb.id);
 
-    const clientObj = {
-        id: uuid,
-        alterId: 0,
-        email: email,
-        limitIp: 0,
-        totalGB: totalByte,
-        expiryTime: expiryTime,
-        enable: true,
-        tgId: '',
-        subId: subId,
-        reset: 0,
-        flow: ''
+    const payload = {
+        client: {
+            id: uuid,
+            email: email,
+            limitIp: 0,
+            totalGB: totalByte,
+            expiryTime: expiryTime,
+            enable: true,
+            tgId: 0,
+            subId: subId
+        },
+        inboundIds: inboundIds // اختصاص همزمان کلاینت به تمام اینباندها (WS و XHTTP)
     };
 
-    const succeededInboundIds = [];
-
-    for (const inboundId of inboundIds) {
-        try {
-            const payload = {
-                id: inboundId,
-                settings: JSON.stringify({ clients: [clientObj] })
-            };
-            const res = await apiClient.post('panel/api/inbounds/addClient', payload);
-            if (res.data && res.data.success) {
-                succeededInboundIds.push(inboundId);
-            } else {
-                console.error(`❌ Panel rejected add client on inbound ${inboundId}:`, res.data?.msg);
-            }
-        } catch (error) {
-            console.error(`❌ API Error adding client to inbound ${inboundId}:`, error.message);
+    try {
+        const res = await apiClient.post('panel/api/clients/add', payload);
+        if (res.data && res.data.success) {
+            return uuid;
+        } else {
+            console.error("❌ Panel rejected add client:", res.data?.msg);
+            return false;
         }
-    }
-
-    if (succeededInboundIds.length === 0) {
+    } catch (error) {
+        console.error("❌ API Error adding client:", error.message);
         return false;
     }
-
-    if (succeededInboundIds.length !== inboundIds.length) {
-        console.error(`⚠️ Partial add (${succeededInboundIds.length}/${inboundIds.length}) — rolling back.`);
-        for (const inboundId of succeededInboundIds) {
-            await apiClient.post(`panel/api/inbounds/${inboundId}/delClient/${uuid}`).catch(() => {});
-        }
-        return false;
-    }
-
-    return uuid;
 }
 
-async function deleteClient(uuid, server = null) {
+async function deleteClient(identifier, server = null) {
     const apiClient = getApiClient(server);
-    if (!server || !server.inbounds || server.inbounds.length === 0) {
+    try {
+        await apiClient.post(`panel/api/clients/del/${identifier}`);
+        return true;
+    } catch (error) {
         return false;
     }
-
-    let anySuccess = false;
-    for (const inb of server.inbounds) {
-        try {
-            const res = await apiClient.post(`panel/api/inbounds/${inb.id}/delClient/${uuid}`);
-            if (res.data && res.data.success) anySuccess = true;
-        } catch (error) {
-            // ممکنه کلاینت روی این اینباند خاص اصلاً وجود نداشته باشه؛ مشکلی نیست
-        }
-    }
-    return anySuccess;
 }
 
+// --- دریافت ترافیک/حجم/انقضای کلاینت ---
+// اول از مسیر رسمی getClientTraffics (که up/down/total/expiryTime می‌ده) امتحان می‌کنیم؛
+// اگه جواب نداد، به مسیر قدیمی clients/get که رو این پنل جواب می‌داد fallback می‌کنیم.
+// --- دریافت ترافیک/حجم/انقضای کلاینت ---
+// طبق مستندات واقعی این پنل، /panel/api/clients/traffic/{email} یک شیء واحد
+// برمی‌گردونه که خودِ پنل از قبل روی همه‌ی اینباندهای این کلاینت جمع زده
+// (چون این پنل کلاینت رو یک موجودیت مستقل از اینباند می‌بینه، نه رکورد جدا به‌ازای هر اینباند).
+// پس نیازی به جمع دستی روی چند اینباند نیست.
 async function getClientTraffic(email, server = null) {
     const apiClient = getApiClient(server);
     try {
-        const res = await apiClient.get(`panel/api/inbounds/getClientTraffics/${encodeURIComponent(email)}`);
+        let total = 0, up = 0, down = 0, expiryTime = 0;
+        let found = false;
 
-        if (!res.data || !res.data.success) {
-            return null;
+        try {
+            const res = await apiClient.get(`panel/api/clients/traffic/${encodeURIComponent(email)}`);
+            if (res.data && res.data.success && res.data.obj) {
+                const obj = res.data.obj;
+                total = obj.total || 0;
+                up = obj.up || 0;
+                down = obj.down || 0;
+                expiryTime = obj.expiryTime || 0;
+                found = true;
+            }
+        } catch (e) {}
+
+        // fallback: اگه مسیر traffic جواب نداد، از مسیر get که total/expiryTime رو هم داره کمک بگیر
+        if (!found) {
+            const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
+            if (clientRes.data && clientRes.data.success && clientRes.data.obj) {
+                const obj = clientRes.data.obj;
+                total = obj.totalGB || obj.total || 0;
+                expiryTime = obj.expiryTime || 0;
+                up = obj.traffic?.up || 0;
+                down = obj.traffic?.down || 0;
+                found = true;
+            }
         }
 
-        const raw = res.data.obj;
-        if (!raw) return null;
-
-        const items = Array.isArray(raw) ? raw : [raw];
-        if (items.length === 0) return null;
-
-        let up = 0, down = 0, total = 0, expiryTime = 0;
-        for (const item of items) {
-            if (!item) continue;
-            up += item.up || 0;
-            down += item.down || 0;
-            if (!total && item.total) total = item.total;
-            if (!expiryTime && item.expiryTime) expiryTime = item.expiryTime;
+        if (!found) {
+            // هر دو مسیر صراحتاً گفتن همچین کلاینتی نیست -> واقعاً حذف شده
+            return null;
         }
 
         return { total, up, down, expiryTime };
     } catch (error) {
+        // خطای شبکه/تایم‌اوت -> وضعیت نامشخص است، نه حذف‌شده
         console.error(`⚠️ [Traffic] خطا در دریافت ترافیک ${email}:`, error.message);
         return undefined;
     }
@@ -234,40 +227,32 @@ async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server
 
     const inboundIds = server.inbounds.map(inb => inb.id);
 
-    const clientObj = {
-        id: uuid,
-        alterId: 0,
-        email: newEmail,
-        limitIp: 0,
-        totalGB: totalByte,
-        expiryTime: expiryTime,
-        enable: true,
-        tgId: '',
-        subId: subId,
-        reset: 0,
-        flow: ''
-    };
-
     try {
-        for (const inboundId of inboundIds) {
-            await apiClient.post(`panel/api/inbounds/${inboundId}/delClient/${uuid}`).catch(() => {});
-        }
+        // ۱. عملیات خودترمیمی (Self-Healing): حذف کامل کلاینت با UUID
+        await apiClient.post(`panel/api/clients/del/${uuid}`).catch(() => {});
+        await apiClient.post(`panel/api/clients/del/${oldEmail}`).catch(() => {});
 
-        const succeededInboundIds = [];
-        for (const inboundId of inboundIds) {
-            const payload = { id: inboundId, settings: JSON.stringify({ clients: [clientObj] }) };
-            const res = await apiClient.post('panel/api/inbounds/addClient', payload);
-            if (res.data && res.data.success) {
-                succeededInboundIds.push(inboundId);
-            }
-        }
+        // ۲. ساخت مجدد کلاینت با ایمیل و حجم جدید روی تمام اینباندها به صورت همزمان
+        const payload = {
+            client: {
+                id: uuid, // UUID ثابت می‌ماند تا کانفیگ کاربر قطع نشود
+                email: newEmail,
+                limitIp: 0,
+                totalGB: totalByte,
+                expiryTime: expiryTime,
+                enable: true,
+                tgId: 0,
+                subId: subId
+            },
+            inboundIds: inboundIds
+        };
 
-        if (succeededInboundIds.length === inboundIds.length) {
+        const res = await apiClient.post('panel/api/clients/add', payload);
+
+        if (res.data && res.data.success) {
             return { success: true, log: 'تمدید با موفقیت انجام شد' };
-        } else if (succeededInboundIds.length > 0) {
-            return { success: false, log: `تمدید ناقص: فقط ${succeededInboundIds.length} از ${inboundIds.length} اینباند موفق شد.` };
         } else {
-            return { success: false, log: 'خطا در ثبت کلاینت جدید در پنل' };
+            return { success: false, log: res.data?.msg || 'خطا در ثبت کلاینت جدید در پنل' };
         }
     } catch (error) {
         console.error(`❌ Error renewing client:`, error.message);
