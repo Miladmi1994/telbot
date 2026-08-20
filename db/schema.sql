@@ -45,6 +45,16 @@ CREATE TABLE IF NOT EXISTS servers (
     is_migrating INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS server_inbounds (
+    server_id TEXT REFERENCES servers(id) ON DELETE CASCADE,
+    inbound_id INTEGER NOT NULL,
+    domain TEXT NOT NULL,
+    sni TEXT NOT NULL,
+    path TEXT NOT NULL,
+    network TEXT NOT NULL DEFAULT 'ws',
+    is_special_ws INTEGER NOT NULL DEFAULT 0  -- <--- این خط اضافه شود
+);
+
 CREATE TABLE IF NOT EXISTS admins (
     telegram_id TEXT PRIMARY KEY,
     name TEXT NOT NULL

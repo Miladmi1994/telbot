@@ -673,30 +673,67 @@ bot.command('dbtest', (ctx) => {
                 ctx.answerCbQuery();
             });
 
-    // ورود به منوی ویرایش یک اینباند خاص
+
     // ورود به منوی ویرایش یک اینباند خاص
     bot.action(/^edit_inbound_(.+)_(\d+)$/, (ctx) => {
-        const srvId = ctx.match[1];
-        const index = parseInt(ctx.match[2]);
-        const db = readDb();
-        const server = (db.servers || []).find(s => s.id === srvId);
-        if (!server || !server.inbounds || !server.inbounds[index]) return ctx.answerCbQuery('اینباند یافت نشد!', {show_alert: true});
+    const srvId = ctx.match[1];
+    const index = parseInt(ctx.match[2]);
+    const db = readDb();
+    const server = (db.servers || []).find(s => s.id === srvId);
+    if (!server || !server.inbounds || !server.inbounds[index]) return ctx.answerCbQuery('اینباند یافت نشد!', {show_alert: true});
+    
+    const inb = server.inbounds[index];
+    const networkType = inb.network || 'ws';
+    const text = `⚙️ <b>ویرایش اینباند</b>\n\n` +
+                 `شناسه: <code>${inb.id}</code>\n` +
+                 `دامنه: <code>${inb.domain}</code>\n` +
+                 `اس‌ان‌آی: <code>${inb.sni}</code>\n` +
+                 `مسیر: <code>${inb.path}</code>\n` +
+                 `شبکه: <code>${networkType}</code>\n\n` +
+                 `کدام بخش را می‌خواهید تغییر دهید؟`;
+    ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        reply_markup: getSingleInboundMenu(srvId, index, inb).reply_markup // <-- inb اضافه شد
+    });
+});
+
+bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
+    if (!isUserAdmin(ctx.from.id.toString())) return;
+    const srvId = ctx.match[1];
+    const index = parseInt(ctx.match[2]);
+    const db = readDb();
+    const serverIndex = db.servers.findIndex(s => s.id === srvId);
+    
+    if (serverIndex > -1 && db.servers[serverIndex].inbounds && db.servers[serverIndex].inbounds[index]) {
+        const inb = db.servers[serverIndex].inbounds[index];
         
-        const inb = server.inbounds[index];
-        const networkType = inb.network || 'ws'; // نمایش ws به عنوان پیش‌فرض در صورت ثبت نشدن
-        const text = `⚙️ <b>ویرایش اینباند</b>\n\n` +
+        // فقط برای وب‌سوکت اجازه فعال‌سازی می‌دهیم
+        if ((inb.network || 'ws') !== 'ws') {
+            return ctx.answerCbQuery('⚠️ این حالت فقط برای اینباندهای WebSocket (ws) در دسترس است.', {show_alert: true});
+        }
+
+        // تغییر وضعیت
+        inb.isSpecialWs = !inb.isSpecialWs;
+        writeDb(db);
+        
+        ctx.answerCbQuery(inb.isSpecialWs ? '✅ حالت ویژه فعال شد' : '❌ حالت ویژه غیرفعال شد', {show_alert: false});
+        
+        // رفرش کردن منو
+        const text = `✅ <b>تغییرات با موفقیت ذخیره شد.</b>\n\n` +
+                     `⚙️ <b>ویرایش اینباند</b>\n\n` +
                      `شناسه: <code>${inb.id}</code>\n` +
                      `دامنه: <code>${inb.domain}</code>\n` +
                      `اس‌ان‌آی: <code>${inb.sni}</code>\n` +
                      `مسیر: <code>${inb.path}</code>\n` +
-                     `شبکه: <code>${networkType}</code>\n\n` +
+                     `شبکه: <code>${inb.network}</code>\n\n` +
                      `کدام بخش را می‌خواهید تغییر دهید؟`;
                      
-        ctx.editMessageText(text, {
+        await ctx.editMessageText(text, {
             parse_mode: 'HTML',
-            reply_markup: getSingleInboundMenu(srvId, index).reply_markup
+            reply_markup: getSingleInboundMenu(srvId, index, inb).reply_markup
         });
-    });
+    }
+});
 
     // حذف اینباند
     bot.action(/^del_inb_(.+)_(\d+)$/, (ctx) => {

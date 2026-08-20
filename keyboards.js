@@ -104,11 +104,12 @@ const getInboundsMenu = (serverId, inbounds = []) => {
 };
 
 // منوی ویرایش یک اینباند خاص
-const getSingleInboundMenu = (serverId, inboundIndex) => Markup.inlineKeyboard([
+const getSingleInboundMenu = (serverId, inboundIndex, inb) => Markup.inlineKeyboard([
     [Markup.button.callback('✏️ ویرایش شناسه (ID)', `edit_inb_id_${serverId}_${inboundIndex}`)],
     [Markup.button.callback('✏️ ویرایش دامنه', `edit_inb_domain_${serverId}_${inboundIndex}`), Markup.button.callback('✏️ ویرایش SNI', `edit_inb_sni_${serverId}_${inboundIndex}`)],
     [Markup.button.callback('✏️ ویرایش مسیر (Path)', `edit_inb_path_${serverId}_${inboundIndex}`)],
     [Markup.button.callback('🌐 ویرایش نوع شبکه', `edit_inb_net_${serverId}_${inboundIndex}`)],
+    [Markup.button.callback(inb?.isSpecialWs ? '✅ کانفیگ ویژه WS: فعال' : '❌ کانفیگ ویژه WS: غیرفعال', `toggle_special_ws_${serverId}_${inboundIndex}`)],
     [Markup.button.callback('🗑 حذف این اینباند', `del_inb_${serverId}_${inboundIndex}`)],
     [Markup.button.callback('🔙 بازگشت به لیست اینباندها', `manage_inbounds_${serverId}`)]
 ]);

@@ -5,28 +5,31 @@ const { DatabaseSync } = require('node:sqlite');
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 function openDatabase(dbFilePath) {
-    
     const dir = path.dirname(dbFilePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
     const db = new DatabaseSync(dbFilePath);
     db.exec('PRAGMA foreign_keys = ON');
     db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
-
+    
     try { db.exec("ALTER TABLE global_stats ADD COLUMN period_income INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
     try { db.exec("ALTER TABLE global_stats ADD COLUMN period_expenses INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
-    // ایجاد جدول اختصاصی اینباندها
+
+    // ساخت جدول اینباندها اگر وجود نداشت + ستون‌های جدید
     db.exec(`
         CREATE TABLE IF NOT EXISTS server_inbounds (
             server_id TEXT REFERENCES servers(id) ON DELETE CASCADE,
             inbound_id INTEGER NOT NULL,
             domain TEXT NOT NULL,
             sni TEXT NOT NULL,
-            path TEXT NOT NULL
+            path TEXT NOT NULL,
+            network TEXT NOT NULL DEFAULT 'ws',
+            is_special_ws INTEGER NOT NULL DEFAULT 0
         );
     `);
     
+    // تلاش برای اضافه کردن ستون‌ها در صورتی که جدول از قبل با ساختار قدیمی وجود داشته
     try { db.exec("ALTER TABLE server_inbounds ADD COLUMN network TEXT NOT NULL DEFAULT 'ws';"); } catch (e) {}
+    try { db.exec("ALTER TABLE server_inbounds ADD COLUMN is_special_ws INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
 
     return db;
 }
@@ -112,7 +115,8 @@ function loadState(db) {
                 domain: row.domain,
                 sni: row.sni,
                 path: row.path,
-                network: row.network // <--- این خط باید اضافه شود
+                network: row.network
+                isSpecialWs: !!row.is_special_ws// <--- این خط باید اضافه شود
             }));
             
         // انتقال اتوماتیک اینباند قدیمی به ساختار جدید
@@ -122,7 +126,8 @@ function loadState(db) {
                  domain: srv.domain,
                  sni: srv.sni,
                  path: srv.path || '',
-                 network: 'ws' // <--- مقدار پیش‌فرض را اینجا هم بدهید
+                 network: 'xhttp' // 
+                 isSpecialWs: false<--- مقدار پیش‌فرض را اینجا هم بدهید
              });
         }
     });
@@ -279,8 +284,8 @@ function saveState(db, data) {
 
         // کد قبلی را با این جایگزین کنید (اضافه شدن network)
         const insertInbound = db.prepare(`
-            INSERT INTO server_inbounds (server_id, inbound_id, domain, sni, path, network)
-            VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO server_inbounds (server_id, inbound_id, domain, sni, path, network, is_special_ws)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const server of data.servers || []) {
@@ -299,7 +304,7 @@ function saveState(db, data) {
             
             // ذخیره لیست اینباندهای هر سرور همراه با فیلد شبکه
             for (const inb of server.inbounds || []) {
-                insertInbound.run(server.id, inb.id, inb.domain, inb.sni, inb.path, inb.network || 'ws');
+                insertInbound.run(server.id, inb.id, inb.domain, inb.sni, inb.path, inb.network || 'xhttp', inb.isSpecialWs ? 1 : 0);
             }
         }
 

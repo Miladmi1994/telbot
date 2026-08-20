@@ -335,6 +335,123 @@ function generateJsonConfig(uuid, configName, domain, port, sni, pathStr, networ
     return JSON.stringify(config);
 }
 
+// تابع جدید: تولید کانفیگ ویژه وب‌سوکت با فرگمنت در سطح outbound
+function generateSpecialWsConfig(uuid, configName, domain, port, sni, pathStr) {
+    const config = {
+        "dns": { "servers": ["localhost"] },
+        "inbounds": [{
+            "listen": "127.0.0.1", "port": 10808, "protocol": "socks",
+            "settings": { "auth": "noauth", "udp": true, "userLevel": 8 },
+            "sniffing": { "destOverride": ["http", "tls", "quic"], "enabled": true, "routeOnly": true },
+            "tag": "socks"
+        }],
+        "log": { "loglevel": "warning" },
+        "outbounds": [
+            {
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [{
+                        "address": domain,
+                        "port": port,
+                        "users": [{ "encryption": "none", "id": uuid, "level": 8 }]
+                    }]
+                },
+                "streamSettings": {
+                    "network": "ws",
+                    "security": "tls",
+                    "sockopt": {
+                        "domainStrategy": "UseIP",
+                        "dialerProxy": "fragment",
+                        "happyEyeballs": { "interleave": 2, "maxConcurrentTry": 4, "prioritizeIPv6": false, "tryDelayMs": 250 }
+                    },
+                    "tlsSettings": {
+                        "allowInsecure": false,
+                        "alpn": ["h2"],
+                        "fingerprint": "firefox",
+                        "serverName": sni
+                    },
+                    "wsSettings": { "headers": {}, "path": pathStr }
+                },
+                "tag": "proxy"
+            },
+            {
+                "tag": "fragment",
+                "protocol": "freedom",
+                "settings": {
+                    "fragment": {
+                        "packets": "tlshello",
+                        "length": "20-25",
+                        "interval": "2-4"
+                    }
+                }
+            },
+            {
+                "protocol": "freedom",
+                "streamSettings": { "network": "tcp", "sockopt": { "domainStrategy": "UseIP" } },
+                "tag": "direct"
+            },
+            { "protocol": "blackhole", "tag": "block" }
+        ],
+        "remarks": `WS 💎 ${configName}`,
+        "routing": {
+            "domainStrategy": "AsIs",
+            "rules": [
+                { "network": "udp", "outboundTag": "block", "port": "443", "type": "field" },
+                { "port": "0-65535", "outboundTag": "proxy", "type": "field" }
+            ]
+        }
+    };
+    return JSON.stringify(config, null, 2);
+}
+
+// تغییر در generateAllConfigs
+function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
+    const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [];
+    let results = [];
+    let wsCounter = 1;
+    let otherCounter = 1;
+
+    inbounds.forEach((inb) => {
+        const network = (inb.network || inb.streamSettings?.network || "xhttp").toLowerCase();
+        const port = inb.port || 443;
+        let domain = inb.domain;
+        let sni = inb.sni;
+        let pathStr = inb.path;
+
+        if (network === 'xhttp') {
+            const xhttp = inb.streamSettings?.xhttpSettings || {};
+            pathStr = pathStr || xhttp.path || "/Cypher_Net";
+            domain = domain || xhttp.host || "ns.crrc.ir";
+        } else if (network === 'ws') {
+            const ws = inb.streamSettings?.wsSettings || {};
+            pathStr = pathStr || ws.path || "/Cypher_Net";
+            domain = domain || ws.host || "ns.crrc.ir";
+        }
+        sni = sni || inb.streamSettings?.tlsSettings?.serverName || domain;
+        domain = domain || "ns.crrc.ir";
+
+        const getNextSuffix = () => {
+            if (network === 'ws') {
+                return `ws-${wsCounter++}`;
+            } else {
+                return `${otherCounter++}`;
+            }
+        };
+
+        // --- منطق جدید: اگر حالت ویژه فعال بود، فقط ۱ کانفیگ JSON ویژه بساز ---
+        if (network === 'ws' && inb.isSpecialWs) {
+            results.push(generateSpecialWsConfig(uuid, configName, domain, port, sni, pathStr));
+        } else {
+            // در غیر این صورت، همان ۳ کانفیگ همیشگی ساخته شود
+            results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+            results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+            results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+        }
+    });
+    return results;
+}
+
+
 function generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, suffix) {
     const remark = encodeURIComponent(`${configName} ${suffix}`);
     const encPath = encodeURIComponent(pathStr);
@@ -361,14 +478,12 @@ function generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, net
 function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
     const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [];
     let results = [];
-    
     let wsCounter = 1;
     let otherCounter = 1;
-    
+
     inbounds.forEach((inb) => {
         const network = (inb.network || inb.streamSettings?.network || "xhttp").toLowerCase();
         const port = inb.port || 443;
-        
         let domain = inb.domain;
         let sni = inb.sni;
         let pathStr = inb.path;
@@ -382,10 +497,9 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
             pathStr = pathStr || ws.path || "/Cypher_Net";
             domain = domain || ws.host || "ns.crrc.ir";
         }
-
         sni = sni || inb.streamSettings?.tlsSettings?.serverName || domain;
         domain = domain || "ns.crrc.ir";
-        
+
         const getNextSuffix = () => {
             if (network === 'ws') {
                 return `ws-${wsCounter++}`;
@@ -393,14 +507,21 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
                 return `${otherCounter++}`;
             }
         };
-        
-        results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
-        results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
-        results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+
+        // --- منطق جدید: اگر حالت ویژه فعال بود، فقط ۱ کانفیگ JSON ویژه بساز ---
+        if (network === 'ws' && inb.isSpecialWs) {
+            results.push(generateSpecialWsConfig(uuid, configName, domain, port, sni, pathStr));
+        } else {
+            // در غیر این صورت، همان ۳ کانفیگ همیشگی ساخته شود
+            results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+            results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+            results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+        }
     });
-    
     return results;
 }
+
+
 
 
 // --- Cloudflare API Functions ---
