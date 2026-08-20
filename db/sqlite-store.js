@@ -115,20 +115,20 @@ function loadState(db) {
                 domain: row.domain,
                 sni: row.sni,
                 path: row.path,
-                network: row.network
-                isSpecialWs: !!row.is_special_ws// <--- این خط باید اضافه شود
+                network: row.network,
+                isSpecialWs: !!row.is_special_ws
             }));
-            
+
         // انتقال اتوماتیک اینباند قدیمی به ساختار جدید
         if (srv.inbounds.length === 0 && srv.domain && srv.sni) {
-             srv.inbounds.push({
-                 id: srv.inboundId || 1,
-                 domain: srv.domain,
-                 sni: srv.sni,
-                 path: srv.path || '',
-                 network: 'xhttp' // 
-                 isSpecialWs: false<--- مقدار پیش‌فرض را اینجا هم بدهید
-             });
+            srv.inbounds.push({
+                id: srv.inboundId || 1,
+                domain: srv.domain,
+                sni: srv.sni,
+                path: srv.path || '',
+                network: 'xhttp',
+                isSpecialWs: false
+            });
         }
     });
     
