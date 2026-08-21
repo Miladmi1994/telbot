@@ -139,20 +139,13 @@ async function deleteClient(identifier, server = null) {
     }
 }
 
-// --- دریافت ترافیک/حجم/انقضای کلاینت ---
-// اول از مسیر رسمی getClientTraffics (که up/down/total/expiryTime می‌ده) امتحان می‌کنیم؛
-// اگه جواب نداد، به مسیر قدیمی clients/get که رو این پنل جواب می‌داد fallback می‌کنیم.
-// --- دریافت ترافیک/حجم/انقضای کلاینت ---
-// طبق مستندات واقعی این پنل، /panel/api/clients/traffic/{email} یک شیء واحد
-// برمی‌گردونه که خودِ پنل از قبل روی همه‌ی اینباندهای این کلاینت جمع زده
-// (چون این پنل کلاینت رو یک موجودیت مستقل از اینباند می‌بینه، نه رکورد جدا به‌ازای هر اینباند).
-// پس نیازی به جمع دستی روی چند اینباند نیست.
 async function getClientTraffic(email, server = null) {
     const apiClient = getApiClient(server);
     try {
         let total = 0, up = 0, down = 0, expiryTime = 0;
         let found = false;
 
+        // ۱. تلاش اول: اندپوینت مخصوص ترافیک (سبک‌تر و سریع‌تر)
         try {
             const res = await apiClient.get(`panel/api/clients/traffic/${encodeURIComponent(email)}`);
             if (res.data && res.data.success && res.data.obj) {
@@ -163,29 +156,36 @@ async function getClientTraffic(email, server = null) {
                 expiryTime = obj.expiryTime || 0;
                 found = true;
             }
-        } catch (e) {}
+        } catch (e) {
+            // اگر خطا داد (مثلاً 404 یا 500)، silently به مرحله fallback می‌رود
+        }
 
-        // fallback: اگه مسیر traffic جواب نداد، از مسیر get که total/expiryTime رو هم داره کمک بگیر
+        // ۲. تلاش دوم: اندپوینت دریافت اطلاعات کامل کلاینت (Fallback)
         if (!found) {
             const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
             if (clientRes.data && clientRes.data.success && clientRes.data.obj) {
                 const obj = clientRes.data.obj;
-                total = obj.totalGB || obj.total || 0;
+                
+                // ✅ اصلاح باگ: در 3x-ui مقادیر up و down مستقیماً داخل obj هستند
+                total = obj.total || 0; // مقدار total در API همیشه بر حسب بایت است
                 expiryTime = obj.expiryTime || 0;
-                up = obj.traffic?.up || 0;
-                down = obj.traffic?.down || 0;
+                up = obj.up || 0;       // <--- اصلاح شد (حذف obj.traffic)
+                down = obj.down || 0;   // <--- اصلاح شد (حذف obj.traffic)
                 found = true;
             }
         }
 
+        // ۳. اگر در هر دو حالت پیدا نشد، یعنی کلاینت در پنل وجود ندارد (حذف شده)
         if (!found) {
-            // هر دو مسیر صراحتاً گفتن همچین کلاینتی نیست -> واقعاً حذف شده
-            return null;
+            return null; 
         }
 
         return { total, up, down, expiryTime };
+        
     } catch (error) {
-        // خطای شبکه/تایم‌اوت -> وضعیت نامشخص است، نه حذف‌شده
+        // خطای کلی شبکه (مثلاً خاموش بودن کامل سرور، DNS مشکل‌دار یا ECONNREFUSED)
+        // در این حالت undefined برمی‌گرداند تا سیستم Sync Job بداند این یک خطای موقتی شبکه است
+        // و نباید کاربر را به اشتباه "حذف‌شده" در نظر بگیرد.
         console.error(`⚠️ [Traffic] خطا در دریافت ترافیک ${email}:`, error.message);
         return undefined;
     }
