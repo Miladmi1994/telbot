@@ -142,27 +142,37 @@ async function deleteClient(identifier, server = null) {
 async function getClientTraffic(email, server = null) {
     const apiClient = getApiClient(server);
     try {
-        // مسیر صحیح و اختصاصی پنل 3x-ui
-        const res = await apiClient.get(`panel/api/inbounds/getClientTraffics/${encodeURIComponent(email)}`);
-
-        if (!res.data || !res.data.success) {
-            return null; // کلاینت حذف شده
+        // ۱. بررسی قطعی وجود کلاینت در دیتابیس پنل
+        const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
+        
+        if (!clientRes.data || !clientRes.data.success || !clientRes.data.obj) {
+            return null; // کلاینت واقعاً حذف شده است
         }
 
-        const raw = res.data.obj;
-        if (!raw) return null;
+        const obj = clientRes.data.obj;
+        let total = obj.total || 0;
+        let expiryTime = obj.expiryTime || 0;
+        let up = obj.up || 0;
+        let down = obj.down || 0;
 
-        const items = Array.isArray(raw) ? raw : [raw];
-        if (items.length === 0) return null;
-
-        let up = 0, down = 0, total = 0, expiryTime = 0;
-        for (const item of items) {
-            if (!item) continue;
-            up += item.up || 0;
-            down += item.down || 0;
-            if (!total && item.total) total = item.total;
-            if (!expiryTime && item.expiryTime) expiryTime = item.expiryTime;
-        }
+        // ۲. دریافت دقیق ترافیک آپلود/دانلود
+        try {
+            const trafficRes = await apiClient.get(`panel/api/inbounds/getClientTraffics/${encodeURIComponent(email)}`);
+            if (trafficRes.data && trafficRes.data.success && trafficRes.data.obj) {
+                const items = Array.isArray(trafficRes.data.obj) ? trafficRes.data.obj : [trafficRes.data.obj];
+                let tUp = 0, tDown = 0;
+                items.forEach(item => {
+                    if (item) {
+                        tUp += item.up || 0;
+                        tDown += item.down || 0;
+                    }
+                });
+                if (tUp > 0 || tDown > 0) {
+                    up = tUp;
+                    down = tDown;
+                }
+            }
+        } catch (err) {}
 
         return { total, up, down, expiryTime };
     } catch (error) {
