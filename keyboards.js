@@ -80,7 +80,6 @@ const adminServersMenu = Markup.inlineKeyboard([
     [Markup.button.callback('➖ حذف', 'admin_remove_server'), Markup.button.callback('✏️ ویرایش', 'admin_edit_server'), Markup.button.callback('➕ افزودن', 'admin_add_server')],
     [Markup.button.callback('📋 لیست سرورها', 'admin_list_servers')],
     [Markup.button.callback('✅ سرور عادی', 'admin_set_active_server'), Markup.button.callback('👑 سرور VIP', 'admin_set_vip_server')],
-    [Markup.button.callback('🧳 مدیریت وضعیت تخلیه', 'admin_migration_menu')],
     [Markup.button.callback('☁️ مدیریت Cloudflare', 'admin_cf_menu')], 
     [Markup.button.callback('🔙 بازگشت', 'back_admin')]
 ]);

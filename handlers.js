@@ -172,25 +172,6 @@ function setupHandlers(bot) {
     });
 
 
-bot.command('dbtest', (ctx) => {
-    if (!isUserAdmin(ctx.from.id.toString())) return;
-    const db = readDb();
-    
-    let text = `⚙️ <b>تنظیمات فعال:</b>\n`;
-    text += `🔹 Active Server ID: <code>${db.settings?.activeServerId}</code>\n\n`;
-    text += `📋 <b>کل سرورهای دیتابیس (${(db.servers || []).length} عدد):</b>\n\n`;
-
-    (db.servers || []).forEach((srv, i) => {
-        text += `🌐 <b>سرور ${i + 1} (${srv.name}):</b>\n`;
-        text += `▫️ شناسه: <code>${srv.id}</code>\n`;
-        text += `▫️ آدرس: <code>${srv.panelUrl}</code>\n`;
-        text += `▫️ تعداد اینباند: <b>${(srv.inbounds || []).length}</b> عدد\n`;
-        text += `〰️〰️〰️〰️〰️\n`;
-    });
-
-    ctx.reply(text, { parse_mode: 'HTML' });
-});
-
     bot.action('admin_broadcast', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.editMessageText('📢 لطفاً گروه هدف برای ارسال پیام را انتخاب کنید:', { 
@@ -483,20 +464,6 @@ bot.command('dbtest', (ctx) => {
         ctx.answerCbQuery();
     });
 
-    bot.action('admin_migration_menu', (ctx) => {
-        if (!isUserAdmin(ctx.from.id.toString())) return;
-        const db = readDb();
-        const servers = db.servers || [];
-        if (servers.length === 0) return ctx.answerCbQuery('سروری وجود ندارد.', {show_alert:true});
-        
-        const buttons = servers.map(s => {
-            const label = s.isMigrating ? `🧳 در حال تخلیه: ${s.name}` : `🟢 سالم: ${s.name}`;
-            return [Markup.button.callback(label, `toggle_migration_srv_${s.id}`)];
-        });
-        
-        buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_servers_menu')]);
-        ctx.editMessageText('🧳 <b>مدیریت وضعیت تخلیه سرورها</b>\n\nاگه سروری رو روی حالت "در حال تخلیه" بذاری، کاربرای اون سرور موقع تمدید، به صورت اتوماتیک به سرور اکتیو (جدید) کوچ داده میشن.\n\nبرای تغییر وضعیت، روی دکمه‌ی سرور مورد نظر کلیک کن:', { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
-    });
 
     // --- Cloudflare DNS Management ---
 
@@ -574,27 +541,6 @@ bot.command('dbtest', (ctx) => {
         
         ctx.reply('✏️ لطفاً آی‌پی (IP) جدید را برای این رکورد ارسال کنید:\n\n(مثال: 104.21.23.10)');
         ctx.answerCbQuery();
-    });
-
-    bot.action(/toggle_migration_srv_(.*)/, (ctx) => {
-        if (!isUserAdmin(ctx.from.id.toString())) return;
-        const srvId = ctx.match[1];
-        const db = readDb();
-        const server = (db.servers || []).find(s => s.id === srvId);
-        if (server) {
-            server.isMigrating = !server.isMigrating;
-            writeDb(db);
-            ctx.answerCbQuery(`وضعیت تخلیه برای سرور تغییر کرد.`, {show_alert: false});
-            
-            const buttons = db.servers.map(s => {
-                const label = s.isMigrating ? `🧳 در حال تخلیه: ${s.name}` : `🟢 سالم: ${s.name}`;
-                return [Markup.button.callback(label, `toggle_migration_srv_${s.id}`)];
-            });
-            buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_servers_menu')]);
-            ctx.editMessageText('🧳 <b>مدیریت وضعیت تخلیه سرورها</b>\n\nاگه سروری رو روی حالت "در حال تخلیه" بذاری، کاربرای اون سرور موقع تمدید، به صورت اتوماتیک به سرور اکتیو (جدید) کوچ داده میشن.\n\nبرای تغییر وضعیت، روی دکمه‌ی سرور مورد نظر کلیک کن:', { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
-        } else {
-            ctx.answerCbQuery('سرور یافت نشد!', {show_alert: true});
-        }
     });
 
             bot.action('admin_add_server', (ctx) => {
@@ -881,7 +827,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             let status = [];
             if (db.settings.activeServerId === s.id) status.push('🟢 عادی');
             if (db.settings.activeVipServerId === s.id) status.push('👑 VIP');
-            if (s.isMigrating) status.push('🧳 تخلیه');
             const statusStr = status.length > 0 ? status.join(' + ') : '⚪️ استندبای';
             
             const count = userCounts[s.id] || 0;
@@ -1104,54 +1049,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ctx.answerCbQuery();
     });
 
-    bot.command('fixdb', (ctx) => {
-        if (!isUserAdmin(ctx.from.id.toString())) return;
-        const db = readDb();
-        let count = 0;
-        
-        for (const userId in db.users) {
-            db.users[userId].forEach(conf => {
-                if (!conf.serverId || conf.serverId === 'srv_11528' || conf.serverId === 'srv_364212' || conf.serverId === 'default') {
-                    conf.serverId = 'srv_364212'; 
-                    count++;
-                }
-            });
-        }
-        writeDb(db);
-        ctx.reply(`✅ دیتابیس اصلاح شد! ${count} کانفیگ قدیمی یا نامعتبر، با موفقیت به سرور ایتالیا (srv_364212) متصل شدند.`);
-    });
 
-    bot.command('reset_notifs', async (ctx) => {
-        if (!isUserAdmin(ctx.from.id.toString())) return;
-        const db = readDb();
-        let configCount = 0;
-        let userCount = 0;
-
-        for (const userId in db.users) {
-            if (Array.isArray(db.users[userId])) {
-                let userModified = false;
-                db.users[userId].forEach(conf => {
-                    conf.notified_days3 = 0;
-                    conf.notified_gb85 = 0;
-                    conf.notified_gb1 = 0;
-                    configCount++;
-                    userModified = true;
-                });
-                if (userModified) userCount++;
-            }
-        }
-
-        writeDb(db);
-        await ctx.reply(`✅ وضعیت اخطارهای ${configCount} کانفیگ (برای ${userCount} کاربر) در دیتابیس با موفقیت صفر شد.`);
-        
-        const waitMsg = await ctx.reply('⏳ در حال اجرای فوریِ سیستمِ بررسی اخطارها... لطفاً منتظر بمانید.');
-        
-        await runVolumeCheckJob();
-        await runExpiryWarningJob();
-        
-        await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
-        ctx.reply('✅ بررسی فوری تمام شد.');
-    });
     
     bot.action('admin_finance_menu', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
@@ -3371,10 +3269,8 @@ async function runVolumeCheckJob() {
 }
 
 // ۲. بررسی انقضا و هشدار ۳ روزه (هر ۶ ساعت)
-// ۲. بررسی انقضا با لاگ دقیق (DEBUG MODE)
 async function runExpiryWarningJob() {
     try {
-        console.log('--- 🔍 شروع بررسی انقضا (حالت خطایابی) ---');
         const db = readDb();
         let dbChanged = false;
         const now = Date.now();
@@ -3388,50 +3284,28 @@ async function runExpiryWarningJob() {
             for (let conf of db.users[userId]) {
                 if (conf.deleted_from_panel || conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
                 const targetServer = db.servers?.find(s => s.id === conf.server_id || s.id === conf.serverId);
-                if (!targetServer) {
-                    console.log(`[Skip] ${conf.email} - سرور یافت نشد.`);
-                    continue;
-                }
+                if (!targetServer) continue;
 
-                const traffic = await getClientTraffic(conf.email, targetServer).catch((e) => {
-                    console.error(`[Error] خطا در ارتباط با پنل برای ${conf.email}:`, e.message);
-                    return undefined;
-                });
-
-                if (traffic === undefined) {
-                    console.log(`[Skip] ${conf.email} - ترافیک Undefined (خطای شبکه/پنل)`);
-                    continue;
-                }
-                
-                if (!traffic || traffic.expiryTime <= 0) {
-                    console.log(`[Skip] ${conf.email} - بدون انقضا (نامحدود) یا حذف شده در پنل.`);
-                    continue;
-                }
+                const traffic = await getClientTraffic(conf.email, targetServer).catch(() => undefined);
+                if (!traffic || traffic.expiryTime <= 0) continue;
 
                 const diffMs = traffic.expiryTime - now;
                 const diffDays = diffMs / (1000 * 60 * 60 * 24);
-
-                console.log(`[Check] ${conf.email} | انقضا: ${traffic.expiryTime} | روز باقی‌مانده: ${diffDays.toFixed(2)} | وضعیت اخطار: ${conf.notified_days3}`);
-
                 const renewBtn = { inline_keyboard: [[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)]] };
 
                 if (diffDays > 0 && diffDays <= 3 && !conf.notified_days3) {
                     conf.notified_days3 = 1;
                     userChanged = true;
-                    console.log(`[Action] ⏳ تلاش برای ارسال هشدار 3 روزه به کاربر ${userId}...`);
-                    
-                    await bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط حدود <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn })
-                        .then(() => console.log(`✅ پیام با موفقیت به ${userId} ارسال شد.`))
-                        .catch((err) => console.error(`❌ تلگرام اجازه ارسال نداد (خطای ارسال به ${userId}):`, err.message));
+                    bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط حدود <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
                 }
             }
             if (userChanged) dbChanged = true;
             await new Promise(r => setTimeout(r, 300));
         }
         if (dbChanged) writeDb(db);
-        console.log('--- پایان بررسی انقضا ---');
     } catch (error) {
-        console.error('Expiry Warning Job Error:', error);
+        // ثبت خطا فقط در صورت بروز مشکل اساسی
+        console.error('Expiry Warning Job Error:', error.message);
     }
 }
 
