@@ -142,53 +142,34 @@ async function deleteClient(identifier, server = null) {
 async function getClientTraffic(email, server = null) {
     const apiClient = getApiClient(server);
     try {
-        let total = 0, up = 0, down = 0, expiryTime = 0;
-        let found = false;
+        // مسیر صحیح و اختصاصی پنل 3x-ui
+        const res = await apiClient.get(`panel/api/inbounds/getClientTraffics/${encodeURIComponent(email)}`);
 
-        // ۱. تلاش اول: اندپوینت مخصوص ترافیک (سبک‌تر و سریع‌تر)
-        try {
-            const res = await apiClient.get(`panel/api/clients/traffic/${encodeURIComponent(email)}`);
-            if (res.data && res.data.success && res.data.obj) {
-                const obj = res.data.obj;
-                total = obj.total || 0;
-                up = obj.up || 0;
-                down = obj.down || 0;
-                expiryTime = obj.expiryTime || 0;
-                found = true;
-            }
-        } catch (e) {
-            // اگر خطا داد (مثلاً 404 یا 500)، silently به مرحله fallback می‌رود
+        if (!res.data || !res.data.success) {
+            return null; // کلاینت حذف شده
         }
 
-        // ۲. تلاش دوم: اندپوینت دریافت اطلاعات کامل کلاینت (Fallback)
-        if (!found) {
-            const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
-            if (clientRes.data && clientRes.data.success && clientRes.data.obj) {
-                const obj = clientRes.data.obj;
-                
-                // ✅ اصلاح باگ: در 3x-ui مقادیر up و down مستقیماً داخل obj هستند
-                total = obj.total || 0; // مقدار total در API همیشه بر حسب بایت است
-                expiryTime = obj.expiryTime || 0;
-                up = obj.up || 0;       // <--- اصلاح شد (حذف obj.traffic)
-                down = obj.down || 0;   // <--- اصلاح شد (حذف obj.traffic)
-                found = true;
-            }
-        }
+        const raw = res.data.obj;
+        if (!raw) return null;
 
-        // ۳. اگر در هر دو حالت پیدا نشد، یعنی کلاینت در پنل وجود ندارد (حذف شده)
-        if (!found) {
-            return null; 
+        const items = Array.isArray(raw) ? raw : [raw];
+        if (items.length === 0) return null;
+
+        let up = 0, down = 0, total = 0, expiryTime = 0;
+        for (const item of items) {
+            if (!item) continue;
+            up += item.up || 0;
+            down += item.down || 0;
+            if (!total && item.total) total = item.total;
+            if (!expiryTime && item.expiryTime) expiryTime = item.expiryTime;
         }
 
         return { total, up, down, expiryTime };
-        
     } catch (error) {
-        // خطای کلی شبکه (مثلاً خاموش بودن کامل سرور، DNS مشکل‌دار یا ECONNREFUSED)
-        // در این حالت undefined برمی‌گرداند تا سیستم Sync Job بداند این یک خطای موقتی شبکه است
-        // و نباید کاربر را به اشتباه "حذف‌شده" در نظر بگیرد.
         console.error(`⚠️ [Traffic] خطا در دریافت ترافیک ${email}:`, error.message);
-        return undefined;
+        return undefined; // خطای موقت شبکه
     }
+}
 }
 
 async function getClientActiveInboundIds(email, server = null) {
