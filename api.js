@@ -170,7 +170,7 @@ async function getClientTraffic(email, server = null) {
         return undefined; // خطای موقت شبکه
     }
 }
-}
+
 
 async function getClientActiveInboundIds(email, server = null) {
     const apiClient = getApiClient(server);
