@@ -142,42 +142,64 @@ async function deleteClient(identifier, server = null) {
 async function getClientTraffic(email, server = null) {
     const apiClient = getApiClient(server);
     try {
-        // ۱. بررسی قطعی وجود کلاینت در دیتابیس پنل
+        // ۱. بررسی قطعی وجود کلاینت و دریافت اطلاعات پایه
         const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
+        let total = 0, expiryTime = 0;
         
-        if (!clientRes.data || !clientRes.data.success || !clientRes.data.obj) {
-            return null; // کلاینت واقعاً حذف شده است
+        if (clientRes.data && clientRes.data.success && clientRes.data.obj) {
+            const obj = clientRes.data.obj;
+            total = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
+            expiryTime = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
+        } else {
+            return null; // کلاینت در پنل وجود ندارد (حذف واقعی)
         }
 
-        const obj = clientRes.data.obj;
-        let total = obj.total || 0;
-        let expiryTime = obj.expiryTime || 0;
-        let up = obj.up || 0;
-        let down = obj.down || 0;
+        let up = 0, down = 0;
+        let trafficFound = false;
 
-        // ۲. دریافت دقیق ترافیک آپلود/دانلود
+        // ۲. تلاش برای گرفتن ترافیک از مسیر اختصاصی ترافیک (همراه با جمع بستن آرایه‌ها)
         try {
             const trafficRes = await apiClient.get(`panel/api/inbounds/getClientTraffics/${encodeURIComponent(email)}`);
             if (trafficRes.data && trafficRes.data.success && trafficRes.data.obj) {
                 const items = Array.isArray(trafficRes.data.obj) ? trafficRes.data.obj : [trafficRes.data.obj];
-                let tUp = 0, tDown = 0;
-                items.forEach(item => {
-                    if (item) {
-                        tUp += item.up || 0;
-                        tDown += item.down || 0;
-                    }
-                });
-                if (tUp > 0 || tDown > 0) {
-                    up = tUp;
-                    down = tDown;
+                if (items.length > 0) {
+                    items.forEach(item => {
+                        if (item) {
+                            up += item.up || 0;
+                            down += item.down || 0;
+                            if (total === 0 && item.total) total = item.total;
+                        }
+                    });
+                    trafficFound = true;
                 }
             }
-        } catch (err) {}
+        } catch (trafficErr) {}
+
+        // ۳. مسیر جایگزین (Fallback) که شما نوشتید؛ بسیار عالی برای زمان باگ‌های 3x-ui
+        if (!trafficFound) {
+            try {
+                const listRes = await apiClient.get('panel/api/inbounds/list');
+                if (listRes.data && listRes.data.success && listRes.data.obj) {
+                    for (const inbound of listRes.data.obj) {
+                        if (inbound.clientStats) {
+                            const cStats = inbound.clientStats.find(c => c.email === email);
+                            if (cStats) {
+                                up += cStats.up || 0;
+                                down += cStats.down || 0;
+                                if (total === 0 && cStats.total) total = cStats.total;
+                                trafficFound = true;
+                            }
+                        }
+                    }
+                }
+            } catch (fallbackErr) {}
+        }
 
         return { total, up, down, expiryTime };
     } catch (error) {
+        // خطای قطعی شبکه یا در دسترس نبودن پنل
         console.error(`⚠️ [Traffic] خطا در دریافت ترافیک ${email}:`, error.message);
-        return undefined; // خطای موقت شبکه
+        return undefined; // بازگرداندن undefined برای جلوگیری از حذف اشتباهی اکانت‌ها
     }
 }
 
