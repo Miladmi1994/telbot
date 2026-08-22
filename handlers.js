@@ -3371,8 +3371,10 @@ async function runVolumeCheckJob() {
 }
 
 // ۲. بررسی انقضا و هشدار ۳ روزه (هر ۶ ساعت)
+// ۲. بررسی انقضا با لاگ دقیق (DEBUG MODE)
 async function runExpiryWarningJob() {
     try {
+        console.log('--- 🔍 شروع بررسی انقضا (حالت خطایابی) ---');
         const db = readDb();
         let dbChanged = false;
         const now = Date.now();
@@ -3386,28 +3388,50 @@ async function runExpiryWarningJob() {
             for (let conf of db.users[userId]) {
                 if (conf.deleted_from_panel || conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
                 const targetServer = db.servers?.find(s => s.id === conf.server_id || s.id === conf.serverId);
-                if (!targetServer) continue;
+                if (!targetServer) {
+                    console.log(`[Skip] ${conf.email} - سرور یافت نشد.`);
+                    continue;
+                }
 
-                const traffic = await getClientTraffic(conf.email, targetServer).catch(() => undefined);
-                if (!traffic || traffic.expiryTime <= 0) continue;
+                const traffic = await getClientTraffic(conf.email, targetServer).catch((e) => {
+                    console.error(`[Error] خطا در ارتباط با پنل برای ${conf.email}:`, e.message);
+                    return undefined;
+                });
+
+                if (traffic === undefined) {
+                    console.log(`[Skip] ${conf.email} - ترافیک Undefined (خطای شبکه/پنل)`);
+                    continue;
+                }
+                
+                if (!traffic || traffic.expiryTime <= 0) {
+                    console.log(`[Skip] ${conf.email} - بدون انقضا (نامحدود) یا حذف شده در پنل.`);
+                    continue;
+                }
 
                 const diffMs = traffic.expiryTime - now;
                 const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+                console.log(`[Check] ${conf.email} | انقضا: ${traffic.expiryTime} | روز باقی‌مانده: ${diffDays.toFixed(2)} | وضعیت اخطار: ${conf.notified_days3}`);
+
                 const renewBtn = { inline_keyboard: [[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)]] };
 
                 if (diffDays > 0 && diffDays <= 3 && !conf.notified_days3) {
                     conf.notified_days3 = 1;
                     userChanged = true;
-                    bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط حدود <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
+                    console.log(`[Action] ⏳ تلاش برای ارسال هشدار 3 روزه به کاربر ${userId}...`);
+                    
+                    await bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط حدود <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn })
+                        .then(() => console.log(`✅ پیام با موفقیت به ${userId} ارسال شد.`))
+                        .catch((err) => console.error(`❌ تلگرام اجازه ارسال نداد (خطای ارسال به ${userId}):`, err.message));
                 }
             }
             if (userChanged) dbChanged = true;
             await new Promise(r => setTimeout(r, 300));
         }
         if (dbChanged) writeDb(db);
-        console.log('[ExpiryWarning] ✅ بررسی انقضا تکمیل شد');
+        console.log('--- پایان بررسی انقضا ---');
     } catch (error) {
-        logError('Expiry Warning Job', error);
+        console.error('Expiry Warning Job Error:', error);
     }
 }
 
