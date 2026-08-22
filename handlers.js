@@ -1121,6 +1121,37 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ctx.reply(`✅ دیتابیس اصلاح شد! ${count} کانفیگ قدیمی یا نامعتبر، با موفقیت به سرور ایتالیا (srv_364212) متصل شدند.`);
     });
 
+    bot.command('reset_notifs', async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        let configCount = 0;
+        let userCount = 0;
+
+        for (const userId in db.users) {
+            if (Array.isArray(db.users[userId])) {
+                let userModified = false;
+                db.users[userId].forEach(conf => {
+                    conf.notified_days3 = 0;
+                    conf.notified_gb85 = 0;
+                    conf.notified_gb1 = 0;
+                    configCount++;
+                    userModified = true;
+                });
+                if (userModified) userCount++;
+            }
+        }
+
+        writeDb(db);
+        await ctx.reply(`✅ وضعیت اخطارهای ${configCount} کانفیگ (برای ${userCount} کاربر) در دیتابیس با موفقیت صفر شد.`);
+        
+        const waitMsg = await ctx.reply('⏳ در حال اجرای فوریِ سیستمِ بررسی اخطارها... لطفاً منتظر بمانید.');
+        
+        await runVolumeCheckJob();
+        await runExpiryWarningJob();
+        
+        await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+        ctx.reply('✅ بررسی فوری تمام شد.');
+    });
     
     bot.action('admin_finance_menu', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
