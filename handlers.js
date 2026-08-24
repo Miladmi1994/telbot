@@ -309,6 +309,23 @@ function setupHandlers(bot) {
         ctx.reply(`✅ درآمد دوره فعلی با موفقیت روی ${amount.toLocaleString('en-US')} تومان تنظیم شد.`);
     });
 
+    // باید قبل از bot.on('text') ثبت شود، وگرنه دستور توسط هندلر متن بلعیده می‌شود
+    bot.command('run_jobs', async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+
+        const waitMsg = await ctx.reply('⏳ در حال اجرای جاب‌ها (حجم، انقضا، پاکسازی)... لطفاً منتظر بمانید.');
+        try {
+            await runVolumeCheckJob();
+            await runExpiryWarningJob();
+            await runCleanupJob();
+            await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+            await ctx.reply('✅ جاب‌های حجم، هشدار انقضا و پاکسازی با موفقیت اجرا شدند.');
+        } catch (error) {
+            logError('run_jobs command', error);
+            await ctx.reply(`❌ خطا در اجرای جاب‌ها: ${error.message}`);
+        }
+    });
+
     bot.command('admin', (ctx) => {
         const userId = ctx.from?.id?.toString();
         const adminState = adminSteps.get(ctx.from.id);
@@ -3361,23 +3378,6 @@ async function runCleanupJob() {
         logError('Cleanup Job', error);
     }
 }
-
-// اجرای دستی جاب‌های اعلان / پاکسازی از طریق تلگرام
-bot.command('run_jobs', async (ctx) => {
-    if (!isUserAdmin(ctx.from.id.toString())) return;
-
-    const waitMsg = await ctx.reply('⏳ در حال اجرای جاب‌ها (حجم، انقضا، پاکسازی)... لطفاً منتظر بمانید.');
-    try {
-        await runVolumeCheckJob();
-        await runExpiryWarningJob();
-        await runCleanupJob();
-        await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
-        await ctx.reply('✅ جاب‌های حجم، هشدار انقضا و پاکسازی با موفقیت اجرا شدند.');
-    } catch (error) {
-        logError('run_jobs command', error);
-        await ctx.reply(`❌ خطا در اجرای جاب‌ها: ${error.message}`);
-    }
-});
 
 // ==========================================
 // فعال‌سازی زمان‌بندها
