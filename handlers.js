@@ -3186,7 +3186,6 @@ async function runVolumeCheckJob() {
     try {
         const db = readDb();
         let dbChanged = false;
-        const now = Date.now();
         const userIds = Object.keys(db.users);
         
         for (let i = 0; i < userIds.length; i++) {
@@ -3195,15 +3194,16 @@ async function runVolumeCheckJob() {
             
             let userChanged = false;
             for (let conf of db.users[userId]) {
-                if (conf.deleted_from_panel || conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
-                const targetServer = db.servers?.find(s => s.id === conf.server_id || s.id === conf.serverId);
+                if (conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
+                const targetServer = getTargetServer(db, conf);
                 if (!targetServer) continue;
+
+                if (!conf.notified) conf.notified = { days3: false, gb85: false, gb1: false };
 
                 const traffic = await getClientTraffic(conf.email, targetServer).catch(() => undefined);
                 if (traffic === undefined) continue; 
                 
                 if (!traffic) {
-                    conf.deleted_from_panel = 1;
                     conf.deletedFromPanel = true;
                     userChanged = true;
                     continue;
@@ -3213,31 +3213,27 @@ async function runVolumeCheckJob() {
                 const currentUsed = traffic.up + traffic.down;
                 const currentExpiry = traffic.expiryTime;
 
-                // --- سیستم تشخیص شارژ دستی هماهنگ با SQLite ---
-                if (conf.panel_total !== undefined && conf.panel_expiry !== undefined) {
+                // --- سیستم تشخیص شارژ دستی (ساختار panelStats هماهنگ با SQLite) ---
+                if (conf.panelStats) {
                     let updatedMsg = [];
-                    if (currentTotal > conf.panel_total) {
-                        const addedGB = (currentTotal - conf.panel_total) / 1073741824;
+                    if (currentTotal > conf.panelStats.total) {
+                        const addedGB = (currentTotal - conf.panelStats.total) / 1073741824;
                         updatedMsg.push(`🔋 <b>${addedGB.toFixed(2)} گیگابایت</b> حجم`);
                     }
-                    if (currentExpiry > conf.panel_expiry && currentExpiry > 0) {
-                        const addedDays = (currentExpiry - conf.panel_expiry) / (1000 * 60 * 60 * 24);
+                    if (currentExpiry > conf.panelStats.expiry && currentExpiry > 0) {
+                        const addedDays = (currentExpiry - conf.panelStats.expiry) / (1000 * 60 * 60 * 24);
                         updatedMsg.push(`⏳ <b>${Math.ceil(addedDays)} روز</b> زمان`);
                     }
                     
                     if (updatedMsg.length > 0) {
-                        conf.notified_days3 = 0;
-                        conf.notified_gb85 = 0;
-                        conf.notified_gb1 = 0;
+                        conf.notified = { days3: false, gb85: false, gb1: false };
+                        userChanged = true;
                         bot.telegram.sendMessage(userId, `♻️ <b>بروزرسانی سرویس</b>\nسرویس شما (${conf.name}) با موفقیت شارژ شد و ${updatedMsg.join(' و ')} به آن اضافه گردید.`, { parse_mode: 'HTML' }).catch(()=>{});
                     }
                 }
 
-                if (conf.panel_total === undefined || currentExpiry > conf.panel_expiry || currentTotal > conf.panel_total) {
-                    conf.panel_total = currentTotal;
-                    conf.panel_used = currentUsed;
-                    conf.panel_expiry = currentExpiry;
-                    conf.panel_email = conf.email;
+                if (!conf.panelStats || currentExpiry > conf.panelStats.expiry || currentTotal > conf.panelStats.total) {
+                    conf.panelStats = { total: currentTotal, used: currentUsed, expiry: currentExpiry, email: conf.email };
                     userChanged = true;
                 }
                 // ---------------------------------
@@ -3247,15 +3243,19 @@ async function runVolumeCheckJob() {
                 const remainGB = currentTotal === 0 ? 999 : (totalGB - usedGB);
                 const renewBtn = { inline_keyboard: [[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)]] };
 
-                if (currentTotal > 0 && remainGB <= 1 && remainGB > 0 && !conf.notified_gb1) {
-                    conf.notified_gb1 = 1;
-                    userChanged = true;
-                    bot.telegram.sendMessage(userId, `⚠️ <b>هشدار اتمام حجم</b>\n📉 کمتر از <b>۱ گیگابایت</b> (${remainGB.toFixed(2)} GB) از کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
+                if (currentTotal > 0 && remainGB <= 1 && remainGB > 0 && !conf.notified.gb1) {
+                    try {
+                        await bot.telegram.sendMessage(userId, `⚠️ <b>هشدار اتمام حجم</b>\n📉 کمتر از <b>۱ گیگابایت</b> (${remainGB.toFixed(2)} GB) از کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn });
+                        conf.notified.gb1 = true;
+                        userChanged = true;
+                    } catch (e) {}
                 } 
-                else if (currentTotal > 0 && (usedGB / totalGB) >= 0.85 && remainGB > 1 && !conf.notified_gb85) {
-                    conf.notified_gb85 = 1;
-                    userChanged = true;
-                    bot.telegram.sendMessage(userId, `⚠️ <b>هشدار مصرف حجم</b>\n📉 <b>۸۵٪</b> از حجم کانفیگ (${conf.name}) مصرف شده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
+                else if (currentTotal > 0 && (usedGB / totalGB) >= 0.85 && remainGB > 1 && !conf.notified.gb85) {
+                    try {
+                        await bot.telegram.sendMessage(userId, `⚠️ <b>هشدار مصرف حجم</b>\n📉 <b>۸۵٪</b> از حجم کانفیگ (${conf.name}) مصرف شده است.`, { parse_mode: 'HTML', reply_markup: renewBtn });
+                        conf.notified.gb85 = true;
+                        userChanged = true;
+                    } catch (e) {}
                 }
             }
             if (userChanged) dbChanged = true;
@@ -3282,9 +3282,11 @@ async function runExpiryWarningJob() {
             
             let userChanged = false;
             for (let conf of db.users[userId]) {
-                if (conf.deleted_from_panel || conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
-                const targetServer = db.servers?.find(s => s.id === conf.server_id || s.id === conf.serverId);
+                if (conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
+                const targetServer = getTargetServer(db, conf);
                 if (!targetServer) continue;
+
+                if (!conf.notified) conf.notified = { days3: false, gb85: false, gb1: false };
 
                 const traffic = await getClientTraffic(conf.email, targetServer).catch(() => undefined);
                 if (!traffic || traffic.expiryTime <= 0) continue;
@@ -3293,19 +3295,21 @@ async function runExpiryWarningJob() {
                 const diffDays = diffMs / (1000 * 60 * 60 * 24);
                 const renewBtn = { inline_keyboard: [[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)]] };
 
-                if (diffDays > 0 && diffDays <= 3 && !conf.notified_days3) {
-                    conf.notified_days3 = 1;
-                    userChanged = true;
-                    bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط حدود <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn }).catch(()=>{});
+                if (diffDays > 0 && diffDays <= 3 && !conf.notified.days3) {
+                    try {
+                        await bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط حدود <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn });
+                        conf.notified.days3 = true;
+                        userChanged = true;
+                    } catch (e) {}
                 }
             }
             if (userChanged) dbChanged = true;
             await new Promise(r => setTimeout(r, 300));
         }
         if (dbChanged) writeDb(db);
+        console.log('[ExpiryWarning] ✅ بررسی انقضا تکمیل شد');
     } catch (error) {
-        // ثبت خطا فقط در صورت بروز مشکل اساسی
-        console.error('Expiry Warning Job Error:', error.message);
+        logError('Expiry Warning Job', error);
     }
 }
 
@@ -3323,8 +3327,8 @@ async function runCleanupJob() {
             
             let userChanged = false;
             for (let conf of db.users[userId]) {
-                if (conf.deleted_from_panel || conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
-                const targetServer = db.servers?.find(s => s.id === conf.server_id || s.id === conf.serverId);
+                if (conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
+                const targetServer = getTargetServer(db, conf);
                 if (!targetServer) continue;
 
                 const traffic = await getClientTraffic(conf.email, targetServer).catch(() => undefined);
@@ -3337,7 +3341,6 @@ async function runCleanupJob() {
                 if ((isTest && diffDays < -2) || (!isTest && diffDays < -14)) {
                     const deleted = await deleteClient(conf.uuid, targetServer).catch(() => false);
                     if (deleted) {
-                        conf.deleted_from_panel = 1;
                         conf.deletedFromPanel = true;
                         userChanged = true;
                     }
@@ -3363,13 +3366,16 @@ async function runCleanupJob() {
 // فعال‌سازی زمان‌بندها
 // ==========================================
 
-runVolumeCheckJob();
-runExpiryWarningJob();
-runCleanupJob();
+// اجرای ترتیبی برای جلوگیری از تداخل writeDb روی memoryCache
+(async () => {
+    await runVolumeCheckJob();
+    await runExpiryWarningJob();
+    await runCleanupJob();
+})();
 
-setInterval(runVolumeCheckJob, 60 * 60 * 1000);        
-setInterval(runExpiryWarningJob, 6 * 60 * 60 * 1000);  
-setInterval(runCleanupJob, 24 * 60 * 60 * 1000);       
+setInterval(runVolumeCheckJob, 60 * 60 * 1000);
+setInterval(runExpiryWarningJob, 6 * 60 * 60 * 1000);
+setInterval(runCleanupJob, 24 * 60 * 60 * 1000);
 }
 
 module.exports = setupHandlers;
