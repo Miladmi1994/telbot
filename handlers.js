@@ -313,13 +313,35 @@ function setupHandlers(bot) {
     bot.command('run_jobs', async (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
 
-        const waitMsg = await ctx.reply('⏳ در حال اجرای جاب‌ها (حجم، انقضا، پاکسازی)... لطفاً منتظر بمانید.');
+        const wantReset = (ctx.message.text || '').toLowerCase().includes('reset');
+        let resetCount = 0;
+
+        if (wantReset) {
+            const db = readDb();
+            for (const userId of Object.keys(db.users || {})) {
+                if (!Array.isArray(db.users[userId])) continue;
+                for (const conf of db.users[userId]) {
+                    conf.notified = { days3: false, gb85: false, gb1: false };
+                    resetCount++;
+                }
+            }
+            writeDb(db);
+        }
+
+        const waitMsg = await ctx.reply(
+            wantReset
+                ? `♻️ فلگ اعلان‌های ${resetCount} کانفیگ صفر شد.\n⏳ در حال اجرای جاب‌ها...`
+                : '⏳ در حال اجرای جاب‌ها (حجم، انقضا، پاکسازی)...\nنکته: برای ریست فلگ‌ها بفرستید: /run_jobs reset'
+        );
         try {
             await runVolumeCheckJob();
-            await runExpiryWarningJob();
+            const expiryStats = await runExpiryWarningJob();
             await runCleanupJob();
             await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
-            await ctx.reply('✅ جاب‌های حجم، هشدار انقضا و پاکسازی با موفقیت اجرا شدند.');
+            await ctx.reply(
+                `✅ جاب‌ها تمام شد.\n` +
+                `⏳ هشدار انقضا: ${expiryStats.sent} ارسال / ${expiryStats.inWindow} در پنجره ۳روزه / ${expiryStats.failed} ناموفق / ${expiryStats.checked} بررسی‌شده`
+            );
         } catch (error) {
             logError('run_jobs command', error);
             await ctx.reply(`❌ خطا در اجرای جاب‌ها: ${error.message}`);
@@ -3287,6 +3309,7 @@ async function runVolumeCheckJob() {
 
 // ۲. بررسی انقضا و هشدار ۳ روزه (هر ۶ ساعت)
 async function runExpiryWarningJob() {
+    const stats = { checked: 0, inWindow: 0, sent: 0, failed: 0, skippedFlag: 0 };
     try {
         const db = readDb();
         let dbChanged = false;
@@ -3308,26 +3331,44 @@ async function runExpiryWarningJob() {
                 const traffic = await getClientTraffic(conf.email, targetServer).catch(() => undefined);
                 if (!traffic || traffic.expiryTime <= 0) continue;
 
-                const diffMs = traffic.expiryTime - now;
-                const diffDays = diffMs / (1000 * 60 * 60 * 24);
+                // بعضی پنل‌ها expiry را به ثانیه می‌دهند
+                let expiryTime = traffic.expiryTime;
+                if (expiryTime > 0 && expiryTime < 1e12) expiryTime *= 1000;
+
+                stats.checked++;
+                const diffDays = (expiryTime - now) / (1000 * 60 * 60 * 24);
                 const renewBtn = { inline_keyboard: [[Markup.button.callback('🔄 تمدید آنلاین', `init_renew_${conf.email}`)]] };
 
-                if (diffDays > 0 && diffDays <= 3 && !conf.notified.days3) {
+                if (diffDays > 0 && diffDays <= 3) {
+                    stats.inWindow++;
+                    if (conf.notified.days3) {
+                        stats.skippedFlag++;
+                        continue;
+                    }
                     try {
-                        await bot.telegram.sendMessage(userId, `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط حدود <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`, { parse_mode: 'HTML', reply_markup: renewBtn });
+                        await bot.telegram.sendMessage(
+                            userId,
+                            `⚠️ <b>هشدار پایان سرویس</b>\n⏳ فقط حدود <b>${Math.ceil(diffDays)} روز</b> از اعتبار کانفیگ (${conf.name}) باقی مانده است.`,
+                            { parse_mode: 'HTML', reply_markup: renewBtn }
+                        );
                         conf.notified.days3 = true;
                         userChanged = true;
-                    } catch (e) {}
+                        stats.sent++;
+                    } catch (e) {
+                        stats.failed++;
+                        console.error(`[ExpiryWarning] ارسال ناموفق به ${userId} (${conf.email}):`, e.message);
+                    }
                 }
             }
             if (userChanged) dbChanged = true;
             await new Promise(r => setTimeout(r, 300));
         }
         if (dbChanged) writeDb(db);
-        console.log('[ExpiryWarning] ✅ بررسی انقضا تکمیل شد');
+        console.log(`[ExpiryWarning] ✅ تکمیل | checked=${stats.checked} inWindow=${stats.inWindow} sent=${stats.sent} failed=${stats.failed} alreadyFlagged=${stats.skippedFlag}`);
     } catch (error) {
         logError('Expiry Warning Job', error);
     }
+    return stats;
 }
 
 // ۳. پاکسازی اکانت‌های منقضی (هر ۲۴ ساعت)

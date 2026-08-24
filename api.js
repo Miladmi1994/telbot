@@ -183,6 +183,7 @@ async function getClientTraffic(email, server = null) {
                                 up += cStats.up || 0;
                                 down += cStats.down || 0;
                                 if (total === 0 && cStats.total) total = cStats.total;
+                                if (expiryTime === 0 && cStats.expiryTime) expiryTime = cStats.expiryTime;
                                 trafficFound = true;
                             }
                         }
