@@ -3362,6 +3362,23 @@ async function runCleanupJob() {
     }
 }
 
+// اجرای دستی جاب‌های اعلان / پاکسازی از طریق تلگرام
+bot.command('run_jobs', async (ctx) => {
+    if (!isUserAdmin(ctx.from.id.toString())) return;
+
+    const waitMsg = await ctx.reply('⏳ در حال اجرای جاب‌ها (حجم، انقضا، پاکسازی)... لطفاً منتظر بمانید.');
+    try {
+        await runVolumeCheckJob();
+        await runExpiryWarningJob();
+        await runCleanupJob();
+        await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+        await ctx.reply('✅ جاب‌های حجم، هشدار انقضا و پاکسازی با موفقیت اجرا شدند.');
+    } catch (error) {
+        logError('run_jobs command', error);
+        await ctx.reply(`❌ خطا در اجرای جاب‌ها: ${error.message}`);
+    }
+});
+
 // ==========================================
 // فعال‌سازی زمان‌بندها
 // ==========================================
