@@ -29,8 +29,9 @@ const defaultDb = {
 };
 
 let sqliteDb = null;
-let memoryCache = null; // اضافه شدن کش حافظه
-let writeTimeout = null; // متغیر برای مدیریت تاخیر ذخیره‌سازی
+let memoryCache = null;
+let dbRevision = 0;
+const REV = Symbol('dbRevision');
 
 function isSqlitePath(value) {
     return typeof value === 'string' && (value.endsWith('.db') || value.endsWith('.sqlite'));
@@ -51,6 +52,10 @@ function getSqliteDb() {
         sqliteDb = openDatabase(getSqlitePath());
     }
     return sqliteDb;
+}
+
+function cloneDb(data) {
+    return JSON.parse(JSON.stringify(data));
 }
 
 function normalizeDb(data) {
@@ -91,11 +96,67 @@ function normalizeDb(data) {
     return { data, needsUpdate };
 }
 
-function readDb() {
-    // خواندن سریع از حافظه رم در صورت وجود
-    if (memoryCache) {
-        return JSON.parse(JSON.stringify(memoryCache)); 
+function persistNow(data) {
+    if (isSqlitePath(process.env.DB_PATH)) {
+        saveState(getSqliteDb(), data);
+    } else {
+        fs.writeFileSync(getJsonPath(), JSON.stringify(data, null, 2));
     }
+}
+
+/**
+ * Stale snapshot write (e.g. long volume job) must not wipe newer purchases.
+ * Upsert services by email; never drop users/services absent from the incoming snapshot.
+ */
+function mergeStaleIntoCache(incoming) {
+    if (!memoryCache.users) memoryCache.users = {};
+    if (!memoryCache.userStats) memoryCache.userStats = {};
+    if (!memoryCache.payments) memoryCache.payments = {};
+
+    for (const [userId, services] of Object.entries(incoming.users || {})) {
+        if (!Array.isArray(services)) continue;
+        if (!memoryCache.users[userId]) memoryCache.users[userId] = [];
+
+        for (const svc of services) {
+            if (!svc || !svc.email) continue;
+            const list = memoryCache.users[userId];
+            const idx = list.findIndex((s) => s.email === svc.email);
+            if (idx >= 0) list[idx] = svc;
+            else list.push(svc);
+        }
+
+        if (incoming.userStats?.[userId]) {
+            memoryCache.userStats[userId] = incoming.userStats[userId];
+        }
+    }
+
+    // Safe list merges: union, never shrink from a stale snapshot
+    for (const key of ['testUsers', 'vipUsers', 'bannedUsers']) {
+        if (!Array.isArray(incoming[key])) continue;
+        const set = new Set([...(memoryCache[key] || []), ...incoming[key]].map(String));
+        memoryCache[key] = Array.from(set);
+    }
+
+    if (incoming.settings) memoryCache.settings = incoming.settings;
+    if (incoming.servers) memoryCache.servers = incoming.servers;
+    if (incoming.admins) memoryCache.admins = incoming.admins;
+    if (incoming.stats) memoryCache.stats = incoming.stats;
+
+    // Prefer newer totals when incoming looks like an in-place update of known keys
+    for (const key of ['totalIncome', 'successfulSales', 'periodIncome', 'periodExpenses']) {
+        if (incoming[key] !== undefined) memoryCache[key] = incoming[key];
+    }
+
+    // Payments: apply incoming tokens; keep tokens that exist only in cache
+    // (stale job snapshots shouldn't resurrect deleted payments, but also shouldn't
+    // wipe payments created after the snapshot was taken)
+    for (const [token, payment] of Object.entries(incoming.payments || {})) {
+        memoryCache.payments[token] = payment;
+    }
+}
+
+function ensureLoaded() {
+    if (memoryCache) return;
 
     let rawData;
     if (isSqlitePath(process.env.DB_PATH)) {
@@ -111,29 +172,41 @@ function readDb() {
     }
 
     const { data: normalized, needsUpdate } = normalizeDb(rawData);
-    memoryCache = normalized; // مقداردهی اولیه کش
+    memoryCache = normalized;
+    dbRevision = 1;
 
     if (needsUpdate) {
-        writeDb(normalized);
+        persistNow(memoryCache);
     }
+}
 
-    return JSON.parse(JSON.stringify(memoryCache));
+function readDb() {
+    ensureLoaded();
+    const data = cloneDb(memoryCache);
+    Object.defineProperty(data, REV, { value: dbRevision, enumerable: false, configurable: true });
+    return data;
 }
 
 function writeDb(data) {
-    // بروزرسانی فوری در حافظه رم
-    memoryCache = JSON.parse(JSON.stringify(data));
+    ensureLoaded();
 
-    // جلوگیری از ترافیک دیسک با اعمال تاخیر ۳ ثانیه‌ای (Debounce)
-    if (writeTimeout) clearTimeout(writeTimeout);
-    
-    writeTimeout = setTimeout(() => {
-        if (isSqlitePath(process.env.DB_PATH)) {
-            saveState(getSqliteDb(), memoryCache);
-        } else {
-            fs.writeFileSync(getJsonPath(), JSON.stringify(memoryCache, null, 2));
-        }
-    }, 3000);
+    const incomingRev = data[REV];
+    const isStale = incomingRev !== undefined && incomingRev !== dbRevision;
+
+    if (isStale) {
+        console.warn(`[db] stale writeDb ignored (full replace) — merging users/services instead (rev ${incomingRev} → ${dbRevision})`);
+        mergeStaleIntoCache(data);
+    } else {
+        memoryCache = cloneDb(data);
+    }
+
+    dbRevision += 1;
+    persistNow(memoryCache);
 }
 
-module.exports = { readDb, writeDb };
+function flushDb() {
+    if (!memoryCache) return;
+    persistNow(memoryCache);
+}
+
+module.exports = { readDb, writeDb, flushDb };

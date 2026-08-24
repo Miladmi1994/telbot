@@ -4,6 +4,7 @@ const { Telegraf } = require('telegraf');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const setupHandlers = require('./handlers');
 const { scheduleNightlyBackup } = require('./scripts/backup-db');
+const { flushDb } = require('./db');
 
 const bot = new Telegraf(
     process.env.BOT_TOKEN,
@@ -21,5 +22,10 @@ bot.catch((err, ctx) => {
 
 bot.launch({ dropPendingUpdates: true }).then(() => console.log('ربات کامل ران شد!'));
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+function shutdown(signal) {
+    try { flushDb(); } catch (e) {}
+    bot.stop(signal);
+}
+
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));
