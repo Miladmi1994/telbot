@@ -2,6 +2,11 @@
  * Sync panel client exports into telbot SQLite.
  * Only auto-links emails matching: User_{telegramId}_Ord{orderId}_{timestamp}
  *
+ * Matching order:
+ *   1) existing row with same email
+ *   2) existing row with same uuid  → update email, KEEP name
+ *   3) otherwise insert (new uuid only)
+ *
  * Usage:
  *   node scripts/sync-panel-clients.js --db ./telbot.db \
  *     --normal ./clients-export-normal.json \
@@ -69,16 +74,19 @@ function main() {
     const normalServerId = settings?.active_server_id || 'srv_363974';
     const vipServerId = settings?.active_vip_server_id || 'srv_364212';
 
-    const existingByEmail = new Map(
-        db.prepare('SELECT id, telegram_id, email, uuid, server_id, deleted_from_panel, name FROM services').all()
-            .map((r) => [r.email, r])
-    );
+    const rows = db.prepare(
+        'SELECT id, telegram_id, email, uuid, server_id, deleted_from_panel, name, order_id FROM services'
+    ).all();
+
+    const existingByEmail = new Map(rows.map((r) => [r.email, r]));
+    const existingByUuid = new Map(rows.map((r) => [r.uuid, r]));
 
     const report = {
         mode: args.apply ? 'APPLY' : 'DRY_RUN',
         skippedNonUserEmail: [],
         inserted: [],
         undeleted: [],
+        relinkedByUuid: [],
         alreadyOk: [],
         uuidUpdated: [],
         errors: []
@@ -102,20 +110,36 @@ function main() {
             panel_total, panel_used, panel_expiry, panel_email
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, 0, ?, ?)
     `);
-    const undeleteService = db.prepare(`
+    // Keep name — only revive / refresh panel fields
+    const undeleteByEmail = db.prepare(`
         UPDATE services
         SET deleted_from_panel = 0,
             uuid = ?,
             server_id = ?,
+            order_id = COALESCE(?, order_id),
             panel_total = ?,
             panel_expiry = ?,
             panel_email = ?,
             is_vip = CASE WHEN ? = 1 THEN 1 ELSE is_vip END
         WHERE email = ?
     `);
-    const updateUuid = db.prepare(`
+    // Same uuid, new panel email (renew) — keep name
+    const relinkByUuid = db.prepare(`
         UPDATE services
-        SET uuid = ?, server_id = ?, panel_total = ?, panel_expiry = ?, panel_email = ?
+        SET email = ?,
+            order_id = ?,
+            deleted_from_panel = 0,
+            server_id = ?,
+            panel_total = ?,
+            panel_expiry = ?,
+            panel_email = ?,
+            is_vip = CASE WHEN ? = 1 THEN 1 ELSE is_vip END
+        WHERE id = ?
+    `);
+    const updateActiveByEmail = db.prepare(`
+        UPDATE services
+        SET uuid = ?, server_id = ?, panel_total = ?, panel_expiry = ?, panel_email = ?,
+            order_id = COALESCE(?, order_id)
         WHERE email = ? AND deleted_from_panel = 0
     `);
 
@@ -136,94 +160,145 @@ function main() {
             const isVip = client.source === 'vip';
             const serverId = isVip ? vipServerId : normalServerId;
             const { telegramId, orderId } = parsed;
-            const existing = existingByEmail.get(client.email);
+            const byEmail = existingByEmail.get(client.email);
+            const byUuid = existingByUuid.get(client.uuid);
 
-            if (!existing) {
-                const count = cypherCountStmt.get(telegramId)?.c || 0;
-                const flag = '🇳🇱';
-                const name = `سایفر ${count + 1} ${flag}`.trim();
-
-                const action = {
-                    email: client.email,
-                    telegramId,
-                    orderId,
-                    serverId,
-                    isVip,
-                    name,
-                    uuid: client.uuid,
-                    enable: client.enable
-                };
-
-                if (args.apply) {
-                    ensureUser.run(telegramId, isVip ? 1 : 0);
-                    ensureStats.run(telegramId);
-                    if (isVip) {
-                        db.prepare('UPDATE users SET is_vip = 1 WHERE telegram_id = ?').run(telegramId);
+            // 1) Exact email match
+            if (byEmail) {
+                if (byEmail.deleted_from_panel === 1) {
+                    if (args.apply) {
+                        undeleteByEmail.run(
+                            client.uuid,
+                            serverId,
+                            orderId,
+                            client.totalGB,
+                            client.expiryTime,
+                            client.email,
+                            isVip ? 1 : 0,
+                            client.email
+                        );
                     }
-                    const sortOrder = nextSort.get(telegramId).n;
-                    insertService.run(
-                        telegramId,
-                        sortOrder,
+                    report.undeleted.push({
+                        email: client.email,
+                        telegramId: byEmail.telegram_id,
+                        name: byEmail.name,
+                        serverId
+                    });
+                    byEmail.deleted_from_panel = 0;
+                    byEmail.uuid = client.uuid;
+                    existingByUuid.set(client.uuid, byEmail);
+                } else if (byEmail.uuid !== client.uuid || byEmail.server_id !== serverId) {
+                    if (args.apply) {
+                        updateActiveByEmail.run(
+                            client.uuid,
+                            serverId,
+                            client.totalGB,
+                            client.expiryTime,
+                            client.email,
+                            orderId,
+                            client.email
+                        );
+                    }
+                    report.uuidUpdated.push({
+                        email: client.email,
+                        name: byEmail.name,
+                        oldUuid: byEmail.uuid,
+                        newUuid: client.uuid
+                    });
+                    existingByUuid.delete(byEmail.uuid);
+                    byEmail.uuid = client.uuid;
+                    existingByUuid.set(client.uuid, byEmail);
+                } else {
+                    report.alreadyOk.push({ email: client.email, name: byEmail.name });
+                }
+                continue;
+            }
+
+            // 2) Same uuid, different email (renew / email rewrite) — KEEP name
+            if (byUuid) {
+                const oldEmail = byUuid.email;
+                if (args.apply) {
+                    ensureUser.run(byUuid.telegram_id || telegramId, isVip ? 1 : 0);
+                    ensureStats.run(byUuid.telegram_id || telegramId);
+                    if (isVip) {
+                        db.prepare('UPDATE users SET is_vip = 1 WHERE telegram_id = ?')
+                            .run(byUuid.telegram_id || telegramId);
+                    }
+                    relinkByUuid.run(
                         client.email,
-                        client.uuid,
-                        name,
-                        serverId,
                         orderId,
-                        isVip ? 1 : 0,
-                        client.totalGB,
-                        client.expiryTime,
-                        client.email
-                    );
-                }
-                report.inserted.push(action);
-                continue;
-            }
-
-            // Exists in DB
-            if (existing.deleted_from_panel === 1) {
-                const action = {
-                    email: client.email,
-                    telegramId: existing.telegram_id,
-                    serverId,
-                    prevDeleted: true
-                };
-                if (args.apply) {
-                    undeleteService.run(
-                        client.uuid,
                         serverId,
                         client.totalGB,
                         client.expiryTime,
                         client.email,
                         isVip ? 1 : 0,
-                        client.email
+                        byUuid.id
                     );
                 }
-                report.undeleted.push(action);
-                continue;
-            }
-
-            // Active — refresh uuid/panel snapshot if needed
-            if (existing.uuid !== client.uuid || existing.server_id !== serverId) {
-                if (args.apply) {
-                    updateUuid.run(
-                        client.uuid,
-                        serverId,
-                        client.totalGB,
-                        client.expiryTime,
-                        client.email,
-                        client.email
-                    );
-                }
-                report.uuidUpdated.push({
-                    email: client.email,
-                    oldUuid: existing.uuid,
-                    newUuid: client.uuid,
-                    oldServer: existing.server_id,
-                    newServer: serverId
+                report.relinkedByUuid.push({
+                    oldEmail,
+                    newEmail: client.email,
+                    uuid: client.uuid,
+                    name: byUuid.name,
+                    telegramId: byUuid.telegram_id
                 });
-            } else {
-                report.alreadyOk.push(client.email);
+                existingByEmail.delete(oldEmail);
+                byUuid.email = client.email;
+                byUuid.deleted_from_panel = 0;
+                byUuid.uuid = client.uuid;
+                existingByEmail.set(client.email, byUuid);
+                existingByUuid.set(client.uuid, byUuid);
+                continue;
             }
+
+            // 3) Truly new — insert with generated placeholder name
+            const count = cypherCountStmt.get(telegramId)?.c || 0;
+            const name = `سایفر ${count + 1} 🇳🇱`.trim();
+            const action = {
+                email: client.email,
+                telegramId,
+                orderId,
+                serverId,
+                isVip,
+                name,
+                uuid: client.uuid,
+                enable: client.enable
+            };
+
+            if (args.apply) {
+                ensureUser.run(telegramId, isVip ? 1 : 0);
+                ensureStats.run(telegramId);
+                if (isVip) {
+                    db.prepare('UPDATE users SET is_vip = 1 WHERE telegram_id = ?').run(telegramId);
+                }
+                const sortOrder = nextSort.get(telegramId).n;
+                insertService.run(
+                    telegramId,
+                    sortOrder,
+                    client.email,
+                    client.uuid,
+                    name,
+                    serverId,
+                    orderId,
+                    isVip ? 1 : 0,
+                    client.totalGB,
+                    client.expiryTime,
+                    client.email
+                );
+                const inserted = {
+                    id: Number(db.prepare('SELECT last_insert_rowid() AS id').get().id),
+                    telegram_id: telegramId,
+                    email: client.email,
+                    uuid: client.uuid,
+                    server_id: serverId,
+                    deleted_from_panel: 0,
+                    name,
+                    order_id: orderId
+                };
+                existingByEmail.set(client.email, inserted);
+                existingByUuid.set(client.uuid, inserted);
+            }
+            report.inserted.push(action);
         }
         if (args.apply) db.exec('COMMIT');
     } catch (err) {
@@ -240,12 +315,14 @@ function main() {
         summary: {
             inserted: report.inserted.length,
             undeleted: report.undeleted.length,
+            relinkedByUuid: report.relinkedByUuid.length,
             uuidUpdated: report.uuidUpdated.length,
             alreadyOk: report.alreadyOk.length,
             skippedNonUserEmail: report.skippedNonUserEmail.length
         },
         inserted: report.inserted,
         undeleted: report.undeleted,
+        relinkedByUuid: report.relinkedByUuid,
         uuidUpdated: report.uuidUpdated,
         skippedNonUserEmail: report.skippedNonUserEmail
     }, null, 2));
