@@ -580,27 +580,26 @@ async function updateDnsRecord(zoneId, recordId, name, type, content, proxied) {
     }
 }
 
-// --- تابع اختصاصی تزریق پاداش رفرال به کانفیگ بدون ریست ترافیک ---
+// --- تابع اختصاصی تزریق پاداش رفرال به کانفیگ بدون ریست ترافیک (مبتنی بر ایمیل یونیک) ---
 async function addRewardToClient(email, uuid, rewardType, server) {
     const apiClient = getApiClient(server);
     try {
-        // ۱. دریافت اطلاعات کامل کلاینت (شامل ID عددی دیتابیس) از پنل
+        // ۱. دریافت اطلاعات کامل کلاینت با استفاده از ایمیل یونیک
         const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
         if (!clientRes.data || !clientRes.data.success || !clientRes.data.obj) {
-            return { success: false, msg: 'کلاینت در پنل یافت نشد.' };
+            return { success: false, msg: 'کلاینت با این ایمیل در پنل یافت نشد.' };
         }
 
         const obj = clientRes.data.obj;
-        const dbId = obj.id; // شناسه عددی رکورد در دیتابیس پنل
-
-        // استخراج سقف حجم و زمان فعلی
+        
+        // استخراج دقیق حجم و زمان فعلی از آبجکت دریافتی
         let currentTotal = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
         let currentExpiry = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
 
         let newTotalByte = currentTotal;
         let newExpiryTime = currentExpiry;
 
-        // ۲. محاسبه مقادیر جدید
+        // ۲. محاسبه مقادیر جدید بر اساس پاداش انتخابی
         if (rewardType === 'gb') {
             if (newTotalByte === 0) return { success: false, msg: 'این کانفیگ حجم نامحدود دارد و افزودن حجم بی‌تأثیر است.' };
             newTotalByte += (5 * 1073741824); // اضافه کردن ۵ گیگابایت به بایت
@@ -614,10 +613,10 @@ async function addRewardToClient(email, uuid, rewardType, server) {
         const limitIp = obj.client?.limitIp || obj.limitIp || 0;
         const enable = obj.client?.enable !== undefined ? obj.client.enable : (obj.enable !== undefined ? obj.enable : true);
 
-        // ۳. ساخت پی‌لود کامل آپدیت
+        // ۳. ساخت پی‌لود آپدیت با حفظ کامل مشخصات و ایمیل یونیک
         const updatePayload = {
             id: uuid,
-            email: email,
+            email: email, // ایمیل یونیک و ثابت
             enable: enable,
             total: newTotalByte,
             totalGB: newTotalByte,
@@ -627,8 +626,13 @@ async function addRewardToClient(email, uuid, rewardType, server) {
             subId: subId
         };
 
-        // ۴. ارسال درخواست به مسیر آپدیت با استفاده از شناسه عددی (DB ID) که پنل حتما آن را می‌شناسد
-        const updateRes = await apiClient.post(`panel/api/clients/update/${dbId}`, updatePayload);
+        // ۴. ارسال درخواست آپدیت به پنل با استفاده از UUID و ایمیل یونیک
+        let updateRes = await apiClient.post(`panel/api/clients/update/${uuid}`, updatePayload);
+
+        // اگر پنل با UUID خطا داد، از شناسه عددی خودِ آبجکت دریافتی استفاده می‌کنیم
+        if (updateRes.data && updateRes.data.msg && updateRes.data.msg.includes('record not found') && obj.id) {
+            updateRes = await apiClient.post(`panel/api/clients/update/${obj.id}`, updatePayload);
+        }
 
         if (updateRes.data && updateRes.data.success) {
             return { success: true };
