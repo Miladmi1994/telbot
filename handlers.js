@@ -2726,7 +2726,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 // ---------------------------------------------
 
                 writeDb(freshDb);
-
+                console.log(`[DB SUCCESS] خرید دستی کاربر ${targetUserId} با سفارش ${orderId} در دیتابیس ثبت شد.`);
                 try {
                     await ctx.telegram.sendMessage(targetUserId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\nجهت دریافت کانفیگ‌های خود روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]]) });
                     ctx.reply(`✅ خرید دستی با موفقیت ثبت و مبلغ ${planPrice.toLocaleString('en-US')} تومان به صندوق اضافه شد.\n🌐 سرور انتخاب شده: ${targetServer?.name || 'پیش‌فرض'}`);
@@ -3069,7 +3069,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
         delete freshDb.payments[payToken];
         writeDb(freshDb);
-    
+        console.log(`[DB SUCCESS] خرید جدید کاربر ${userId} با سفارش ${orderId} در دیتابیس ثبت شد.`);
         await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تایید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
         await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\nجهت دریافت کانفیگ‌های خود روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]]) });
     });
@@ -3169,57 +3169,70 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 }
             }
 
-            if (currentServerId !== targetServerId) {
+            // --- شروع بخش اصلاح شده ---
+        let newUuid = conf.uuid;
+        if (currentServerId !== targetServerId) {
             if (oldServer) await deleteClient(conf.uuid, oldServer);
-            
-            const newUuid = await createClient(newEmail, finalGB, finalDays, targetServer || null);
+            newUuid = await createClient(newEmail, finalGB, finalDays, targetServer || null);
             if (!newUuid) return ctx.reply('❌ خطا در کوچ کانفیگ به سرور جدید.');
-            conf.uuid = newUuid; 
         } else {
             const result = await renewClient(conf.uuid, oldEmail, newEmail, finalGB, finalDays, targetServer || null);
             if (!result.success) return ctx.reply(`❌ <b>خطا در تمدید:</b>\n<code>${result.log}</code>`, { parse_mode: 'HTML' });
         }
 
-        conf.email = newEmail;
-        conf.orderId = orderId; 
-        conf.serverId = targetServerId; 
+        // ۱. دریافت اطلاعات تازه دیتابیس پس از پایان درخواست‌های زمان‌بر پنل
+        const freshDb = readDb();
         
-        if (conf.name.includes('تست') || conf.name === 'سرویس قبلی' || conf.name === 'بدون اسم') {
-            const cypherCount = userConfigs.filter(c => c.name && c.name.startsWith('سایفر')).length;
-            conf.name = `سایفر ${cypherCount + 1}`;
+        // ۲. پیدا کردن مجدد کانکشن کاربر در دیتابیس تازه
+        if (!freshDb.users[userId]) freshDb.users[userId] = [];
+        const freshUserConfigs = freshDb.users[userId];
+        const freshConf = freshUserConfigs.find(c => c.email === email);
+        
+        if (!freshConf) return ctx.reply('❌ خطا: کانفیگ کاربر در دیتابیس یافت نشد.');
+
+        // ۳. اعمال تغییرات روی نسخه تازه دیتابیس
+        freshConf.uuid = newUuid;
+        freshConf.email = newEmail;
+        freshConf.orderId = orderId; 
+        freshConf.serverId = targetServerId; 
+        
+        if (freshConf.name.includes('تست') || freshConf.name === 'سرویس قبلی' || freshConf.name === 'بدون اسم') {
+            const cypherCount = freshUserConfigs.filter(c => c.name && c.name.startsWith('سایفر')).length;
+            freshConf.name = `سایفر ${cypherCount + 1}`;
         }
         const flag = getServerFlag(targetServer?.name);
-        if (!conf.name.includes(flag)) {
+        if (!freshConf.name.includes(flag)) {
             const oldFlags = ['🇳🇱', '🇩🇪', '🇮🇹', '🇫🇷', '🇬🇧', '🇹🇷', '🌍', '🇫🇮'];
-            oldFlags.forEach(f => { conf.name = conf.name.replace(f, '').trim(); });
-            conf.name = `${conf.name} ${flag}`.trim();
+            oldFlags.forEach(f => { freshConf.name = freshConf.name.replace(f, '').trim(); });
+            freshConf.name = `${freshConf.name} ${flag}`.trim();
         }
 
+        // ۴. ثبت اطلاعات مالی در دیتابیس تازه
         const priceMatch = caption.match(/💵 مبلغ: ([\d,]+) تومان/);
         const priceVal = priceMatch ? parseInt(priceMatch[1].replace(/,/g, ''), 10) : 0;
         
         if (priceMatch && (!IGNORE_FINANCE_IDS || !IGNORE_FINANCE_IDS.includes(userId.toString()))) { 
-            db.totalIncome = (db.totalIncome || 0) + priceVal; 
-            db.periodIncome = (db.periodIncome || 0) + priceVal;
-            db.successfulSales = (db.successfulSales || 0) + 1; 
+            freshDb.totalIncome = (freshDb.totalIncome || 0) + priceVal; 
+            freshDb.periodIncome = (freshDb.periodIncome || 0) + priceVal;
+            freshDb.successfulSales = (freshDb.successfulSales || 0) + 1; 
         }
 
-        if (!db.userStats) db.userStats = {};
-        if (!db.userStats[userId]) db.userStats[userId] = { totalSpent: 0, buyCount: 0, renewCount: 0 };
-        db.userStats[userId].totalSpent += priceVal;
-        db.userStats[userId].renewCount++;
+        if (!freshDb.userStats) freshDb.userStats = {};
+        if (!freshDb.userStats[userId]) freshDb.userStats[userId] = { totalSpent: 0, buyCount: 0, renewCount: 0 };
+        freshDb.userStats[userId].totalSpent += priceVal;
+        freshDb.userStats[userId].renewCount++;
 
-        conf.notified = { days3: false, gb85: false, gb1: false };
-        delete db.payments[payToken];
-        writeDb(db);
+        freshConf.notified = { days3: false, gb85: false, gb1: false };
+        delete freshDb.payments[payToken];
+        writeDb(freshDb);
+        console.log(`[DB SUCCESS] تمدید سرویس کاربر ${userId} با سفارش ${orderId} در دیتابیس ثبت شد.`);
         await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تمدید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } }).catch(()=>{});
-       // کد قبلی را با این جایگزین کنید:
+        await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تمدید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } }).catch(()=>{});
         await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت تمدید شد.</b>\n🧾 شناسه خرید: <code>${orderId}</code> (تأییدشده)\n\n♻️ <b>نکته مهم:</b> نیازی به وارد کردن کانفیگ جدید نیست! همان کانفیگ قبلی شما مجدداً شارژ شده و به درستی کار می‌کند.\n\n(اگر نیاز به دریافت مجدد کانفیگ دارید، می‌توانید از دکمه زیر استفاده کنید)`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت مجدد کانفیگ‌ها', `get_configs_${conf.uuid}`)]]) });
     });
 
 
 
-// ۱. بررسی حجم و همگام‌سازی شارژ دستی (نسخه ضد تداخل دیتابیس)
 async function runVolumeCheckJob() {
     try {
         const initialDb = readDb();
