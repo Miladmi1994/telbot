@@ -580,5 +580,56 @@ async function updateDnsRecord(zoneId, recordId, name, type, content, proxied) {
     }
 }
 
+// --- تابع اختصاصی تزریق پاداش رفرال به کانفیگ بدون ریست ترافیک ---
+async function addRewardToClient(email, uuid, rewardType, server) {
+    const apiClient = getApiClient(server);
+    try {
+        // ۱. دریافت اطلاعات فعلی کلاینت از پنل
+        const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
+        if (!clientRes.data || !clientRes.data.success || !clientRes.data.obj) {
+            return { success: false, msg: 'کلاینت در پنل یافت نشد.' };
+        }
+
+        const obj = clientRes.data.obj;
+        // استخراج سقف حجم و زمان فعلی
+        let currentTotal = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
+        let currentExpiry = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
+
+        let newTotalGB = currentTotal;
+        let newExpiryTime = currentExpiry;
+
+        // ۲. محاسبه مقادیر جدید بر اساس نوع جایزه
+        if (rewardType === 'gb') {
+            if (newTotalGB === 0) return { success: false, msg: 'این کانفیگ حجم نامحدود دارد و افزودن حجم بی‌تأثیر است.' };
+            newTotalGB += 5 * 1073741824; // اضافه کردن ۵ گیگابایت
+        } else if (rewardType === 'days') {
+            if (newExpiryTime === 0) return { success: false, msg: 'این کانفیگ زمان نامحدود دارد و افزودن زمان بی‌تأثیر است.' };
+            newExpiryTime += 5 * 24 * 60 * 60 * 1000; // اضافه کردن ۵ روز
+        }
+
+        // ۳. ارسال درخواست آپدیت به پنل 3x-ui (بدون دستکاری سایر مقادیر)
+        const updatePayload = {
+            id: uuid,
+            totalGB: newTotalGB,
+            expiryTime: newExpiryTime,
+            enable: true,
+            email: email,
+            limitIp: obj.client?.limitIp || obj.limitIp || 0,
+            subId: obj.client?.subId || obj.subId || '',
+            tgId: obj.client?.tgId || obj.tgId || ''
+        };
+
+        const updateRes = await apiClient.post(`panel/api/clients/update/${uuid}`, updatePayload);
+        
+        if (updateRes.data && updateRes.data.success) {
+            return { success: true };
+        } else {
+            return { success: false, msg: updateRes.data?.msg || 'خطای پنل در آپدیت مقادیر.' };
+        }
+    } catch (error) {
+        return { success: false, msg: error.message };
+    }
+}
+
 // حتماً یادت نره تابع تست رو هم اکسپورت کنی
-module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds };
+module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient };

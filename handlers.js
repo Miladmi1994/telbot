@@ -2,7 +2,7 @@ const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
 const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, adminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu } = require('./keyboards');
 const { readDb, writeDb } = require('./db');
-const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds } = require('./api');
+const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient } = require('./api');
 const fs = require('fs');
 const path = require('path');
 
@@ -1530,11 +1530,47 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const conf = userConfigs.find(c => c.uuid === uuid);
         if (!conf) return ctx.answerCbQuery('❌ کانفیگ یافت نشد!', { show_alert: true });
 
+        const targetServer = getTargetServer(db, conf);
+        if (!targetServer) return ctx.answerCbQuery('❌ سرور متصل به این کانفیگ یافت نشد!', { show_alert: true });
+
         await ctx.answerCbQuery('⏳ در حال اعمال پاداش روی سرور...', { show_alert: false });
         
-        // در مرحله بعد (مرحله ۵)، تابع ارتباط با پنل را در اینجا فراخوانی می‌کنیم
-        // ...
+        // درخواست به API برای افزودن هدیه به پنل
+        const rewardType = state.rewardType; // 'gb' یا 'days'
+        const result = await addRewardToClient(conf.email, conf.uuid, rewardType, targetServer);
+
+        if (!result.success) {
+            return ctx.editMessageText(`❌ <b>خطا در اعمال پاداش:</b>\n<code>${result.msg}</code>`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'claim_reward_init')]] } });
+        }
+
+        // --- اگر موفقیت‌آمیز بود: آپدیت دیتابیس ربات ---
+        const freshDb = readDb(); // خواندن دیتابیس تازه برای جلوگیری از تداخل
         
+        // کسر یک توکن از کاربر
+        if (freshDb.userStats[userId] && freshDb.userStats[userId].rewardTokens > 0) {
+            freshDb.userStats[userId].rewardTokens -= 1;
+        }
+        
+        // صفر کردن وضعیت نوتیفیکیشن‌ها تا اگر کانفیگ در مرز هشدار بوده، ریست شود
+        const dbConf = (freshDb.users[userId] || []).find(c => c.uuid === uuid);
+        if (dbConf) {
+            dbConf.notified = { days3: false, gb85: false, gb1: false };
+        }
+
+        writeDb(freshDb);
+        userSteps.delete(ctx.from.id); // پایان فرآیند
+
+        const rewardText = rewardType === 'gb' ? '۵ گیگابایت حجم 🔋' : '۵ روز زمان ⏳';
+        
+        await ctx.editMessageText(`✅ <b>پاداش با موفقیت اعمال شد!</b>\n\n🎁 هدیه <b>${rewardText}</b> روی سرویس <b>${conf.name}</b> شما شارژ شد و می‌توانید در داشبورد خود آن را مشاهده کنید.\n\nاز اینکه دوستان خود را به ما معرفی می‌کنید متشکریم 🌹`, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [Markup.button.callback('👤 داشبورد من', 'dash_main')],
+                    [Markup.button.callback('❌ بستن', 'close_menu')]
+                ]
+            }
+        });
     });
 
     bot.action('dismiss_reward_msg', (ctx) => {
