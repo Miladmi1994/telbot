@@ -68,12 +68,18 @@ const getAdminKeyboard = (db) => Markup.inlineKeyboard([
     ]
 ]);
 
-const adminMarketingMenu = Markup.inlineKeyboard([
-    [Markup.button.callback('👥 آمار کاربران', 'marketing_users'), Markup.button.callback('📈 آمار فروش', 'marketing_sales')],
-    [Markup.button.callback('🔍 جستجوی پیشرفته کاربر', 'marketing_search')],
-    [Markup.button.callback('📢 ارسال پیام همگانی', 'admin_broadcast')],
-    [Markup.button.callback('🔙 بازگشت', 'back_admin')]
-]);
+const getAdminMarketingMenu = (db) => {
+    const exemptStatus = db.settings.adminExemptReferral ? '🟢 روشن' : '🔴 خاموش';
+    
+    return Markup.inlineKeyboard([
+        [Markup.button.callback('👥 آمار کاربران', 'marketing_users'), Markup.button.callback('📈 آمار فروش', 'marketing_sales')],
+        [Markup.button.callback('🏆 برترین معرف‌ها (لیدربورد)', 'marketing_leaderboard')],
+        [Markup.button.callback('🔍 جستجوی پیشرفته کاربر', 'marketing_search')],
+        [Markup.button.callback('📢 ارسال پیام همگانی', 'admin_broadcast')],
+        [Markup.button.callback(`معافیت ادمین از رفرال: ${exemptStatus}`, 'toggle_admin_exempt')],
+        [Markup.button.callback('🔙 بازگشت', 'back_admin')]
+    ]);
+};
 
 const adminServersMenu = Markup.inlineKeyboard([
     [Markup.button.callback('➖ حذف', 'admin_remove_server'), Markup.button.callback('✏️ ویرایش', 'admin_edit_server'), Markup.button.callback('➕ افزودن', 'admin_add_server')],
@@ -159,7 +165,7 @@ module.exports = {
     adminUsersMenu,
     adminFinanceMenu,
     cancelBtn,
-    adminMarketingMenu,
+    getAdminMarketingMenu,
     adminAccountingMenu,
     getServerManageMenu,
     getInboundsMenu,

@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
-const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, adminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu } = require('./keyboards');
+const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, getAdminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu } = require('./keyboards');
 const { readDb, writeDb } = require('./db');
 const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient } = require('./api');
 const fs = require('fs');
@@ -349,6 +349,86 @@ function setupHandlers(bot) {
         }
     });
 
+    // --- شبیه‌ساز ورود کاربر با لینک دعوت شما ---
+    bot.command('sim_ref', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const adminId = ctx.from.id.toString();
+        const fakeId = 'sim_' + Math.floor(10000 + Math.random() * 90000);
+        
+        if (!db.userStats[adminId]) {
+            db.userStats[adminId] = { totalSpent: 0, buyCount: 0, renewCount: 0, referralCount: 0, referralBuys: 0, rewardTokens: 0, hasMadeFirstBuy: false, referrerId: null };
+        }
+        
+        db.userStats[fakeId] = { totalSpent: 0, buyCount: 0, renewCount: 0, referralCount: 0, referralBuys: 0, rewardTokens: 0, hasMadeFirstBuy: false, referrerId: adminId };
+        db.users[fakeId] = []; 
+        
+        db.userStats[adminId].referralCount += 1;
+        writeDb(db);
+        
+        ctx.reply(`✅ <b>شبیه‌سازی دعوت موفق:</b>\nیک کاربر تستی با آیدی <code>${fakeId}</code> با لینک شما وارد ربات شد.\n(آمار "کل دعوت‌ها"ی شما ۱ عدد اضافه شد).\n\nبرای شبیه‌سازی خرید این کاربر و دریافت توکن، این دستور را ارسال کنید:\n<code>/sim_buy ${fakeId}</code>`, { parse_mode: 'HTML' });
+    });
+
+    // --- شبیه‌ساز اولین خرید کاربر فیک ---
+    bot.command('sim_buy', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const args = ctx.message.text.split(' ');
+        if (args.length < 2) return ctx.reply('❌ آیدی فیک را وارد کنید.');
+        const fakeId = args[1];
+        
+        const db = readDb();
+        if (!db.userStats[fakeId]) return ctx.reply('❌ کاربر فیک یافت نشد.');
+        if (db.userStats[fakeId].hasMadeFirstBuy) return ctx.reply('⚠️ این کاربر فیک قبلاً خرید اول را انجام داده است.');
+
+        const refId = db.userStats[fakeId].referrerId;
+        db.userStats[fakeId].hasMadeFirstBuy = true;
+        db.userStats[fakeId].buyCount = 1;
+        
+        if (refId && db.userStats[refId]) {
+            db.userStats[refId].referralBuys += 1;
+            db.userStats[refId].rewardTokens += 1;
+            
+            try {
+                const rewardKeyboard = {
+                    inline_keyboard: [
+                        [Markup.button.callback('🎁 استفاده از پاداش (همین الان)', 'claim_reward_init')],
+                        [Markup.button.callback('⏳ ذخیره در قلک (بعداً)', 'dismiss_reward_msg')]
+                    ]
+                };
+                ctx.telegram.sendMessage(refId, `🎉 <b>تبریک (شبیه‌سازی)!</b>\nیکی از دعوت‌شدگان شما اولین خرید خود را انجام داد.\n\n🎁 <b>۱ توکن هدیه</b> به قلک شما اضافه شد!`, { parse_mode: 'HTML', reply_markup: rewardKeyboard });
+            } catch (e) {}
+        }
+        
+        writeDb(db);
+    });
+
+    // --- پاکسازی دیتابیس از دیتای شبیه‌سازی شده ---
+    bot.command('sim_clean', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        let cleaned = 0;
+
+        for (const uid in db.userStats) {
+            if (uid.startsWith('sim_')) {
+                const refId = db.userStats[uid].referrerId;
+                const madeBuy = db.userStats[uid].hasMadeFirstBuy;
+                
+                if (refId && db.userStats[refId]) {
+                    db.userStats[refId].referralCount = Math.max(0, db.userStats[refId].referralCount - 1);
+                    if (madeBuy) {
+                        db.userStats[refId].referralBuys = Math.max(0, db.userStats[refId].referralBuys - 1);
+                        db.userStats[refId].rewardTokens = Math.max(0, db.userStats[refId].rewardTokens - 1);
+                    }
+                }
+                delete db.userStats[uid];
+                if (db.users[uid]) delete db.users[uid];
+                cleaned++;
+            }
+        }
+        writeDb(db);
+        ctx.reply(`🧹 <b>پاکسازی شبیه‌سازی:</b>\nتعداد ${cleaned} اکانت فیک پاک شد. توکن‌ها و آمارهای مربوط به آن‌ها از حساب شما کسر گردید.`, { parse_mode: 'HTML' });
+    });
+
     bot.command('admin', (ctx) => {
         const userId = ctx.from?.id?.toString();
         const adminState = adminSteps.get(ctx.from.id);
@@ -390,10 +470,24 @@ function setupHandlers(bot) {
 
     bot.action('admin_marketing_menu', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
-        ctx.editMessageText('📊 <b>پنل آمار و مارکتینگ</b>\nکدوم بخش رو می‌خوای بررسی کنی؟', {
+        const db = readDb();
+        
+        ctx.editMessageText('📊 <b>پنل آمار و مارکتینگ</b>\nبخش مورد نظر را انتخاب کنید:', {
             parse_mode: 'HTML',
-            reply_markup: adminMarketingMenu.reply_markup
+            ...getAdminMarketingMenu(db)
         });
+        ctx.answerCbQuery();
+    });
+
+    // --- تغییر وضعیت معافیت ادمین ---
+    bot.action('toggle_admin_exempt', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        db.settings.adminExemptReferral = !db.settings.adminExemptReferral;
+        writeDb(db);
+        
+        ctx.editMessageReplyMarkup(getAdminMarketingMenu(db).reply_markup).catch(() => {});
+        ctx.answerCbQuery('✅ وضعیت معافیت تغییر کرد.');
     });
 
     bot.action('marketing_users', (ctx) => {
