@@ -1714,8 +1714,18 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
     });
 
     bot.action('dismiss_reward_msg', (ctx) => {
-        ctx.answerCbQuery('✅ توکن در قلک شما ذخیره شد.');
-        ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+        ctx.answerCbQuery('✅ توکن با موفقیت در قلک شما ذخیره شد.');
+        
+        const msg = `⏳ <b>توکن شما در قلک ذخیره شد!</b>\n\n` +
+                    `هر زمان که خواستید این پاداش را روی کانفیگ‌های خود اعمال کنید، کافی است از منوی اصلی ربات وارد بخش <b>«🤝 دریافت لینک دعوت»</b> شوید و روی دکمه <b>«🎁 استفاده از پاداش»</b> بزنید.\n\n` +
+                    `با تشکر از همراهی شما 🌹`;
+
+        ctx.editMessageText(msg, { 
+            parse_mode: 'HTML', 
+            reply_markup: { 
+                inline_keyboard: [[Markup.button.callback('❌ بستن پیام', 'close_menu')]] 
+            } 
+        }).catch(() => {});
     });
 
     const dashMenu = Markup.inlineKeyboard([
