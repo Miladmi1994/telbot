@@ -3033,13 +3033,17 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         
         if (!uuid) return ctx.reply('❌ خطا در ساخت کانفیگ در پنل.');
 
-        if (!db.users[userId]) db.users[userId] = [];
-        db.users[userId].push({ 
+        // --- خواندن دیتابیس تازه بلافاصله قبل از ذخیره ---
+        const freshDb = readDb();
+
+        if (!freshDb.users[userId]) freshDb.users[userId] = [];
+        freshDb.users[userId].push({ 
             email, 
             uuid, 
             name: finalName,
             orderId: orderId,
             serverId: targetServerId,
+            notified: { days3: false, gb85: false, gb1: false }, // ضمانت ساختار SQLite
             ...(planId === 'vip' ? { isVip: true } : {})
         });
 
@@ -3047,29 +3051,28 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const priceVal = priceMatch ? parseInt(priceMatch[1].replace(/,/g, ''), 10) : 0;
         
         if (priceMatch && (!IGNORE_FINANCE_IDS || !IGNORE_FINANCE_IDS.includes(userId.toString()))) { 
-            db.totalIncome = (db.totalIncome || 0) + priceVal; 
-            db.periodIncome = (db.periodIncome || 0) + priceVal;
-            db.successfulSales = (db.successfulSales || 0) + 1; 
+            freshDb.totalIncome = (freshDb.totalIncome || 0) + priceVal; 
+            freshDb.periodIncome = (freshDb.periodIncome || 0) + priceVal;
+            freshDb.successfulSales = (freshDb.successfulSales || 0) + 1; 
         }
 
-        if (!db.userStats) db.userStats = {};
-        if (!db.userStats[userId]) db.userStats[userId] = { totalSpent: 0, buyCount: 0, renewCount: 0 };
-        db.userStats[userId].totalSpent += priceVal;
-        db.userStats[userId].buyCount++;
-        const pIndex = (db.settings.plans || []).findIndex(p => p.id === planId);
+        if (!freshDb.userStats) freshDb.userStats = {};
+        if (!freshDb.userStats[userId]) freshDb.userStats[userId] = { totalSpent: 0, buyCount: 0, renewCount: 0 };
+        freshDb.userStats[userId].totalSpent += priceVal;
+        freshDb.userStats[userId].buyCount++;
+        
+        const pIndex = (freshDb.settings.plans || []).findIndex(p => p.id === planId);
         if (pIndex > -1) {
-            if (db.settings.plans[pIndex].sold === undefined) db.settings.plans[pIndex].sold = 0;
-            db.settings.plans[pIndex].sold++;
+            if (freshDb.settings.plans[pIndex].sold === undefined) freshDb.settings.plans[pIndex].sold = 0;
+            freshDb.settings.plans[pIndex].sold++;
         }
 
-        delete db.payments[payToken];
-        writeDb(db);
+        delete freshDb.payments[payToken];
+        writeDb(freshDb);
     
         await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تایید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
-        
-        // کد قبلی را با این جایگزین کنید:
         await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت فعال شد</b>\n🆔 شماره سفارش: <code>${orderId}</code>\n\nجهت دریافت کانفیگ‌های خود روی دکمه زیر کلیک کنید:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${uuid}`)]]) });
-        });
+    });
 
     bot.action(/confrenew_(.+)/, async (ctx) => {
         const payToken = ctx.match[1];
