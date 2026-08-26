@@ -1,17 +1,12 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { Telegraf } = require('telegraf');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const setupHandlers = require('./handlers');
 const { scheduleNightlyBackup } = require('./scripts/backup-db');
 const { flushDb } = require('./db');
 
-const bot = new Telegraf(
-    process.env.BOT_TOKEN,
-    process.env.PROXY_URL
-        ? { telegram: { agent: new HttpsProxyAgent(process.env.PROXY_URL) } }
-        : undefined
-);
+// راه‌اندازی ربات به صورت مستقیم و بدون نیاز به پروکسی
+const bot = new Telegraf(process.env.BOT_TOKEN);
 
 setupHandlers(bot);
 scheduleNightlyBackup(bot);
