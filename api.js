@@ -132,8 +132,8 @@ async function createClient(email, totalGB, expiryDays, server) {
 async function deleteClient(identifier, server = null) {
     const apiClient = getApiClient(server);
     try {
-        await apiClient.post(`panel/api/clients/del/${identifier}`);
-        return true;
+        const res = await apiClient.post(`panel/api/clients/del/${identifier}`);
+        return res.data && res.data.success;
     } catch (error) {
         return false;
     }

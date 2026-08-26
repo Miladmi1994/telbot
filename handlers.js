@@ -3441,7 +3441,7 @@ async function runCleanupJob() {
             }
 
             if (updates.length > 0) {
-                let dbToSave = readDb();
+                const dbToSave = readDb();
                 let userChanged = false;
                 let targetConfigs = dbToSave.users[userId];
 
@@ -3450,12 +3450,17 @@ async function runCleanupJob() {
                         let conf = targetConfigs.find(c => c.email === update.confEmail);
                         if (!conf) continue;
 
-                        const diffMs = update.expiryTime - now;
+                        let expiryTime = update.expiryTime;
+                        if (expiryTime > 0 && expiryTime < 1e12) expiryTime *= 1000;
+                        const diffMs = expiryTime - now;
                         const diffDays = diffMs / (1000 * 60 * 60 * 24);
                         const isTest = update.confEmail.startsWith('Test_') || update.name.includes('تست');
 
                         if ((isTest && diffDays < -2) || (!isTest && diffDays < -14)) {
-                            const deleted = await deleteClient(update.uuid, update.targetServer).catch(() => false);
+                            let deleted = await deleteClient(update.uuid, update.targetServer).catch(() => false);
+                            if (!deleted) {
+                                deleted = await deleteClient(update.confEmail, update.targetServer).catch(() => false);
+                            }
                             if (deleted) {
                                 conf.deletedFromPanel = true;
                                 userChanged = true;
