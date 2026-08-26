@@ -1706,7 +1706,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
-                    [Markup.button.callback(`📊 مشاهده جزئیات به‌روز (${conf.name})`, `ref_view_conf_${uuid}`)],
+                    [Markup.button.callback('📋 بازگشت به لیست اکانت‌ها', 'dash_main')],
                     [Markup.button.callback('❌ بستن', 'close_menu')]
                 ]
             }
@@ -1902,33 +1902,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         buttons.push([Markup.button.callback('🔙 بازگشت', isActive ? 'dash_active' : 'dash_expired')]);
 
         ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
-    });
-
-    // --- نمایش جزئیات کانفیگ پس از اعمال پاداش (نسخه ایمن و بدون ارور) ---
-    bot.action(/ref_view_conf_(.+)/, async (ctx) => {
-        const uuid = ctx.match[1];
-        const userId = ctx.from.id.toString();
-        const db = readDb();
-        
-        const userConfigs = db.users[userId] || [];
-        const conf = userConfigs.find(c => c.uuid === uuid);
-        if (!conf) return ctx.answerCbQuery('❌ کانفیگ مورد نظر یافت نشد.', { show_alert: true });
-
-        await ctx.answerCbQuery('✅ پاداش شما با موفقیت روی سرور اعمال شده است.');
-
-        const msg = `📊 <b>جزئیات سرویس: ${conf.name}</b>\n\n` +
-                    `🔗 ایمیل کانفیگ:\n<code>${conf.email}</code>\n\n` +
-                    `🟢 وضعیت: پاداش مورد نظر (۵ گیگابایت / ۵ روز) با موفقیت روی این سرویس شارژ شد و می‌توانید طبق روال عادی از آن استفاده کنید.`;
-
-        await ctx.editMessageText(msg, {
-            parse_mode: 'HTML',
-            reply_markup: {
-                inline_keyboard: [
-                    [Markup.button.callback('🔙 بازگشت به داشبورد', 'dash_main')],
-                    [Markup.button.callback('❌ بستن', 'close_menu')]
-                ]
-            }
-        });
     });
 
     bot.hears('🔄 تمدید سرویس', async (ctx) => {
