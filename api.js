@@ -580,7 +580,7 @@ async function updateDnsRecord(zoneId, recordId, name, type, content, proxied) {
     }
 }
 
-// --- تابع اختصاصی تزریق پاداش رفرال به کانفیگ بدون ریست ترافیک (مبتنی بر ایمیل یونیک) ---
+// --- تابع اختصاصی تزریق پاداش رفرال به کانفیگ (مبتنی بر مسیر ایمیل) ---
 async function addRewardToClient(email, uuid, rewardType, server) {
     const apiClient = getApiClient(server);
     try {
@@ -592,7 +592,7 @@ async function addRewardToClient(email, uuid, rewardType, server) {
 
         const obj = clientRes.data.obj;
         
-        // استخراج دقیق حجم و زمان فعلی از آبجکت دریافتی
+        // استخراج دقیق حجم و زمان فعلی (برای حفظ کامل ترافیک مصرفی)
         let currentTotal = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
         let currentExpiry = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
 
@@ -613,10 +613,10 @@ async function addRewardToClient(email, uuid, rewardType, server) {
         const limitIp = obj.client?.limitIp || obj.limitIp || 0;
         const enable = obj.client?.enable !== undefined ? obj.client.enable : (obj.enable !== undefined ? obj.enable : true);
 
-        // ۳. ساخت پی‌لود آپدیت با حفظ کامل مشخصات و ایمیل یونیک
+        // ۳. ساخت پی‌لود آپدیت
         const updatePayload = {
             id: uuid,
-            email: email, // ایمیل یونیک و ثابت
+            email: email,
             enable: enable,
             total: newTotalByte,
             totalGB: newTotalByte,
@@ -626,13 +626,8 @@ async function addRewardToClient(email, uuid, rewardType, server) {
             subId: subId
         };
 
-        // ۴. ارسال درخواست آپدیت به پنل با استفاده از UUID و ایمیل یونیک
-        let updateRes = await apiClient.post(`panel/api/clients/update/${uuid}`, updatePayload);
-
-        // اگر پنل با UUID خطا داد، از شناسه عددی خودِ آبجکت دریافتی استفاده می‌کنیم
-        if (updateRes.data && updateRes.data.msg && updateRes.data.msg.includes('record not found') && obj.id) {
-            updateRes = await apiClient.post(`panel/api/clients/update/${obj.id}`, updatePayload);
-        }
+        // ۴. ارسال درخواست به مسیر استاندارد update بر اساس ایمیل یونیک
+        const updateRes = await apiClient.post(`panel/api/clients/update/${encodeURIComponent(email)}`, updatePayload);
 
         if (updateRes.data && updateRes.data.success) {
             return { success: true };
