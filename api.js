@@ -584,74 +584,56 @@ async function updateDnsRecord(zoneId, recordId, name, type, content, proxied) {
 async function addRewardToClient(email, uuid, rewardType, server) {
     const apiClient = getApiClient(server);
     try {
-        // ۱. دریافت اطلاعات فعلی از پنل
+        // ۱. دریافت اطلاعات کامل کلاینت (شامل ID عددی دیتابیس) از پنل
         const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
         if (!clientRes.data || !clientRes.data.success || !clientRes.data.obj) {
             return { success: false, msg: 'کلاینت در پنل یافت نشد.' };
         }
 
         const obj = clientRes.data.obj;
-        
+        const dbId = obj.id; // شناسه عددی رکورد در دیتابیس پنل
+
         // استخراج سقف حجم و زمان فعلی
         let currentTotal = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
         let currentExpiry = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
 
-        let newTotalGB = currentTotal === 0 ? 0 : (currentTotal / 1073741824);
-        let newExpiryDays = 0;
-        
-        if (currentExpiry > 0) {
-            const diffMs = currentExpiry - Date.now();
-            if (diffMs > 0) {
-                newExpiryDays = diffMs / (1000 * 60 * 60 * 24);
-            }
-        }
+        let newTotalByte = currentTotal;
+        let newExpiryTime = currentExpiry;
 
-        // ۲. محاسبه مقادیر جدید بر اساس نوع جایزه
+        // ۲. محاسبه مقادیر جدید
         if (rewardType === 'gb') {
-            if (newTotalGB === 0) return { success: false, msg: 'این کانفیگ حجم نامحدود دارد و افزودن حجم بی‌تأثیر است.' };
-            newTotalGB += 5; // اضافه کردن ۵ گیگابایت
+            if (newTotalByte === 0) return { success: false, msg: 'این کانفیگ حجم نامحدود دارد و افزودن حجم بی‌تأثیر است.' };
+            newTotalByte += (5 * 1073741824); // اضافه کردن ۵ گیگابایت به بایت
         } else if (rewardType === 'days') {
-            if (currentExpiry === 0) return { success: false, msg: 'این کانفیگ زمان نامحدود دارد و افزودن زمان بی‌تأثیر است.' };
-            newExpiryDays += 5; // اضافه کردن ۵ روز
+            if (newExpiryTime === 0) return { success: false, msg: 'این کانفیگ زمان نامحدود دارد و افزودن زمان بی‌تأثیر است.' };
+            newExpiryTime += (5 * 24 * 60 * 60 * 1000); // اضافه کردن ۵ روز
         }
 
-        if (!server.inbounds || server.inbounds.length === 0) {
-            return { success: false, msg: 'اینباندی برای این سرور یافت نشد.' };
-        }
-        const inboundIds = server.inbounds.map(inb => inb.id);
-        
         const tgId = obj.client?.tgId || obj.tgId || 0;
         const subId = obj.client?.subId || obj.subId || require('crypto').randomBytes(8).toString('hex');
         const limitIp = obj.client?.limitIp || obj.limitIp || 0;
+        const enable = obj.client?.enable !== undefined ? obj.client.enable : (obj.enable !== undefined ? obj.enable : true);
 
-        // ۳. ترفند قطعی و ضد ارور: حذف کلاینت و ساخت مجدد آن با همان ایمیل
-        // (در پنل سنایی، حذف کلاینت باعث پاک شدن ترافیک مصرفی نمی‌شود زیرا ترافیک به ایمیل متصل است)
-        await apiClient.post(`panel/api/clients/del/${uuid}`).catch(() => {});
-        await apiClient.post(`panel/api/clients/del/${email}`).catch(() => {});
-
-        const finalTotalByte = newTotalGB === 0 ? 0 : Math.floor(newTotalGB * 1073741824);
-        const finalExpiryTime = newExpiryDays === 0 ? 0 : Date.now() + Math.floor(newExpiryDays * 24 * 60 * 60 * 1000);
-
-        const payload = {
-            client: {
-                id: uuid,
-                email: email,
-                limitIp: limitIp,
-                totalGB: finalTotalByte,
-                expiryTime: finalExpiryTime,
-                enable: true,
-                tgId: tgId,
-                subId: subId
-            },
-            inboundIds: inboundIds
+        // ۳. ساخت پی‌لود کامل آپدیت
+        const updatePayload = {
+            id: uuid,
+            email: email,
+            enable: enable,
+            total: newTotalByte,
+            totalGB: newTotalByte,
+            expiryTime: newExpiryTime,
+            limitIp: limitIp,
+            tgId: tgId,
+            subId: subId
         };
 
-        const res = await apiClient.post('panel/api/clients/add', payload);
+        // ۴. ارسال درخواست به مسیر آپدیت با استفاده از شناسه عددی (DB ID) که پنل حتما آن را می‌شناسد
+        const updateRes = await apiClient.post(`panel/api/clients/update/${dbId}`, updatePayload);
 
-        if (res.data && res.data.success) {
+        if (updateRes.data && updateRes.data.success) {
             return { success: true };
         } else {
-            return { success: false, msg: res.data?.msg || 'خطا در ثبت مجدد کلاینت' };
+            return { success: false, msg: updateRes.data?.msg || 'خطای پنل در آپدیت مقادیر' };
         }
     } catch (error) {
         return { success: false, msg: error.message };
