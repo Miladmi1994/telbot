@@ -1706,7 +1706,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
-                    [Markup.button.callback(`📊 مشاهده جزئیات (${conf.name})`, `user_config_details_${uuid}`)],
+                    [Markup.button.callback(`📊 مشاهده جزئیات (${conf.name})`, `select_config_${uuid}`)],
                     [Markup.button.callback('❌ بستن', 'close_menu')]
                 ]
             }
