@@ -2,8 +2,8 @@ const { Markup } = require('telegraf');
 
 const mainKeyboard = Markup.keyboard([
     ['👤 داشبورد من', '📥 اپلیکیشن و آموزش'],
-    ['🤝 دریافت لینک دعوت'],
     ['🛒 خرید مستقیم (بدون شماره)', Markup.button.contactRequest('🎁 دریافت تست (نیاز به شماره)')],
+    ['🤝 دریافت لینک دعوت'],
     ['🛠 پشتیبانی و گزارش خطا', '🔄 تمدید سرویس']
 ]).resize();
 
