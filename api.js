@@ -616,7 +616,7 @@ async function addRewardToClient(email, uuid, rewardType, server) {
             email: email,
             limitIp: obj.client?.limitIp || obj.limitIp || 0,
             subId: obj.client?.subId || obj.subId || '',
-            tgId: obj.client?.tgId || obj.tgId || ''
+            tgId: obj.client?.tgId || obj.tgId || 0
         };
 
         const updateRes = await apiClient.post(`panel/api/clients/update/${uuid}`, updatePayload);
