@@ -1702,11 +1702,11 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
         const rewardText = rewardType === 'gb' ? '۵ گیگابایت حجم 🔋' : '۵ روز زمان ⏳';
         
-        await ctx.editMessageText(`✅ <b>پاداش با موفقیت اعمال شد!</b>\n\n🎁 هدیه <b>${rewardText}</b> روی سرویس <b>${conf.name}</b> شما شارژ شد و می‌توانید در داشبورد خود آن را مشاهده کنید.\n\nاز اینکه دوستان خود را به ما معرفی می‌کنید متشکریم 🌹`, {
+        await ctx.editMessageText(`✅ <b>پاداش با موفقیت اعمال شد!</b>\n\n🎁 هدیه <b>${rewardText}</b> روی سرویس <b>${conf.name}</b> شما شارژ شد و می‌توانید جزئیات جدید آن را در ادامه مشاهده کنید.\n\nاز اینکه دوستان خود را به ما معرفی می‌کنید متشکریم 🌹`, {
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
-                    [Markup.button.callback('👤 داشبورد من', 'dash_main')],
+                    [Markup.button.callback(`📥 مشاهده کانفیگ (${conf.name})`, `get_configs_${uuid}`)],
                     [Markup.button.callback('❌ بستن', 'close_menu')]
                 ]
             }
