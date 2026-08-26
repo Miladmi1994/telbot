@@ -1706,7 +1706,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
-                    [Markup.button.callback(`📊 مشاهده جزئیات (${conf.name})`, `select_config_${uuid}`)],
+                    [Markup.button.callback(`📊 مشاهده جزئیات به‌روز (${conf.name})`, `ref_view_conf_${uuid}`)],
                     [Markup.button.callback('❌ بستن', 'close_menu')]
                 ]
             }
@@ -1904,7 +1904,48 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
     });
 
+    // --- نمایش جزئیات کانفیگ پس از اعمال پاداش ---
+    bot.action(/ref_view_conf_(.+)/, async (ctx) => {
+        const uuid = ctx.match[1];
+        const userId = ctx.from.id.toString();
+        const db = readDb();
+        
+        const userConfigs = db.users[userId] || [];
+        const conf = userConfigs.find(c => c.uuid === uuid);
+        if (!conf) return ctx.answerCbQuery('❌ کانفیگ مورد نظر یافت نشد.', { show_alert: true });
 
+        const targetServer = getTargetServer(db, conf);
+        if (!targetServer) return ctx.answerCbQuery('❌ سرور کانفیگ در دسترس نیست.', { show_alert: true });
+
+        await ctx.answerCbQuery('⏳ در حال دریافت آخرین اطلاعات از سرور...');
+
+        // استعلام وضعیت زنده از پنل
+        const trafficRes = await getClientTraffic(conf.email, targetServer);
+        if (!trafficRes.success) {
+            return ctx.reply(`❌ خطا در دریافت اطلاعات از سرور: ${trafficRes.msg}`);
+        }
+
+        // محاسبه حجم و زمان
+        const totalGB = trafficRes.total > 0 ? (trafficRes.total / (1024 * 1024 * 1024)).toFixed(2) : 'نامحدود';
+        const usedGB = (trafficRes.up + trafficRes.down) > 0 ? ((trafficRes.up + trafficRes.down) / (1024 * 1024 * 1024)).toFixed(2) : '0';
+        const expiryDate = trafficRes.expiryTime > 0 ? new Date(trafficRes.expiryTime).toLocaleDateString('fa-IR') : 'نامحدود';
+
+        const msg = `📊 <b>جزئیات سرویس: ${conf.name}</b>\n\n` +
+                    `🔋 حجم کل: <b>${totalGB} گیگابایت</b>\n` +
+                    `📥 مصرف شده: <b>${usedGB} گیگابایت</b>\n` +
+                    `⏳ تاریخ انقضا: <b>${expiryDate}</b>\n` +
+                    `🟢 وضعیت: <b>فعال و شارژ شده</b>`;
+
+        await ctx.editMessageText(msg, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [Markup.button.callback('🔙 بازگشت به داشبورد', 'dash_main')],
+                    [Markup.button.callback('❌ بستن', 'close_menu')]
+                ]
+            }
+        });
+    });
 
     bot.hears('🔄 تمدید سرویس', async (ctx) => {
         userSteps.delete(ctx.from.id);
