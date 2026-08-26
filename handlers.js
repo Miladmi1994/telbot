@@ -490,6 +490,52 @@ function setupHandlers(bot) {
         ctx.answerCbQuery('✅ وضعیت معافیت تغییر کرد.');
     });
 
+    // --- لیدربورد رفرال (برترین معرف‌ها) ---
+    bot.action('marketing_leaderboard', async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        await ctx.answerCbQuery('در حال استخراج آمار...', { show_alert: false });
+        
+        const db = readDb();
+        let referrers = [];
+
+        for (const uid in db.userStats) {
+            const stat = db.userStats[uid];
+            // فقط کاربرانی که دعوت داشته‌اند
+            if (stat.referralCount > 0 || stat.referralBuys > 0) {
+                // اعمال شرط معافیت ادمین
+                if (db.settings.adminExemptReferral && isUserAdmin(uid)) continue;
+                referrers.push({ id: uid, ...stat });
+            }
+        }
+
+        // مرتب‌سازی بر اساس خریدهای موفق و سپس تعداد دعوت کلی
+        referrers.sort((a, b) => b.referralBuys - a.referralBuys || b.referralCount - a.referralCount);
+        const top10 = referrers.slice(0, 10);
+
+        let text = `🏆 <b>برترین معرف‌ها (Leaderboard)</b>\n\n`;
+        if (top10.length === 0) {
+            text += `هیچ داده‌ای برای نمایش وجود ندارد.`;
+        } else {
+            for (let i = 0; i < top10.length; i++) {
+                const u = top10[i];
+                let nameDisplay = `کاربر <code>${u.id}</code>`;
+                try {
+                    const chatInfo = await ctx.telegram.getChat(u.id);
+                    if (chatInfo.first_name) nameDisplay = chatInfo.first_name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    if (chatInfo.username) nameDisplay += ` (@${chatInfo.username})`;
+                } catch (e) {}
+
+                text += `<b>${i + 1}.</b> ${nameDisplay}\n`;
+                text += `   👥 کل دعوت‌ها: <b>${u.referralCount}</b> | 🛍 خریدهای موفق: <b>${u.referralBuys}</b>\n〰️〰️〰️\n`;
+            }
+        }
+
+        ctx.editMessageText(text, { 
+            parse_mode: 'HTML', 
+            reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'admin_marketing_menu')]] } 
+        });
+    });
+
     bot.action('marketing_users', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         const db = readDb();
