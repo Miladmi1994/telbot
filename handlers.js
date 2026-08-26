@@ -1450,6 +1450,11 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ctx.editMessageText('عملیات لغو شد. می‌تونی از منوی پایین یک گزینه انتخاب کنی.');
     });
 
+    bot.action('dismiss_reward_msg', (ctx) => {
+        ctx.answerCbQuery('✅ توکن در قلک شما ذخیره شد.');
+        ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    });
+
     const dashMenu = Markup.inlineKeyboard([
         [Markup.button.callback('📊 وضعیت حجم و زمان', 'dash_status')],
         [Markup.button.callback('ℹ️ دریافت کانفیگ', 'dash_info')],
@@ -2791,6 +2796,27 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 if (!freshDb.userStats[targetUserId]) freshDb.userStats[targetUserId] = { totalSpent: 0, buyCount: 0, renewCount: 0 };
                 freshDb.userStats[targetUserId].totalSpent += planPrice;
                 freshDb.userStats[targetUserId].buyCount++;
+
+                if (freshDb.userStats[targetUserId].referrerId && !freshDb.userStats[targetUserId].hasMadeFirstBuy) {
+                    const refId = freshDb.userStats[targetUserId].referrerId;
+                    freshDb.userStats[targetUserId].hasMadeFirstBuy = true;
+                    
+                    if (freshDb.userStats[refId]) {
+                        freshDb.userStats[refId].referralBuys = (freshDb.userStats[refId].referralBuys || 0) + 1;
+                        freshDb.userStats[refId].rewardTokens = (freshDb.userStats[refId].rewardTokens || 0) + 1;
+                        
+                       try {
+                            const rewardKeyboard = {
+                                inline_keyboard: [
+                                    [Markup.button.callback('🎁 استفاده از پاداش)', 'claim_reward_init')],
+                                    [Markup.button.callback('⏳ ذخیره در قلک)', 'dismiss_reward_msg')]
+                                ]
+                            };
+                            ctx.telegram.sendMessage(refId, `🎉 <b>تبریک!</b>\nیکی از دعوت‌شدگان شما اولین خرید خود را انجام داد.\n\n🎁 <b>۱ توکن هدیه</b> به قلک شما اضافه شد!\nمی‌توانید همین الان پاداش خود را روی یکی از سرویس‌هایتان اعمال کنید یا آن را برای آینده ذخیره کنید.`, { parse_mode: 'HTML', reply_markup: rewardKeyboard });
+                        } catch (e) {}
+                    }
+                }
+
                 // ---------------------------------------------
 
                 writeDb(freshDb);
@@ -3128,6 +3154,27 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         if (!freshDb.userStats[userId]) freshDb.userStats[userId] = { totalSpent: 0, buyCount: 0, renewCount: 0 };
         freshDb.userStats[userId].totalSpent += priceVal;
         freshDb.userStats[userId].buyCount++;
+
+        if (freshDb.userStats[userId].referrerId && !freshDb.userStats[userId].hasMadeFirstBuy) {
+            const refId = freshDb.userStats[userId].referrerId;
+            freshDb.userStats[userId].hasMadeFirstBuy = true;
+            
+            if (freshDb.userStats[refId]) {
+                freshDb.userStats[refId].referralBuys = (freshDb.userStats[refId].referralBuys || 0) + 1;
+                freshDb.userStats[refId].rewardTokens = (freshDb.userStats[refId].rewardTokens || 0) + 1;
+                
+                // ارسال پیام نوتیفیکیشن به معرف
+                try {
+                            const rewardKeyboard = {
+                                inline_keyboard: [
+                                    [Markup.button.callback('🎁 استفاده از پاداش)', 'claim_reward_init')],
+                                    [Markup.button.callback('⏳ ذخیره در قلک)', 'dismiss_reward_msg')]
+                                ]
+                            };
+                            ctx.telegram.sendMessage(refId, `🎉 <b>تبریک!</b>\nیکی از دعوت‌شدگان شما اولین خرید خود را انجام داد.\n\n🎁 <b>۱ توکن هدیه</b> به قلک شما اضافه شد!\nمی‌توانید همین الان پاداش خود را روی یکی از سرویس‌هایتان اعمال کنید یا آن را برای آینده ذخیره کنید.`, { parse_mode: 'HTML', reply_markup: rewardKeyboard });
+                        } catch (e) {}
+            }
+        }
         
         const pIndex = (freshDb.settings.plans || []).findIndex(p => p.id === planId);
         if (pIndex > -1) {
