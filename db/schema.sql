@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS settings (
     sales_open INTEGER NOT NULL DEFAULT 1,
     maintenance INTEGER NOT NULL DEFAULT 0,
     active_server_id TEXT,
-    active_vip_server_id TEXT
+    active_vip_server_id TEXT,
+    admin_exempt_referral INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS plans (
@@ -71,7 +72,12 @@ CREATE TABLE IF NOT EXISTS user_stats (
     telegram_id TEXT PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
     total_spent INTEGER NOT NULL DEFAULT 0,
     buy_count INTEGER NOT NULL DEFAULT 0,
-    renew_count INTEGER NOT NULL DEFAULT 0
+    renew_count INTEGER NOT NULL DEFAULT 0,
+    referrer_id TEXT,
+    has_made_first_buy INTEGER NOT NULL DEFAULT 0,
+    referral_count INTEGER NOT NULL DEFAULT 0,
+    referral_buys INTEGER NOT NULL DEFAULT 0,
+    reward_tokens INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS services (

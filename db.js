@@ -24,7 +24,8 @@ const defaultDb = {
             { id: '30', name: '30 گیگ یک ماهه', gb: 30, days: 30, price: 180000, btnText: '📦 30 گیگ - 1 ماهه (180,000 تومان)', sold: 0 },
             { id: '50', name: '50 گیگ یک ماهه', gb: 50, days: 30, price: 275000, btnText: '📦 50 گیگ - 1 ماهه (275,000 تومان)', sold: 0 },
             { id: '100', name: '100 گیگ دو ماهه', gb: 100, days: 60, price: 500000, btnText: '📦 100 گیگ - 2 ماهه (500,000 تومان)', sold: 0 }
-        ]
+        ],
+        adminExemptReferral: false
     }
 };
 
@@ -81,14 +82,18 @@ function normalizeDb(data) {
 
     for (const userId in data.users) {
         if (!data.userStats[userId]) {
-            data.userStats[userId] = { totalSpent: 0, renewCount: 0, buyCount: 0 };
+            data.userStats[userId] = { 
+                totalSpent: 0, renewCount: 0, buyCount: 0,
+                referralCount: 0, referralBuys: 0, rewardTokens: 0, 
+                hasMadeFirstBuy: false, referrerId: null 
+            };
             needsUpdate = true;
-        }
-
-        if (data.users[userId] && !Array.isArray(data.users[userId])) {
-            data.users[userId] = [
-                { email: data.users[userId].email, uuid: data.users[userId].uuid, name: 'سرویس قبلی' }
-            ];
+        } else if (data.userStats[userId].referralCount === undefined) {
+            data.userStats[userId].referralCount = 0;
+            data.userStats[userId].referralBuys = 0;
+            data.userStats[userId].rewardTokens = 0;
+            data.userStats[userId].hasMadeFirstBuy = false;
+            data.userStats[userId].referrerId = null;
             needsUpdate = true;
         }
     }

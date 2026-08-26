@@ -30,6 +30,12 @@ function openDatabase(dbFilePath) {
     // تلاش برای اضافه کردن ستون‌ها در صورتی که جدول از قبل با ساختار قدیمی وجود داشته
     try { db.exec("ALTER TABLE server_inbounds ADD COLUMN network TEXT NOT NULL DEFAULT 'ws';"); } catch (e) {}
     try { db.exec("ALTER TABLE server_inbounds ADD COLUMN is_special_ws INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE settings ADD COLUMN admin_exempt_referral INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE user_stats ADD COLUMN referrer_id TEXT;"); } catch (e) {}
+    try { db.exec("ALTER TABLE user_stats ADD COLUMN has_made_first_buy INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE user_stats ADD COLUMN referral_count INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE user_stats ADD COLUMN referral_buys INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE user_stats ADD COLUMN reward_tokens INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
 
     return db;
 }
@@ -149,7 +155,12 @@ function loadState(db) {
         userStats[row.telegram_id] = {
             totalSpent: row.total_spent,
             buyCount: row.buy_count,
-            renewCount: row.renew_count
+            renewCount: row.renew_count,
+            referrerId: row.referrer_id || null,
+            hasMadeFirstBuy: !!row.has_made_first_buy,
+            referralCount: row.referral_count || 0,
+            referralBuys: row.referral_buys || 0,
+            rewardTokens: row.reward_tokens || 0
         };
     }
 
@@ -189,6 +200,7 @@ function loadState(db) {
             maintenance: !!settingsRow?.maintenance,
             activeServerId: settingsRow?.active_server_id || undefined,
             activeVipServerId: settingsRow?.active_vip_server_id || undefined,
+            adminExemptReferral: !!settingsRow?.admin_exempt_referral,
             plans
         },
         testUsers,
@@ -211,21 +223,19 @@ function saveState(db, data) {
 
     try {
         db.prepare(`
-            UPDATE global_stats SET
-                total_income = ?,
-                successful_sales = ?,
-                abandoned_carts = ?,
-                test_to_buy_conversion = ?,
-                period_income = ?,
-                period_expenses = ?
+            UPDATE settings SET
+                sales_open = ?,
+                maintenance = ?,
+                active_server_id = ?,
+                active_vip_server_id = ?,
+                admin_exempt_referral = ?
             WHERE id = 1
         `).run(
-            data.totalIncome || 0,
-            data.successfulSales || 0,
-            data.stats?.abandonedCarts || 0,
-            data.stats?.testToBuyConversion || 0,
-            data.periodIncome || 0,
-            data.periodExpenses || 0
+            data.settings?.salesOpen ? 1 : 0,
+            data.settings?.maintenance ? 1 : 0,
+            data.settings?.activeServerId || null,
+            data.settings?.activeVipServerId || null,
+            data.settings?.adminExemptReferral ? 1 : 0
         );
 
         db.prepare(`
@@ -329,8 +339,11 @@ function saveState(db, data) {
             VALUES (?, ?, ?, ?)
         `);
         const insertUserStats = db.prepare(`
-            INSERT INTO user_stats (telegram_id, total_spent, buy_count, renew_count)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO user_stats (
+                telegram_id, total_spent, buy_count, renew_count,
+                referrer_id, has_made_first_buy, referral_count, referral_buys, reward_tokens
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const insertService = db.prepare(`
             INSERT INTO services (
@@ -353,7 +366,12 @@ function saveState(db, data) {
                 telegramId,
                 stats.totalSpent || 0,
                 stats.buyCount || 0,
-                stats.renewCount || 0
+                stats.renewCount || 0,
+                stats.referrerId || null,
+                stats.hasMadeFirstBuy ? 1 : 0,
+                stats.referralCount || 0,
+                stats.referralBuys || 0,
+                stats.rewardTokens || 0
             );
 
             const services = data.users?.[telegramId] || [];
