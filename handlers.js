@@ -1370,18 +1370,52 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ctx.answerCbQuery();
     });
 
-    bot.action('check_channel_join', async (ctx) => {
-        const isMember = await checkMembership(ctx, ctx.from.id);
-        if (isMember) {
-            await ctx.answerCbQuery('✅ عضویت شما تایید شد. خوش آمدید!', { show_alert: true });
-            await ctx.deleteMessage().catch(() => {});
+    bot.start(async (ctx) => {
+        // --- پردازش لینک رفرال ---
+        const payload = ctx.payload; 
+        if (payload && payload.startsWith('ref_')) {
+            const referrerId = payload.split('_')[1];
+            const userId = ctx.from.id.toString();
             
-            userSteps.delete(ctx.from.id);
-            const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
-            ctx.reply(`سلام! خوش اومدی 🌹\n\n👤 <b>آیدی تلگرام:</b> ${username}\n🆔 <b>کد یکتای شما:</b> <code>${ctx.from.id}</code>\n\n👇 لطفاً یک گزینه رو انتخاب کن:`, { parse_mode: 'HTML', ...mainKeyboard });
-        } else {
-            await ctx.answerCbQuery('❌ شما هنوز در کانال عضو نشده‌اید! لطفاً ابتدا عضو شوید.', { show_alert: true });
+            if (referrerId !== userId) { // جلوگیری از دعوت کاربر توسط خودش
+                const db = readDb();
+                if (!db.users[userId]) db.users[userId] = [];
+                if (!db.userStats) db.userStats = {};
+                
+                if (!db.userStats[userId]) {
+                    db.userStats[userId] = { totalSpent: 0, buyCount: 0, renewCount: 0, referralCount: 0, referralBuys: 0, rewardTokens: 0, hasMadeFirstBuy: false, referrerId: null };
+                }
+                
+                // ثبت معرف فقط در صورتی که کاربر قبلاً خریدی نکرده باشد و معرف نداشته باشد
+                if (!db.userStats[userId].referrerId && db.userStats[userId].buyCount === 0) {
+                    db.userStats[userId].referrerId = referrerId;
+                    
+                    if (!db.userStats[referrerId]) {
+                        db.userStats[referrerId] = { totalSpent: 0, buyCount: 0, renewCount: 0, referralCount: 0, referralBuys: 0, rewardTokens: 0, hasMadeFirstBuy: false, referrerId: null };
+                    }
+                    db.userStats[referrerId].referralCount += 1;
+                    writeDb(db);
+                }
+            }
         }
+        // -------------------------
+
+        const isMember = await checkMembership(ctx, ctx.from.id);
+        
+        if (!isMember) {
+            return ctx.reply('⚠️ برای استفاده از خدمات ربات، لطفاً ابتدا در کانال اطلاع‌رسانی ما عضو شوید:', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [Markup.button.url('🔴 عضویت در کانال', 'https://t.me/cyphernett')],
+                        [Markup.button.callback('✅ عضو شدم', 'check_channel_join')]
+                    ]
+                }
+            });
+        }
+
+        userSteps.delete(ctx.from.id);
+        const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
+        ctx.reply(`سلام! خوش اومدی 🌹\n\n👤 <b>آیدی تلگرام:</b> ${username}\n🆔 <b>کد یکتای شما:</b> <code>${ctx.from.id}</code>\n\n👇 لطفاً یک گزینه رو انتخاب کن:`, { parse_mode: 'HTML', ...mainKeyboard });
     });
 
     bot.start(async (ctx) => {
@@ -2092,6 +2126,39 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         } 
         userSteps.delete(ctx.from.id); 
         ctx.reply('از حالت پشتیبانی خارج شدی. به منوی اصلی برگشتیم:', mainKeyboard); 
+    });
+
+    bot.hears('🤝 دریافت لینک دعوت', (ctx) => {
+        const db = readDb();
+        const userId = ctx.from.id.toString();
+        const stats = db.userStats?.[userId] || {};
+        
+        const refCount = stats.referralCount || 0;
+        const refBuys = stats.referralBuys || 0;
+        const tokens = stats.rewardTokens || 0;
+        
+        const botUsername = ctx.botInfo.username;
+        const refLink = `https://t.me/${botUsername}?start=ref_${userId}`;
+
+        const msg = `🤝 <b>سیستم همکاری در فروش (Referral)</b>\n\n` +
+                    `با دعوت از دوستان خود، به ازای <b>اولین خرید موفق</b> هر شخص، یک توکن هدیه (🎁) در قلک خود دریافت کنید!\n` +
+                    `هر توکن معادل <b>۵ گیگابایت حجم</b> یا <b>۵ روز زمان</b> برای کانفیگ دلخواه شماست.\n\n` +
+                    `📊 <b>آمار شما:</b>\n` +
+                    `👥 کل دعوت‌ها: <b>${refCount}</b> نفر\n` +
+                    `🛍 دعوت‌های منجر به خرید: <b>${refBuys}</b> نفر\n` +
+                    `🎁 قلک پاداش (استفاده نشده): <b>${tokens}</b> توکن\n\n` +
+                    `🔗 <b>لینک دعوت اختصاصی شما:</b>\n<code>${refLink}</code>\n\n` +
+                    `👇 برای اعمال پاداش روی سرویس‌های خود، دکمه زیر را لمس کنید:`;
+
+        ctx.reply(msg, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [Markup.button.callback('🎁 استفاده از پاداش (توکن)', 'claim_reward_init')],
+                    [Markup.button.callback('❌ بستن', 'close_menu')]
+                ]
+            }
+        });
     });
 
     // --- هندلر یکپارچه برای دریافت تمام مدیاها (عکس، ویدیو، ویس، سند) ---
