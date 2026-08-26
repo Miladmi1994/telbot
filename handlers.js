@@ -321,8 +321,8 @@ function setupHandlers(bot) {
             for (const userId of Object.keys(db.users || {})) {
                 if (!Array.isArray(db.users[userId])) continue;
                 for (const conf of db.users[userId]) {
-                    conf.notified = { days3: false, gb85: false, gb1: false };
-                    conf.deletedFromPanel = false; // این خط اضافه شود
+                   //conf.notified = { days3: false, gb85: false, gb1: false };
+                    conf.deletedFromPanel = false; 
                     resetCount++;
                 }
             }
