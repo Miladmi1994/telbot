@@ -1450,6 +1450,93 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ctx.editMessageText('عملیات لغو شد. می‌تونی از منوی پایین یک گزینه انتخاب کنی.');
     });
 
+    bot.action('claim_reward_init', async (ctx) => {
+        const db = readDb();
+        const userId = ctx.from.id.toString();
+        const tokens = db.userStats?.[userId]?.rewardTokens || 0;
+
+        if (tokens <= 0) {
+            return ctx.answerCbQuery('❌ شما هیچ توکن پاداشی در قلک خود ندارید!', { show_alert: true });
+        }
+
+        userSteps.set(ctx.from.id, { step: 'CLAIM_SELECT_TYPE', ts: Date.now() });
+
+        const msg = `🎁 <b>استفاده از پاداش</b>\n\nشما <b>${tokens} توکن</b> هدیه دارید.\nبا خرج کردن ۱ توکن، مایلید کدام پاداش را دریافت کنید؟`;
+        const kb = {
+            inline_keyboard: [
+                [Markup.button.callback('🔋 ۵ گیگابایت حجم', 'claim_type_gb')],
+                [Markup.button.callback('⏳ ۵ روز زمان', 'claim_type_days')],
+                [Markup.button.callback('❌ انصراف', 'cancel_flow')]
+            ]
+        };
+
+        // چک می‌کنیم اگر کاربر از چت مستقیم روی دکمه کلیک کرده بود (نه پیام کیبورد شیشه‌ای)
+        try {
+            await ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb });
+        } catch (e) {
+            await ctx.reply(msg, { parse_mode: 'HTML', reply_markup: kb });
+        }
+        ctx.answerCbQuery();
+    });
+
+    bot.action(/claim_type_(gb|days)/, async (ctx) => {
+        const type = ctx.match[1];
+        const userId = ctx.from.id.toString();
+        const db = readDb();
+        const tokens = db.userStats?.[userId]?.rewardTokens || 0;
+
+        if (tokens <= 0) {
+            return ctx.answerCbQuery('❌ موجودی توکن شما کافی نیست!', { show_alert: true });
+        }
+
+        // استخراج کانفیگ‌های معتبر و حذف نشده
+        const userConfigs = db.users[userId] || [];
+        const validConfigs = userConfigs.filter(c => !c.deletedFromPanel && c.name !== 'سرویس قبلی');
+
+        if (validConfigs.length === 0) {
+            return ctx.answerCbQuery('❌ شما هیچ کانفیگ فعالی برای اعمال پاداش ندارید!', { show_alert: true });
+        }
+
+        // ذخیره نوع پاداش انتخاب شده در حافظه موقت
+        const state = userSteps.get(ctx.from.id) || {};
+        state.step = 'CLAIM_SELECT_CONFIG';
+        state.rewardType = type;
+        userSteps.set(ctx.from.id, state);
+
+        let buttons = validConfigs.map(c => [Markup.button.callback(`⚙️ ${c.name}`, `claim_conf_${c.uuid}`)]);
+        buttons.push([Markup.button.callback('🔙 مرحله قبل', 'claim_reward_init')]);
+
+        const typeText = type === 'gb' ? '۵ گیگابایت حجم 🔋' : '۵ روز زمان ⏳';
+        
+        await ctx.editMessageText(`🎁 <b>انتخاب سرویس مقصد</b>\n\nشما پاداش <b>${typeText}</b> را انتخاب کردید.\nلطفاً کانفیگی که می‌خواهید پاداش روی آن اعمال شود را مشخص کنید:`, {
+            parse_mode: 'HTML',
+            reply_markup: { inline_keyboard: buttons }
+        });
+        ctx.answerCbQuery();
+    });
+
+    bot.action(/claim_conf_(.+)/, async (ctx) => {
+        const uuid = ctx.match[1];
+        const userId = ctx.from.id.toString();
+        const state = userSteps.get(ctx.from.id);
+        
+        if (!state || state.step !== 'CLAIM_SELECT_CONFIG') return ctx.answerCbQuery('❌ لطفاً فرآیند را مجدداً شروع کنید.', { show_alert: true });
+
+        const db = readDb();
+        const tokens = db.userStats?.[userId]?.rewardTokens || 0;
+        if (tokens <= 0) return ctx.answerCbQuery('❌ موجودی توکن شما کافی نیست!', { show_alert: true });
+
+        const userConfigs = db.users[userId] || [];
+        const conf = userConfigs.find(c => c.uuid === uuid);
+        if (!conf) return ctx.answerCbQuery('❌ کانفیگ یافت نشد!', { show_alert: true });
+
+        await ctx.answerCbQuery('⏳ در حال اعمال پاداش روی سرور...', { show_alert: false });
+        
+        // در مرحله بعد (مرحله ۵)، تابع ارتباط با پنل را در اینجا فراخوانی می‌کنیم
+        // ...
+        
+    });
+
     bot.action('dismiss_reward_msg', (ctx) => {
         ctx.answerCbQuery('✅ توکن در قلک شما ذخیره شد.');
         ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
