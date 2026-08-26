@@ -1706,7 +1706,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
-                    [Markup.button.callback('📋 بازگشت به لیست اکانت‌ها', 'dash_main')],
+                    [Markup.button.callback('🟢 اکانت‌های فعال', 'dash_active')],
                     [Markup.button.callback('❌ بستن', 'close_menu')]
                 ]
             }
