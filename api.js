@@ -639,5 +639,41 @@ async function addRewardToClient(email, uuid, rewardType, server) {
     }
 }
 
+// --- تابع اختصاصی اعمال جبران خسارت گروهی با مسیر ایمیل ---
+async function applyGroupCompensation(email, uuid, extraGB, extraDays, server) {
+    const apiClient = getApiClient(server);
+    try {
+        const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
+        if (!clientRes.data || !clientRes.data.success || !clientRes.data.obj) return { success: false };
+
+        const obj = clientRes.data.obj;
+        let currentTotal = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
+        let currentExpiry = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
+
+        let newTotalByte = currentTotal;
+        if (currentTotal > 0 && extraGB > 0) newTotalByte += (extraGB * 1073741824);
+
+        let newExpiryTime = currentExpiry;
+        if (currentExpiry > 0 && extraDays > 0) newExpiryTime += (extraDays * 24 * 60 * 60 * 1000);
+
+        const updatePayload = {
+            id: uuid,
+            email: email,
+            enable: obj.client?.enable !== undefined ? obj.client.enable : (obj.enable !== undefined ? obj.enable : true),
+            total: newTotalByte,
+            totalGB: newTotalByte,
+            expiryTime: newExpiryTime,
+            limitIp: obj.client?.limitIp || obj.limitIp || 0,
+            tgId: obj.client?.tgId || obj.tgId || 0,
+            subId: obj.client?.subId || obj.subId || ''
+        };
+
+        const updateRes = await apiClient.post(`panel/api/clients/update/${encodeURIComponent(email)}`, updatePayload);
+        return { success: !!(updateRes.data && updateRes.data.success) };
+    } catch (error) {
+        return { success: false };
+    }
+}
+
 // حتماً یادت نره تابع تست رو هم اکسپورت کنی
-module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient };
+module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation };

@@ -2,7 +2,7 @@ const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
 const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, getAdminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu } = require('./keyboards');
 const { readDb, writeDb } = require('./db');
-const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient } = require('./api');
+const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation } = require('./api');
 const fs = require('fs');
 const path = require('path');
 
@@ -1695,6 +1695,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const dbConf = (freshDb.users[userId] || []).find(c => c.uuid === uuid);
         if (dbConf) {
             dbConf.notified = { days3: false, gb85: false, gb1: false };
+            delete dbConf.panelStats;
         }
 
         writeDb(freshDb);
@@ -3239,17 +3240,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                                 continue;
                             }
 
-                            const currentTotalGB = traffic.total / 1073741824;
-                            let remainDays = 0;
-                            if (traffic.expiryTime > 0) {
-                                const diffMs = traffic.expiryTime - Date.now();
-                                if (diffMs > 0) remainDays = diffMs / (1000 * 60 * 60 * 24);
-                            }
-
-                            const finalGB = traffic.total === 0 ? 0 : currentTotalGB + addGb;
-                            const finalDays = traffic.expiryTime === 0 ? 0 : Math.ceil(remainDays + addDays);
-
-                            const result = await renewClient(conf.uuid, conf.email, conf.email, finalGB, finalDays, targetServer);
+                            const result = await applyGroupCompensation(conf.email, conf.uuid, addGb, addDays, targetServer);
                             
                             if (result && result.success) {
                                 successCount++;
