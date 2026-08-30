@@ -1,14 +1,20 @@
 const fs = require('fs');
 const path = require('path');
-const { DatabaseSync } = require('node:sqlite');
+const Database = require('better-sqlite3');
 
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 function openDatabase(dbFilePath) {
     const dir = path.dirname(dbFilePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const db = new DatabaseSync(dbFilePath);
-    db.exec('PRAGMA foreign_keys = ON');
+    
+    // استفاده از better-sqlite3
+    const db = new Database(dbFilePath);
+    
+    // فعال‌سازی حالت WAL برای جلوگیری از خطای Database Locked و تداخل در نوشتن همزمان
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    
     db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
     
     try { db.exec("ALTER TABLE global_stats ADD COLUMN period_income INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
