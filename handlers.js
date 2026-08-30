@@ -2103,14 +2103,14 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
     bot.action('panel_tut_win', async (ctx) => {
         await ctx.answerCbQuery('در حال دریافت لینک...', { show_alert: false });
         const v2raynLink = await fetchGithubLatest('2dust/v2rayN', 'windows-64.zip');
-        const incyExe = 'https://github.com/INCY-DEV/incy-platforms/releases/download/desktop-v3.2.3/incy-windows-setup.exe';
+        const githubLink = await fetchGithubLatest('INCY-DEV/incy-platforms', 'incy-windows-setup.exe');
 
         ctx.editMessageText('💻 <b>اپلیکیشن‌های ویندوز</b>\n\nبرای دانلود مستقیم آخرین نسخه، روی لینک زیر کلیک کنید:', {
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
                     [Markup.button.url('دانلود v2rayN', v2raynLink)],
-                    [Markup.button.url('دانلود Incy', incyExe)],
+                    [Markup.button.url('دانلود Incy', githubLink)],
                     [Markup.button.callback('🔙 بازگشت', 'back_tut_main')]
                 ]
             }
