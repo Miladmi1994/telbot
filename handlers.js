@@ -2,7 +2,7 @@ const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
 const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, getAdminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu } = require('./keyboards');
 const { readDb, writeDb } = require('./db');
-const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation } = require('./api');
+const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap } = require('./api');
 const fs = require('fs');
 const path = require('path');
 
@@ -174,17 +174,65 @@ function setupHandlers(bot) {
 
     bot.action('admin_broadcast', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const servers = db.servers || [];
+        
+        let buttons = [
+            [Markup.button.callback('👤 کاربران عادی', 'broadcast_target_normal'), Markup.button.callback('👑 کاربران VIP', 'broadcast_target_vip')],
+            [Markup.button.callback('🌐 همه کاربران', 'broadcast_target_all')]
+        ];
+
+        // اگر سروری ثبت شده بود دکمه تفکیک سرور را نشان بده
+        if (servers.length > 0) {
+            buttons.push([Markup.button.callback('🖥 تفکیک بر اساس سرور', 'broadcast_select_server')]);
+        }
+        buttons.push([Markup.button.callback('❌ لغو ارسال', 'cancel_broadcast')]);
+
         ctx.editMessageText('📢 لطفاً گروه هدف برای ارسال پیام را انتخاب کنید:', { 
+            parse_mode: 'HTML',
+            reply_markup: { inline_keyboard: buttons }
+        });
+        ctx.answerCbQuery();
+    });
+
+    bot.action('broadcast_select_server', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const servers = db.servers || [];
+        
+        let buttons = servers.map(s => [Markup.button.callback(`🖥 ${s.name}`, `broadcast_srv_${s.id}`)]);
+        buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_broadcast')]);
+
+        ctx.editMessageText('🖥 <b>انتخاب سرور مقصد</b>\nپیام شما فقط به کاربرانی ارسال می‌شود که حداقل یک اکانت روی این سرور دارند:', {
+            parse_mode: 'HTML',
+            reply_markup: { inline_keyboard: buttons }
+        });
+    });
+
+    bot.action(/broadcast_srv_(.+)/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const serverId = ctx.match[1];
+        const db = readDb();
+        const server = (db.servers || []).find(s => s.id === serverId);
+        const serverName = server ? server.name : 'انتخابی';
+
+        adminSteps.set(ctx.from.id, { step: 'WAITING_BROADCAST_MESSAGE', target: 'server', serverId: serverId });
+        
+        ctx.editMessageText(`📢 لطفاً پیام خود را برای کاربران سرور <b>${serverName}</b> بفرستید.\n\n(پشتیبانی از متن، عکس، ویدیو و کپشن)`, { 
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
-                    [Markup.button.callback('👤 کاربران عادی', 'broadcast_target_normal')],
-                    [Markup.button.callback('👑 کاربران VIP', 'broadcast_target_vip')],
-                    [Markup.button.callback('🌐 همه کاربران', 'broadcast_target_all')],
                     [Markup.button.callback('❌ لغو ارسال', 'cancel_broadcast')]
                 ]
             }
         });
+        ctx.answerCbQuery();
+    });
+
+    bot.action('cancel_broadcast', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        adminSteps.delete(ctx.from.id);
+        ctx.editMessageText('❌ عملیات ارسال همگانی لغو شد.');
         ctx.answerCbQuery();
     });
 
@@ -237,6 +285,17 @@ function setupHandlers(bot) {
                 usersArray = usersArray.filter(uid => vipUsers.includes(uid));
             } else if (target === 'normal') {
                 usersArray = usersArray.filter(uid => !vipUsers.includes(uid));
+            } else if (target === 'server') {
+                const targetServerId = adminState.serverId;
+                usersArray = usersArray.filter(uid => {
+                    const userConfigs = db.users[uid] || [];
+                    return userConfigs.some(conf => {
+                        let cSrvId = conf.serverId;
+                        // اگر سرور در کانفیگ ثبت نشده بود، از سرور پیش‌فرض استفاده می‌کنیم
+                        if (!cSrvId) cSrvId = conf.isVip ? db.settings.activeVipServerId : db.settings.activeServerId;
+                        return cSrvId === targetServerId;
+                    });
+                });
             }
             // ----------------------------------------
             
@@ -1489,11 +1548,28 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
     bot.action('reset_finance', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
+        ctx.editMessageText('⚠️ <b>آیا از صفر کردن کل آمار مالی و تعداد فروش اطمینان دارید؟</b>\nاین عملیات قابل بازگشت نیست.', {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [Markup.button.callback('✅ بله، صفر شود', 'confirm_reset_finance')],
+                    [Markup.button.callback('❌ انصراف', 'admin_finance_menu')]
+                ]
+            }
+        });
+        ctx.answerCbQuery();
+    });
+
+    bot.action('confirm_reset_finance', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
         const db = readDb();
         db.totalIncome = 0;
         db.successfulSales = 0;
         writeDb(db);
-        ctx.answerCbQuery('🧹 آمار مالی و تعداد فروش با موفقیت صفر شد!', { show_alert: true });
+        ctx.editMessageText('🧹 آمار مالی و تعداد فروش با موفقیت صفر شد.', {
+            reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'admin_finance_menu')]] }
+        });
+        ctx.answerCbQuery('آمار با موفقیت صفر شد.', { show_alert: true });
     });
 
     bot.action(/manual_p_(.*)/, async (ctx) => {
@@ -1796,12 +1872,39 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             return tsB - tsA; 
         });
 
-        return await Promise.all(userConfigs.map(async (conf) => {
-            const targetServer = getTargetServer(db, conf); 
+        // گروه‌بندی کانفیگ‌ها بر اساس سرور
+        const configsByServer = {};
+        for (const conf of userConfigs) {
+            const targetServer = getTargetServer(db, conf);
+            if (!targetServer) continue;
+            if (!configsByServer[targetServer.id]) {
+                configsByServer[targetServer.id] = { server: targetServer, configs: [] };
+            }
+            configsByServer[targetServer.id].configs.push(conf);
+        }
+
+        const trafficDataByEmail = {};
+
+        // دریافت اطلاعات از هر سرور فقط با *یک ریکوئست*
+        for (const srvId in configsByServer) {
+            const { server, configs } = configsByServer[srvId];
+            const trafficMap = await getServerTrafficMap(server);
             
-            const traffic = await getClientTraffic(conf.email, targetServer);
-            
-            if (!traffic) return { conf, status: 'deleted', remainDays: -999 };
+            if (trafficMap) {
+                for (const conf of configs) {
+                    trafficDataByEmail[conf.email] = trafficMap[conf.email] || null;
+                }
+            } else {
+                // سیستم جایگزین (Fallback) در صورت خطای شبکه سرور
+                for (const conf of configs) {
+                    trafficDataByEmail[conf.email] = await getClientTraffic(conf.email, server);
+                }
+            }
+        }
+
+        return userConfigs.map(conf => {
+            const traffic = trafficDataByEmail[conf.email];
+            if (traffic === undefined || traffic === null) return { conf, status: 'deleted', remainDays: -999 };
             
             const usedGB = (traffic.up + traffic.down) / 1073741824;
             const totalGB = traffic.total / 1073741824;
@@ -1820,7 +1923,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             if (traffic.total > 0 && usedGB >= totalGB) isExpired = true;
             
             return { conf, status: isExpired ? 'expired' : 'active', remainDays };
-        }));
+        });
     }
 
     bot.action('dash_active', async (ctx) => {

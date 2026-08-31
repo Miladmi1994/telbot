@@ -675,5 +675,46 @@ async function applyGroupCompensation(email, uuid, extraGB, extraDays, server) {
     }
 }
 
+// --- تابع جدید برای دریافت یکباره ترافیک تمام کلاینت‌های یک سرور ---
+async function getServerTrafficMap(server) {
+    const apiClient = getApiClient(server);
+    const trafficMap = {};
+    try {
+        const listRes = await apiClient.get('panel/api/inbounds/list');
+        if (listRes.data && listRes.data.success && listRes.data.obj) {
+            for (const inbound of listRes.data.obj) {
+                // ۱. ابتدا کلاینت‌ها را از تنظیمات اینباند می‌خوانیم تا حتی آن‌هایی که مصرفشان صفر است جا نمانند
+                if (inbound.settings) {
+                    try {
+                        const settings = JSON.parse(inbound.settings);
+                        if (settings.clients) {
+                            for (const c of settings.clients) {
+                                if (c.email && !trafficMap[c.email]) {
+                                    trafficMap[c.email] = { up: 0, down: 0, total: c.totalGB || 0, expiryTime: c.expiryTime || 0 };
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }
+                // ۲. سپس مقادیر را با ترافیک واقعی مصرف‌شده آپدیت می‌کنیم
+                if (inbound.clientStats) {
+                    for (const cStats of inbound.clientStats) {
+                        if (!trafficMap[cStats.email]) {
+                            trafficMap[cStats.email] = { up: 0, down: 0, total: 0, expiryTime: 0 };
+                        }
+                        trafficMap[cStats.email].up += cStats.up || 0;
+                        trafficMap[cStats.email].down += cStats.down || 0;
+                        if (cStats.total > 0) trafficMap[cStats.email].total = cStats.total;
+                        if (cStats.expiryTime > 0) trafficMap[cStats.email].expiryTime = cStats.expiryTime;
+                    }
+                }
+            }
+            return trafficMap;
+        }
+    } catch (error) {
+        console.error(`⚠️ [TrafficMap] خطا در دریافت لیست انبوه سرور ${server?.name}:`, error.message);
+    }
+    return null; // در صورت خطا
+}
 // حتماً یادت نره تابع تست رو هم اکسپورت کنی
-module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation };
+module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap };
