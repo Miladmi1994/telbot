@@ -1885,24 +1885,19 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
         const trafficDataByEmail = {};
 
-        // دریافت اطلاعات از هر سرور فقط با *یک ریکوئست*
-        // دریافت اطلاعات از هر سرور فقط با *یک ریکوئست*
         for (const srvId in configsByServer) {
             const { server, configs } = configsByServer[srvId];
             const trafficMap = await getServerTrafficMap(server);
             
             if (trafficMap) {
                 for (const conf of configs) {
-                    // اگر در لیست انبوه پیدا شد
                     if (trafficMap[conf.email] !== undefined) {
                         trafficDataByEmail[conf.email] = trafficMap[conf.email];
                     } else {
-                        // اگر در لیست انبوه نبود، مستقیماً به صورت تکی استعلام بگیر (حل مشکل کانفیگ‌های مخفی)
                         trafficDataByEmail[conf.email] = await getClientTraffic(conf.email, server);
                     }
                 }
             } else {
-                // سیستم جایگزین (Fallback) در صورت خطای شبکه سرور
                 for (const conf of configs) {
                     trafficDataByEmail[conf.email] = await getClientTraffic(conf.email, server);
                 }
@@ -1919,10 +1914,14 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             let isExpired = false;
             let remainDays = 999;
             
-            if (traffic.expiryTime > 0) {
-                remainDays = (traffic.expiryTime - Date.now()) / (1000 * 60 * 60 * 24);
+            // اصلاح استاندارد واحد زمان (تبدیل ثانیه به میلی‌ثانیه در صورت نیاز)
+            let expTime = traffic.expiryTime;
+            if (expTime > 0 && expTime < 1e12) expTime *= 1000;
+
+            if (expTime > 0) {
+                remainDays = (expTime - Date.now()) / (1000 * 60 * 60 * 24);
                 if (remainDays < 0) isExpired = true;
-            } else if (traffic.expiryTime === 0 && traffic.total > 0 && usedGB >= totalGB) {
+            } else if (expTime === 0 && traffic.total > 0 && usedGB >= totalGB) {
                 isExpired = true;
                 remainDays = -1;
             }
