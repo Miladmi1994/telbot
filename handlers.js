@@ -3625,7 +3625,7 @@ async function runVolumeCheckJob() {
             
             let updates = [];
             for (let conf of configs) {
-                if (conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
+                if (conf.deletedFromPanel || conf.name === 'سرویس قبلی' || conf.email.startsWith('Test_') || conf.name.includes('تست')) continue;
                 const targetServer = getTargetServer(tempDb, conf);
                 if (!targetServer) continue;
 
@@ -3730,7 +3730,7 @@ async function runExpiryWarningJob() {
             
             let updates = [];
             for (let conf of configs) {
-                if (conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
+                if (conf.deletedFromPanel || conf.name === 'سرویس قبلی' || conf.email.startsWith('Test_') || conf.name.includes('تست')) continue;
                 const targetServer = getTargetServer(tempDb, conf);
                 if (!targetServer) continue;
 
