@@ -2,7 +2,7 @@ const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
 const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, getAdminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu } = require('./keyboards');
 const { readDb, writeDb } = require('./db');
-const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap } = require('./api');
+const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation } = require('./api');
 const fs = require('fs');
 const path = require('path');
 
@@ -1872,49 +1872,27 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             return tsB - tsA; 
         });
 
-        // گروه‌بندی کانفیگ‌ها بر اساس سرور
-        const configsByServer = {};
+        // استعلام تکی و دقیق برای تک تک کانفیگ‌ها (روش پایدار قبلی)
+        const results = [];
         for (const conf of userConfigs) {
             const targetServer = getTargetServer(db, conf);
-            if (!targetServer) continue;
-            if (!configsByServer[targetServer.id]) {
-                configsByServer[targetServer.id] = { server: targetServer, configs: [] };
+            if (!targetServer) {
+                results.push({ conf, status: 'deleted', remainDays: -999 });
+                continue;
             }
-            configsByServer[targetServer.id].configs.push(conf);
-        }
 
-        const trafficDataByEmail = {};
-
-        for (const srvId in configsByServer) {
-            const { server, configs } = configsByServer[srvId];
-            const trafficMap = await getServerTrafficMap(server);
-            
-            if (trafficMap) {
-                for (const conf of configs) {
-                    if (trafficMap[conf.email] !== undefined) {
-                        trafficDataByEmail[conf.email] = trafficMap[conf.email];
-                    } else {
-                        trafficDataByEmail[conf.email] = await getClientTraffic(conf.email, server);
-                    }
-                }
-            } else {
-                for (const conf of configs) {
-                    trafficDataByEmail[conf.email] = await getClientTraffic(conf.email, server);
-                }
+            const traffic = await getClientTraffic(conf.email, targetServer);
+            if (!traffic) {
+                results.push({ conf, status: 'deleted', remainDays: -999 });
+                continue;
             }
-        }
 
-        return userConfigs.map(conf => {
-            const traffic = trafficDataByEmail[conf.email];
-            if (traffic === undefined || traffic === null) return { conf, status: 'deleted', remainDays: -999 };
-            
             const usedGB = (traffic.up + traffic.down) / 1073741824;
             const totalGB = traffic.total / 1073741824;
             
             let isExpired = false;
             let remainDays = 999;
             
-            // اصلاح استاندارد واحد زمان (تبدیل ثانیه به میلی‌ثانیه در صورت نیاز)
             let expTime = traffic.expiryTime;
             if (expTime > 0 && expTime < 1e12) expTime *= 1000;
 
@@ -1928,8 +1906,10 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
             if (traffic.total > 0 && usedGB >= totalGB) isExpired = true;
             
-            return { conf, status: isExpired ? 'expired' : 'active', remainDays };
-        });
+            results.push({ conf, status: isExpired ? 'expired' : 'active', remainDays });
+        }
+
+        return results;
     }
 
     bot.action('dash_active', async (ctx) => {
