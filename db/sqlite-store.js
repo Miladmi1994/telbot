@@ -245,17 +245,21 @@ function saveState(db, data) {
         );
 
         db.prepare(`
-            UPDATE settings SET
-                sales_open = ?,
-                maintenance = ?,
-                active_server_id = ?,
-                active_vip_server_id = ?
+            UPDATE global_stats SET
+                total_income = ?,
+                successful_sales = ?,
+                abandoned_carts = ?,
+                test_to_buy_conversion = ?,
+                period_income = ?,
+                period_expenses = ?
             WHERE id = 1
         `).run(
-            data.settings?.salesOpen ? 1 : 0,
-            data.settings?.maintenance ? 1 : 0,
-            data.settings?.activeServerId || null,
-            data.settings?.activeVipServerId || null
+            data.totalIncome || 0,
+            data.successfulSales || 0,
+            data.stats?.abandonedCarts || 0,
+            data.stats?.testToBuyConversion || 0,
+            data.periodIncome || 0,
+            data.periodExpenses || 0
         );
 
         db.prepare('DELETE FROM payments').run();
