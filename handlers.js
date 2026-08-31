@@ -1886,13 +1886,20 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const trafficDataByEmail = {};
 
         // دریافت اطلاعات از هر سرور فقط با *یک ریکوئست*
+        // دریافت اطلاعات از هر سرور فقط با *یک ریکوئست*
         for (const srvId in configsByServer) {
             const { server, configs } = configsByServer[srvId];
             const trafficMap = await getServerTrafficMap(server);
             
             if (trafficMap) {
                 for (const conf of configs) {
-                    trafficDataByEmail[conf.email] = trafficMap[conf.email] || null;
+                    // اگر در لیست انبوه پیدا شد
+                    if (trafficMap[conf.email] !== undefined) {
+                        trafficDataByEmail[conf.email] = trafficMap[conf.email];
+                    } else {
+                        // اگر در لیست انبوه نبود، مستقیماً به صورت تکی استعلام بگیر (حل مشکل کانفیگ‌های مخفی)
+                        trafficDataByEmail[conf.email] = await getClientTraffic(conf.email, server);
+                    }
                 }
             } else {
                 // سیستم جایگزین (Fallback) در صورت خطای شبکه سرور
