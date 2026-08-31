@@ -41,22 +41,23 @@ function resolveDbPath() {
     return found;
 }
 
-function copySqliteBackup(dbPath, rawBackup) {
+async function copySqliteBackup(dbPath, rawBackup) {
     try {
-        const { DatabaseSync } = require('node:sqlite');
-        const db = new DatabaseSync(dbPath);
-        const escaped = rawBackup.replace(/'/g, "''");
-        db.exec(`VACUUM INTO '${escaped}'`);
+        const Database = require('better-sqlite3');
+        // دیتابیس رو فقط برای خواندن باز می‌کنیم تا تداخلی با ربات اصلی نداشته باشه
+        const db = new Database(dbPath, { readonly: true });
+        
+        // استفاده از متد قدرتمند بکاپ‌گیری better-sqlite3
+        await db.backup(rawBackup);
         db.close();
     } catch (err) {
-        console.warn(`VACUUM INTO failed (${err.message}); falling back to file copy`);
+        console.warn(`better-sqlite3 backup failed (${err.message}); falling back to file copy`);
         if (fs.existsSync(rawBackup)) {
             try { fs.unlinkSync(rawBackup); } catch (_) {}
         }
         fs.copyFileSync(dbPath, rawBackup);
     }
 }
-
 async function createBackup(dbPath) {
     fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -66,7 +67,7 @@ async function createBackup(dbPath) {
     const rawBackup = path.join(BACKUP_DIR, `${base}-${stamp}${ext}`);
 
     if (dbPath.endsWith('.db') || dbPath.endsWith('.sqlite')) {
-        copySqliteBackup(dbPath, rawBackup);
+        await copySqliteBackup(dbPath, rawBackup);
     } else {
         fs.copyFileSync(dbPath, rawBackup);
     }

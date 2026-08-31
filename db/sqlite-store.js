@@ -224,7 +224,7 @@ function loadState(db) {
     };
 }
 
-function saveState(db, data) {
+ function saveState(db, data) {
     db.exec('BEGIN');
 
     try {
