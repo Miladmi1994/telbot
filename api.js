@@ -675,6 +675,33 @@ async function applyGroupCompensation(email, uuid, extraGB, extraDays, server) {
     }
 }
 
+// --- تابع جدید و فوق‌العاده دقیق برای دریافت ترافیک کل کلاینت‌ها از API جدید پنل ---
+async function getServerTrafficMap(server) {
+    const apiClient = getApiClient(server);
+    const trafficMap = {};
+    try {
+        // دریافت صفحه اول با سایز بزرگ تا کل کاربران در یک درخواست بیایند
+        const res = await apiClient.get('panel/api/clients/list/paged?page=1&pageSize=500&sort=createdAt&order=ascend');
+        if (res.data && res.data.success && res.data.obj && res.data.obj.items) {
+            for (const item of res.data.obj.items) {
+                const email = item.email;
+                if (!email) continue;
+                
+                const t = item.traffic || {};
+                trafficMap[email] = {
+                    up: t.up || 0,
+                    down: t.down || 0,
+                    total: t.total || item.totalGB || 0,
+                    expiryTime: t.expiryTime || item.expiryTime || 0
+                };
+            }
+            return trafficMap;
+        }
+    } catch (error) {
+        console.error(`⚠️ [TrafficMap] خطا در دریافت لیست کلاینت‌های سرور ${server?.name}:`, error.message);
+    }
+    return null;
+}
 
 // حتماً یادت نره تابع تست رو هم اکسپورت کنی
-module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation };
+module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap };

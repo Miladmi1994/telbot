@@ -2,7 +2,7 @@ const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
 const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, getAdminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu } = require('./keyboards');
 const { readDb, writeDb } = require('./db');
-const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation } = require('./api');
+const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap } = require('./api');
 const fs = require('fs');
 const path = require('path');
 
@@ -1861,7 +1861,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         });
     });
 
-    async function fetchUserConfigsStatus(userId) {
+   async function fetchUserConfigsStatus(userId) {
         const db = readDb();
         let userConfigs = [...(db.users[userId] || [])];
 
@@ -1872,21 +1872,38 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             return tsB - tsA; 
         });
 
-        // استعلام تکی و دقیق برای تک تک کانفیگ‌ها (روش پایدار قبلی)
-        const results = [];
+        // گروه‌بندی کانفیگ‌ها بر اساس سرور
+        const configsByServer = {};
         for (const conf of userConfigs) {
             const targetServer = getTargetServer(db, conf);
-            if (!targetServer) {
-                results.push({ conf, status: 'deleted', remainDays: -999 });
-                continue;
+            if (!targetServer) continue;
+            if (!configsByServer[targetServer.id]) {
+                configsByServer[targetServer.id] = { server: targetServer, configs: [] };
             }
+            configsByServer[targetServer.id].configs.push(conf);
+        }
 
-            const traffic = await getClientTraffic(conf.email, targetServer);
-            if (!traffic) {
-                results.push({ conf, status: 'deleted', remainDays: -999 });
-                continue;
+        const trafficDataByEmail = {};
+
+        // دریافت یکجای اطلاعات از هر سرور با سرعت بالا
+        for (const srvId in configsByServer) {
+            const { server, configs } = configsByServer[srvId];
+            const trafficMap = await getServerTrafficMap(server);
+            
+            for (const conf of configs) {
+                if (trafficMap && trafficMap[conf.email] !== undefined) {
+                    trafficDataByEmail[conf.email] = trafficMap[conf.email];
+                } else {
+                    // لایه اطمینان (Fallback): اگر به هر دلیلی در لیست نبود، استعلام تکی بزن
+                    trafficDataByEmail[conf.email] = await getClientTraffic(conf.email, server);
+                }
             }
+        }
 
+        return userConfigs.map(conf => {
+            const traffic = trafficDataByEmail[conf.email];
+            if (traffic === undefined || traffic === null) return { conf, status: 'deleted', remainDays: -999 };
+            
             const usedGB = (traffic.up + traffic.down) / 1073741824;
             const totalGB = traffic.total / 1073741824;
             
@@ -1906,10 +1923,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
             if (traffic.total > 0 && usedGB >= totalGB) isExpired = true;
             
-            results.push({ conf, status: isExpired ? 'expired' : 'active', remainDays });
-        }
-
-        return results;
+            return { conf, status: isExpired ? 'expired' : 'active', remainDays };
+        });
     }
 
     bot.action('dash_active', async (ctx) => {
