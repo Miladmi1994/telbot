@@ -703,5 +703,4 @@ async function getServerTrafficMap(server) {
     return null;
 }
 
-// حتماً یادت نره تابع تست رو هم اکسپورت کنی
 module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap };

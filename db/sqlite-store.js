@@ -42,6 +42,8 @@ function openDatabase(dbFilePath) {
     try { db.exec("ALTER TABLE user_stats ADD COLUMN referral_count INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
     try { db.exec("ALTER TABLE user_stats ADD COLUMN referral_buys INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
     try { db.exec("ALTER TABLE user_stats ADD COLUMN reward_tokens INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE settings ADD COLUMN custom_plan_enabled INTEGER NOT NULL DEFAULT 1;"); } catch (e) {}
+    try { db.exec("ALTER TABLE plans ADD COLUMN discount_percent INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
 
     return db;
 }
@@ -54,7 +56,8 @@ function rowToPlan(row) {
         days: row.days,
         price: row.price,
         btnText: row.btn_text,
-        sold: row.sold
+        sold: row.sold,
+        discountPercent: row.discount_percent || 0
     };
     if (row.sort_order != null) plan.order = row.sort_order;
     if (row.show_in_new != null) plan.showInNew = !!row.show_in_new;
@@ -207,6 +210,7 @@ function loadState(db) {
             activeServerId: settingsRow?.active_server_id || undefined,
             activeVipServerId: settingsRow?.active_vip_server_id || undefined,
             adminExemptReferral: !!settingsRow?.admin_exempt_referral,
+            customPlanEnabled: settingsRow?.custom_plan_enabled !== 0,
             plans
         },
         testUsers,
@@ -234,14 +238,16 @@ function loadState(db) {
                 maintenance = ?,
                 active_server_id = ?,
                 active_vip_server_id = ?,
-                admin_exempt_referral = ?
+                admin_exempt_referral = ?,
+                custom_plan_enabled = ?
             WHERE id = 1
         `).run(
             data.settings?.salesOpen ? 1 : 0,
             data.settings?.maintenance ? 1 : 0,
             data.settings?.activeServerId || null,
             data.settings?.activeVipServerId || null,
-            data.settings?.adminExemptReferral ? 1 : 0
+            data.settings?.adminExemptReferral ? 1 : 0,
+            data.settings?.customPlanEnabled === false ? 0 : 1 // <--- اضافه شد
         );
 
         db.prepare(`
@@ -275,8 +281,8 @@ function loadState(db) {
         const insertPlan = db.prepare(`
             INSERT INTO plans (
                 id, name, gb, days, price, btn_text, sold,
-                sort_order, show_in_new, show_in_renew, target_user_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                sort_order, show_in_new, show_in_renew, target_user_id, discount_percent
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         (data.settings?.plans || []).forEach((plan, index) => {
@@ -291,7 +297,8 @@ function loadState(db) {
                 plan.order ?? index + 1,
                 plan.showInNew == null ? null : (plan.showInNew ? 1 : 0),
                 plan.showInRenew == null ? null : (plan.showInRenew ? 1 : 0),
-                plan.targetUserId ?? null
+                plan.targetUserId ?? null,
+                plan.discountPercent || 0
             );
         });
 

@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
-const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, getAdminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu } = require('./keyboards');
+const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, getAdminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu, getAdminPlansMenu, getSinglePlanMenu} = require('./keyboards');
 const { readDb, writeDb } = require('./db');
 const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap } = require('./api');
 const fs = require('fs');
@@ -368,7 +368,6 @@ function setupHandlers(bot) {
         ctx.reply(`✅ درآمد دوره فعلی با موفقیت روی ${amount.toLocaleString('en-US')} تومان تنظیم شد.`);
     });
 
-    // باید قبل از bot.on('text') ثبت شود، وگرنه دستور توسط هندلر متن بلعیده می‌شود
     bot.command('run_jobs', async (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
 
@@ -1499,52 +1498,105 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ctx.answerCbQuery();
     });
 
+
+    // -- ورود به منوی اصلی پکیج‌ها --
     bot.action('admin_plans_menu', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
-        ctx.editMessageText('📦 <b>مدیریت پکیج‌ها</b>\nیک گزینه رو انتخاب کن:', {
-            parse_mode: 'HTML',
-            reply_markup: {
-                inline_keyboard: [
-                    [Markup.button.callback('➕ افزودن یا ویرایش پکیج', 'admin_add_plan')],
-                    [Markup.button.callback('📋 لیست پکیج‌های فعلی', 'admin_view_plans')],
-                    [Markup.button.callback('➖ حذف پکیج', 'admin_remove_plan')],
-                    [Markup.button.callback('🔙 بازگشت', 'back_admin')]
-                ]
-            }
-        });
-    });
-
-    bot.action('admin_view_plans', (ctx) => {
         const db = readDb();
-        const plans = db.settings.plans || [];
-        if (plans.length === 0) return ctx.answerCbQuery('هیچ پکیجی وجود ندارد.', {show_alert:true});
-        
-        let text = '📋 <b>لیست پکیج‌های فعلی:</b>\n\n';
-        plans.forEach(p => {
-            text += `🔖 شناسه: <code>${p.id}</code>\n🏷 نام: ${p.name}\n📦 حجم: ${p.gb} | ⏳ روز: ${p.days}\n💰 قیمت: ${p.price}\n👁 خرید جدید: ${p.showInNew ? 'بله' : 'خیر'} | 🔄 تمدید: ${p.showInRenew ? 'بله' : 'خیر'}\n👤 اختصاصی برای: <code>${p.targetUserId || 'همه'}</code>\n〰️〰️〰️〰️\n`;
+        adminSteps.delete(ctx.from.id);
+        ctx.editMessageText('📦 <b>مدیریت پکیج‌ها</b>\n\nبرای ویرایش روی هر پکیج کلیک کنید:', {
+            parse_mode: 'HTML',
+            reply_markup: getAdminPlansMenu(db).reply_markup
         });
-        ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'admin_plans_menu')]] } });
     });
 
-    bot.action('admin_add_plan', (ctx) => {
-        adminSteps.set(ctx.from.id, { step: 'ADD_PLAN_FORMAT' });
-        const text = `برای افزودن یا آپدیت پکیج، اطلاعات رو دقیقاً با فرمت زیر کپی کن و با مقادیر خودت بفرست:\n\n` +
-        `شناسه: custom_1\n` +
-        `نام: 20 گیگ ویژه\n` +
-        `حجم: 20\n` +
-        `روز: 15\n` +
-        `قیمت: 100000\n` +
-        `ترتیب: 1\n` +
-        `نمایش در خرید جدید: بله\n` +
-        `نمایش در تمدید: خیر\n` +
-        `آیدی کاربر خاص: ندارد`;
-        ctx.reply(text);
+    // -- تاگل روشن/خاموش بسته دلخواه --
+    bot.action('toggle_custom_plan', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        db.settings.customPlanEnabled = !db.settings.customPlanEnabled;
+        writeDb(db);
+        ctx.editMessageReplyMarkup(getAdminPlansMenu(db).reply_markup);
+        ctx.answerCbQuery(db.settings.customPlanEnabled ? '✅ بسته دلخواه فعال شد' : '❌ بسته دلخواه غیرفعال شد');
     });
 
-    bot.action('admin_remove_plan', (ctx) => {
-        adminSteps.set(ctx.from.id, { step: 'REMOVE_PLAN_ID' });
-        ctx.reply('➖ شناسه (ID) پکیجی که می‌خوای حذف بشه رو بفرست:');
+    // -- ورود به ویرایش یک پکیج خاص --
+    bot.action(/edit_plan_(.+)/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const planId = ctx.match[1];
+        const db = readDb();
+        const plan = (db.settings.plans || []).find(p => p.id === planId);
+        if (!plan) return ctx.answerCbQuery('❌ پکیج یافت نشد!', {show_alert:true});
+        
+        adminSteps.delete(ctx.from.id);
+        
+        let finalPrice = plan.price;
+        let discText = '';
+        if (plan.discountPercent > 0) {
+            finalPrice = plan.price - (plan.price * (plan.discountPercent / 100));
+            discText = `\n💰 <b>قیمت با تخفیف:</b> ${finalPrice.toLocaleString('en-US')} تومان`;
+        }
+
+        const text = `⚙️ <b>مدیریت پکیج</b>\n\n🔖 شناسه: <code>${plan.id}</code>\n🏷 نام: ${plan.name}\n📦 حجم: ${plan.gb} گیگ | ⏳ زمان: ${plan.days} روز\n💵 قیمت پایه: ${plan.price.toLocaleString('en-US')} تومان${discText}\n\nجهت ویرایش یک بخش را انتخاب کنید:`;
+        ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: getSinglePlanMenu(plan).reply_markup });
     });
+
+    // -- حذف پکیج --
+    bot.action(/del_plan_(.+)/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const planId = ctx.match[1];
+        const db = readDb();
+        db.settings.plans = (db.settings.plans || []).filter(p => p.id !== planId);
+        writeDb(db);
+        ctx.answerCbQuery('🗑 پکیج حذف شد', {show_alert:true});
+        ctx.editMessageText('📦 پکیج حذف شد. لیست به‌روز شده:', { parse_mode: 'HTML', reply_markup: getAdminPlansMenu(db).reply_markup });
+    });
+
+    // -- تاگل نمایش در خرید/تمدید --
+    bot.action(/toggle_p_(new|renew)_(.+)/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const type = ctx.match[1];
+        const planId = ctx.match[2];
+        const db = readDb();
+        const planIndex = (db.settings.plans || []).findIndex(p => p.id === planId);
+        
+        if (planIndex > -1) {
+            if (type === 'new') db.settings.plans[planIndex].showInNew = !(db.settings.plans[planIndex].showInNew !== false);
+            else db.settings.plans[planIndex].showInRenew = !(db.settings.plans[planIndex].showInRenew !== false);
+            writeDb(db);
+            ctx.editMessageReplyMarkup(getSinglePlanMenu(db.settings.plans[planIndex]).reply_markup);
+        }
+        ctx.answerCbQuery();
+    });
+
+    // -- درخواست مقدار جدید از ادمین برای فیلدهای پکیج --
+    bot.action(/edit_p_(name|gb|days|price|disc|user)_(.+)/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const field = ctx.match[1];
+        const planId = ctx.match[2];
+        adminSteps.set(ctx.from.id, { step: 'EDIT_PLAN_FIELD', planId, field });
+        
+        const msgs = {
+            name: '🏷 لطفاً <b>نام جدید</b> پکیج را بفرستید:',
+            gb: '📦 لطفاً <b>حجم جدید (گیگابایت)</b> را به عدد بفرستید:',
+            days: '⏳ لطفاً <b>مدت زمان (روز)</b> را به عدد بفرستید:',
+            price: '💵 لطفاً <b>قیمت پایه (تومان)</b> را به عدد بفرستید:',
+            disc: '🎁 لطفاً <b>درصد تخفیف</b> را به عدد بین 0 تا 100 بفرستید (برای حذف تخفیف 0 بفرستید):',
+            user: '👤 لطفاً <b>آیدی عددی کاربر</b> را بفرستید (برای عمومی کردن پکیج، عدد 0 را بفرستید):'
+        };
+        ctx.reply(msgs[field], { parse_mode: 'HTML' });
+        ctx.answerCbQuery();
+    });
+
+    // -- فرآیند افزودن پکیج جدید (گام‌به‌گام) --
+    bot.action('admin_add_plan_wiz', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        adminSteps.set(ctx.from.id, { step: 'WIZ_PLAN_NAME' });
+        ctx.reply('🏷 لطفاً <b>نام پکیج جدید</b> را بفرستید (مثلاً: 20 گیگ یک ماهه):', { parse_mode: 'HTML' });
+        ctx.answerCbQuery();
+    });
+
+
 
     bot.action('reset_finance', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
@@ -2950,63 +3002,85 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 return;
             }
 
-            if (adminState.step === 'ADD_PLAN_FORMAT') {
-                try {
-                    const lines = input.split('\n');
-                    const getValue = (key) => {
-                        const line = lines.find(l => l.includes(key));
-                        return line ? line.split(/[:：]/)[1]?.trim() : null;
-                    };
-
-                    const name = getValue('نام');
-                    const gb = parseInt(getValue('حجم'));
-                    const days = parseInt(getValue('روز'));
-                    const price = parseInt(getValue('قیمت'));
-                    const order = parseInt(getValue('ترتیب')) || 99;
+            // دریافت اطلاعات در پروسه ویرایش فیلد یک پکیج موجود
+            if (adminState.step === 'EDIT_PLAN_FIELD') {
+                const { planId, field } = adminState;
+                const db = readDb();
+                const planIndex = (db.settings.plans || []).findIndex(p => p.id === planId);
+                
+                if (planIndex > -1) {
+                    let val = input;
+                    if (['gb', 'days', 'price', 'disc'].includes(field)) {
+                        val = parseInt(input);
+                        if (isNaN(val)) return ctx.reply('❌ لطفاً فقط عدد وارد کنید.');
+                        if (field === 'disc' && (val < 0 || val > 100)) return ctx.reply('❌ تخفیف باید بین 0 تا 100 باشد.');
+                    }
                     
-                    if (!name || isNaN(gb) || isNaN(days) || isNaN(price)) {
-                        return ctx.reply('❌ اطلاعات اصلی (نام، حجم، روز، قیمت) درست نیست. دوباره بفرست.');
-                    }
+                    if (field === 'name') db.settings.plans[planIndex].name = val;
+                    if (field === 'gb') db.settings.plans[planIndex].gb = val;
+                    if (field === 'days') db.settings.plans[planIndex].days = val;
+                    if (field === 'price') db.settings.plans[planIndex].price = val;
+                    if (field === 'disc') db.settings.plans[planIndex].discountPercent = val;
+                    if (field === 'user') db.settings.plans[planIndex].targetUserId = (val === '0' ? null : val);
 
-                    let id = getValue('شناسه');
-                    if (!id || id.includes('خالی') || id === 'ندارد') {
-                        id = 'plan_' + Math.floor(Math.random() * 900000);
-                    }
-
-                    const showInNew = getValue('خرید جدید')?.includes('بله') ? true : false;
-                    const showInRenew = getValue('تمدید')?.includes('بله') ? true : false;
-                    let targetUserId = getValue('کاربر خاص');
-                    if (targetUserId === 'ندارد' || !targetUserId) targetUserId = null;
-
-                    let durationText = '';
-                    if (days < 30) {
-                        durationText = `${days} روزه`;
-                    } else {
-                        const months = Math.floor(days / 30);
-                        durationText = `${months} ماهه`;
-                    }
-
-                    const newPlan = {
-                        id, name, gb, days, price, order,
-                        showInNew, showInRenew, targetUserId,
-                        btnText: `📦 ${name} - ${durationText} (${price.toLocaleString('en-US')} تومان)`
-                    };
-
-                    if (!db.settings.plans) db.settings.plans = [];
-                    const existingIndex = db.settings.plans.findIndex(p => p.id === id);
-                    if (existingIndex > -1) db.settings.plans[existingIndex] = newPlan;
-                    else db.settings.plans.push(newPlan);
-
-                    db.settings.plans.sort((a, b) => (a.order || 99) - (b.order || 99));
-
+                    // آپدیت کردن خودکار btn_text
+                    const p = db.settings.plans[planIndex];
+                    let finalPrice = p.price - (p.price * ((p.discountPercent || 0) / 100));
+                    p.btnText = `📦 ${p.name} (${finalPrice.toLocaleString('en-US')} تومان)`;
+                    
                     writeDb(db);
-                    ctx.reply(`✅ پکیج با موفقیت ثبت شد.\n🔖 شناسه پکیج شما: <code>${id}</code>`, { parse_mode: 'HTML' });
-                } catch (e) {
-                    ctx.reply('❌ خطا در پردازش. فرمت رو دوباره چک کن.');
+                    ctx.reply('✅ تغییرات پکیج با موفقیت ذخیره شد.', {
+                        reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت به پکیج', `edit_plan_${planId}`)]] }
+                    });
                 }
                 adminSteps.delete(ctx.from.id);
                 return;
             }
+
+            // --- ویزارد افزودن پکیج جدید گام‌به‌گام ---
+            if (adminState.step === 'WIZ_PLAN_NAME') {
+                adminSteps.set(ctx.from.id, { ...adminState, step: 'WIZ_PLAN_GB', name: input });
+                return ctx.reply('📦 لطفاً <b>حجم پکیج (گیگابایت)</b> را به صورت عدد وارد کنید:', { parse_mode: 'HTML' });
+            }
+            if (adminState.step === 'WIZ_PLAN_GB') {
+                if (isNaN(parseInt(input))) return ctx.reply('❌ عدد نامعتبر!');
+                adminSteps.set(ctx.from.id, { ...adminState, step: 'WIZ_PLAN_DAYS', gb: parseInt(input) });
+                return ctx.reply('⏳ لطفاً <b>مدت زمان (روز)</b> را وارد کنید:', { parse_mode: 'HTML' });
+            }
+            if (adminState.step === 'WIZ_PLAN_DAYS') {
+                if (isNaN(parseInt(input))) return ctx.reply('❌ عدد نامعتبر!');
+                adminSteps.set(ctx.from.id, { ...adminState, step: 'WIZ_PLAN_PRICE', days: parseInt(input) });
+                return ctx.reply('💵 لطفاً <b>قیمت (تومان)</b> را وارد کنید:', { parse_mode: 'HTML' });
+            }
+            if (adminState.step === 'WIZ_PLAN_PRICE') {
+                if (isNaN(parseInt(input))) return ctx.reply('❌ عدد نامعتبر!');
+                const price = parseInt(input);
+                
+                const db = readDb();
+                if (!db.settings.plans) db.settings.plans = [];
+                const newId = 'plan_' + Math.floor(Math.random() * 900000);
+                
+                db.settings.plans.push({
+                    id: newId,
+                    name: adminState.name,
+                    gb: adminState.gb,
+                    days: adminState.days,
+                    price: price,
+                    discountPercent: 0,
+                    showInNew: true,
+                    showInRenew: true,
+                    targetUserId: null,
+                    btnText: `📦 ${adminState.name} (${price.toLocaleString('en-US')} تومان)`,
+                    order: db.settings.plans.length + 1
+                });
+                writeDb(db);
+                adminSteps.delete(ctx.from.id);
+                
+                return ctx.reply(`✅ <b>پکیج با موفقیت ساخته شد!</b>\n\nبرای اعمال تخفیف یا اختصاص به کاربر خاص، می‌توانید از منوی مدیریت پکیج‌ها آن را ویرایش کنید.`, {
+                    parse_mode: 'HTML',
+                    reply_markup: { inline_keyboard: [[Markup.button.callback('⚙️ مدیریت این پکیج', `edit_plan_${newId}`)]] }
+                });
+            } 
 
             if (adminState.step === 'ADD_VIP_NEW_USER') {
                 if (!db.vipUsers) db.vipUsers = [];

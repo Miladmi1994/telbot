@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS settings (
     maintenance INTEGER NOT NULL DEFAULT 0,
     active_server_id TEXT,
     active_vip_server_id TEXT,
-    admin_exempt_referral INTEGER NOT NULL DEFAULT 0
+    admin_exempt_referral INTEGER NOT NULL DEFAULT 0,
+    custom_plan_enabled INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS plans (
@@ -30,7 +31,8 @@ CREATE TABLE IF NOT EXISTS plans (
     sort_order INTEGER,
     show_in_new INTEGER,
     show_in_renew INTEGER,
-    target_user_id TEXT
+    target_user_id TEXT,
+    discount_percent INTEGER NOT NULL DEFAULT 0 
 );
 
 CREATE TABLE IF NOT EXISTS servers (

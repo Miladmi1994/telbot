@@ -152,6 +152,37 @@ const adminVipMenu = Markup.inlineKeyboard([
     [Markup.button.callback('🔙 بازگشت', 'back_admin')]
 ]);
 
+// لیست اصلی پکیج‌ها
+const getAdminPlansMenu = (db) => {
+    const plans = db.settings?.plans || [];
+    const customStatus = db.settings?.customPlanEnabled ? '🟢 فعال' : '🔴 غیرفعال';
+    
+    let buttons = plans.map(p => [Markup.button.callback(`📦 ${p.name} (${p.price.toLocaleString()}T)`, `edit_plan_${p.id}`)]);
+    
+    buttons.push([Markup.button.callback('➕ افزودن پکیج جدید', 'admin_add_plan_wiz')]);
+    buttons.push([Markup.button.callback(`✨ بسته دلخواه: ${customStatus}`, 'toggle_custom_plan')]);
+    buttons.push([Markup.button.callback('🔙 بازگشت', 'back_admin')]);
+    
+    return Markup.inlineKeyboard(buttons);
+};
+
+// منوی مدیریت یک پکیج خاص
+const getSinglePlanMenu = (plan) => {
+    return Markup.inlineKeyboard([
+        [Markup.button.callback(`✏️ نام: ${plan.name}`, `edit_p_name_${plan.id}`)],
+        [Markup.button.callback(`✏️ حجم: ${plan.gb} GB`, `edit_p_gb_${plan.id}`), Markup.button.callback(`✏️ زمان: ${plan.days} روز`, `edit_p_days_${plan.id}`)],
+        [Markup.button.callback(`✏️ قیمت پایه: ${plan.price.toLocaleString()}T`, `edit_p_price_${plan.id}`)],
+        [Markup.button.callback(`🎁 تخفیف: ${plan.discountPercent || 0} درصد`, `edit_p_disc_${plan.id}`)],
+        [
+            Markup.button.callback(`👁 خرید جدید: ${plan.showInNew !== false ? '✅' : '❌'}`, `toggle_p_new_${plan.id}`),
+            Markup.button.callback(`🔄 تمدید: ${plan.showInRenew !== false ? '✅' : '❌'}`, `toggle_p_renew_${plan.id}`)
+        ],
+        [Markup.button.callback(plan.targetUserId ? `👤 اختصاصی: ${plan.targetUserId}` : '👤 تخصیص به کاربر خاص', `edit_p_user_${plan.id}`)],
+        [Markup.button.callback('🗑 حذف پکیج', `del_plan_${plan.id}`)],
+        [Markup.button.callback('🔙 لیست پکیج‌ها', 'admin_plans_menu')]
+    ]);
+};
+
 module.exports = {
     mainKeyboard, 
     chatKeyboard, 
@@ -169,5 +200,7 @@ module.exports = {
     adminAccountingMenu,
     getServerManageMenu,
     getInboundsMenu,
-    getSingleInboundMenu
+    getSingleInboundMenu,
+    getAdminPlansMenu,
+    getSinglePlanMenu
 };
