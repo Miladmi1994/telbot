@@ -3720,18 +3720,22 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         
         await ctx.answerCbQuery('در حال ساخت...', { show_alert: false });
 
-        let totalGB, expiryDays;
+        let totalGB, expiryDays, isCustom = false;
         if (planId === 'vip') { 
             totalGB = 100; 
             expiryDays = 30; 
+        } else if (planId.startsWith('custom_')) {
+            // استخراج حجم و روز از آیدی پکیج دلخواه
+            isCustom = true;
+            const parts = planId.split('_');
+            expiryDays = parseInt(parts[1], 10);
+            totalGB = parseInt(parts[2], 10);
         } else {
             const plan = (db.settings.plans || []).find(p => p.id === planId);
             if (!plan) return ctx.reply('❌ پلن در دیتابیس یافت نشد.');
             totalGB = plan.gb;
             expiryDays = plan.days;
         }
-
-        const email = `User_${userId}_Ord${orderId}_${Date.now()}`;
 
         const targetServerId = (planId === 'vip' && db.settings.activeVipServerId)
             ? db.settings.activeVipServerId 
@@ -3748,11 +3752,11 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const flag = getServerFlag(targetServer?.name);
         finalName = `${finalName} ${flag}`.trim();
 
+        const email = `User_${userId}_Ord${orderId}_${Date.now()}`;
         const uuid = await createClient(email, totalGB, expiryDays, targetServer || null);
         
         if (!uuid) return ctx.reply('❌ خطا در ساخت کانفیگ در پنل.');
 
-        // --- خواندن دیتابیس تازه بلافاصله قبل از ذخیره ---
         const freshDb = readDb();
 
         if (!freshDb.users[userId]) freshDb.users[userId] = [];
@@ -3762,7 +3766,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             name: finalName,
             orderId: orderId,
             serverId: targetServerId,
-            notified: { days3: false, gb85: false, gb1: false }, // ضمانت ساختار SQLite
+            notified: { days3: false, gb85: false, gb1: false }, 
             ...(planId === 'vip' ? { isVip: true } : {})
         });
 
@@ -3780,31 +3784,38 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         freshDb.userStats[userId].totalSpent += priceVal;
         freshDb.userStats[userId].buyCount++;
 
+        // --- منطق رفرال برای بسته دلخواه ---
         if (freshDb.userStats[userId].referrerId && !freshDb.userStats[userId].hasMadeFirstBuy) {
-            const refId = freshDb.userStats[userId].referrerId;
-            freshDb.userStats[userId].hasMadeFirstBuy = true;
-            
-            if (freshDb.userStats[refId]) {
-                freshDb.userStats[refId].referralBuys = (freshDb.userStats[refId].referralBuys || 0) + 1;
-                freshDb.userStats[refId].rewardTokens = (freshDb.userStats[refId].rewardTokens || 0) + 1;
-                
-                // ارسال پیام نوتیفیکیشن به معرف
-                try {
-                            const rewardKeyboard = {
-                                inline_keyboard: [
-                                    [Markup.button.callback('🎁 استفاده از پاداش)', 'claim_reward_init')],
-                                    [Markup.button.callback('⏳ ذخیره در قلک)', 'dismiss_reward_msg')]
-                                ]
-                            };
-                            ctx.telegram.sendMessage(refId, `🎉 <b>تبریک!</b>\nیکی از دعوت‌شدگان شما اولین خرید خود را انجام داد.\n\n🎁 <b>۱ توکن هدیه</b> به قلک شما اضافه شد!\nمی‌توانید همین الان پاداش خود را روی یکی از سرویس‌هایتان اعمال کنید یا آن را برای آینده ذخیره کنید.`, { parse_mode: 'HTML', reply_markup: rewardKeyboard });
-                        } catch (e) {}
+            const customDays = isCustom ? expiryDays : 0;
+            const isEligibleForReferral = !isCustom || (isCustom && customDays >= 30);
+
+            freshDb.userStats[userId].hasMadeFirstBuy = true; // فلگ خرید اول می‌سوزد
+
+            if (isEligibleForReferral) {
+                const refId = freshDb.userStats[userId].referrerId;
+                if (freshDb.userStats[refId]) {
+                    freshDb.userStats[refId].referralBuys = (freshDb.userStats[refId].referralBuys || 0) + 1;
+                    freshDb.userStats[refId].rewardTokens = (freshDb.userStats[refId].rewardTokens || 0) + 1;
+                    
+                    try {
+                        const rewardKeyboard = {
+                            inline_keyboard: [
+                                [Markup.button.callback('🎁 استفاده از پاداش', 'claim_reward_init')],
+                                [Markup.button.callback('⏳ ذخیره در قلک', 'dismiss_reward_msg')]
+                            ]
+                        };
+                        ctx.telegram.sendMessage(refId, `🎉 <b>تبریک!</b>\nیکی از دعوت‌شدگان شما اولین خرید خود را انجام داد.\n\n🎁 <b>۱ توکن هدیه</b> به قلک شما اضافه شد!\nمی‌توانید همین الان پاداش خود را روی یکی از سرویس‌هایتان اعمال کنید یا آن را برای آینده ذخیره کنید.`, { parse_mode: 'HTML', reply_markup: rewardKeyboard });
+                    } catch (e) {}
+                }
             }
         }
         
-        const pIndex = (freshDb.settings.plans || []).findIndex(p => p.id === planId);
-        if (pIndex > -1) {
-            if (freshDb.settings.plans[pIndex].sold === undefined) freshDb.settings.plans[pIndex].sold = 0;
-            freshDb.settings.plans[pIndex].sold++;
+        if (!isCustom) {
+            const pIndex = (freshDb.settings.plans || []).findIndex(p => p.id === planId);
+            if (pIndex > -1) {
+                if (freshDb.settings.plans[pIndex].sold === undefined) freshDb.settings.plans[pIndex].sold = 0;
+                freshDb.settings.plans[pIndex].sold++;
+            }
         }
 
         delete freshDb.payments[payToken];
@@ -3826,10 +3837,15 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         
         await ctx.answerCbQuery('در حال تمدید...', { show_alert: false });
 
-        let totalGB, expiryDays;
+        let totalGB, expiryDays, isCustom = false;
         if (planId === 'vip') { 
             totalGB = 100; 
             expiryDays = 30; 
+        } else if (planId.startsWith('custom_')) {
+            isCustom = true;
+            const parts = planId.split('_');
+            expiryDays = parseInt(parts[1], 10);
+            totalGB = parseInt(parts[2], 10);
         } else {
             const plan = (db.settings.plans || []).find(p => p.id === planId);
             if (!plan) return ctx.reply('❌ پلن در دیتابیس یافت نشد.');
@@ -3849,7 +3865,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         }
 
        const oldServer = db.servers?.find(s => s.id === currentServerId);
-        
         let targetServerId = currentServerId; 
         
         if (oldServer && oldServer.isMigrating) {
@@ -3859,57 +3874,46 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         }
 
         const targetServer = db.servers?.find(s => s.id === targetServerId);
-
         const oldEmail = conf.email;
         const newEmail = `User_${userId}_Ord${orderId}_${Date.now()}`;
 
         let remainGB = 0;
         let remainDays = 0;
         
-        if (oldServer) {
+        // --- فقط در صورتی که بسته عادی باشد حجم و زمان منتقل می‌شود ---
+        if (oldServer && !isCustom) {
             const traffic = await getClientTraffic(oldEmail, oldServer);
             if (traffic) {
                 const totalOldGB = traffic.total / 1073741824;
                 const usedOldGB = (traffic.up + traffic.down) / 1073741824;
                 
                 let isTimeExpired = false;
-                
-                // ابتدا وضعیت زمان بررسی می‌شود
                 if (traffic.expiryTime > 0) {
                     const diffMs = traffic.expiryTime - Date.now();
                     if (diffMs > 0) {
                         remainDays = diffMs / (1000 * 60 * 60 * 24);
                     } else {
-                        isTimeExpired = true; // زمان کاملاً تمام شده است
+                        isTimeExpired = true; 
                     }
                 }
-                
-                // حجم فقط در صورتی منتقل می‌شود که زمان منقضی نشده باشد
                 if (!isTimeExpired && traffic.total > 0 && totalOldGB > usedOldGB) {
                     remainGB = totalOldGB - usedOldGB;
                 }
             }
         }
 
-            const finalGB = planId === 'vip' ? 100 : totalGB + remainGB;
+        const finalGB = planId === 'vip' ? 100 : totalGB + remainGB;
 
-            let finalDays;
-            if (planId === 'vip') {
-                if (remainDays > 0 && remainDays <= 3) {
-                    finalDays = 32;
-                } else {
-                    finalDays = 30;
-                }
-            } else {
-                finalDays = expiryDays + Math.ceil(remainDays);
-                
-                // اعمال محدودیت سقف ۹۰ روز فقط برای پکیج‌های عادی کمتر از ۱۰۰ گیگ
-                if (totalGB < 100 && finalDays > 90) {
-                    finalDays = 90;
-                }
+        let finalDays;
+        if (planId === 'vip') {
+            finalDays = (remainDays > 0 && remainDays <= 3) ? 32 : 30;
+        } else {
+            finalDays = expiryDays + Math.ceil(remainDays);
+            if (!isCustom && totalGB < 100 && finalDays > 90) {
+                finalDays = 90;
             }
+        }
 
-            // --- شروع بخش اصلاح شده ---
         let newUuid = conf.uuid;
         if (currentServerId !== targetServerId) {
             if (oldServer) await deleteClient(conf.uuid, oldServer);
@@ -3920,17 +3924,13 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             if (!result.success) return ctx.reply(`❌ <b>خطا در تمدید:</b>\n<code>${result.log}</code>`, { parse_mode: 'HTML' });
         }
 
-        // ۱. دریافت اطلاعات تازه دیتابیس پس از پایان درخواست‌های زمان‌بر پنل
         const freshDb = readDb();
-        
-        // ۲. پیدا کردن مجدد کانکشن کاربر در دیتابیس تازه
         if (!freshDb.users[userId]) freshDb.users[userId] = [];
         const freshUserConfigs = freshDb.users[userId];
         const freshConf = freshUserConfigs.find(c => c.email === email);
         
         if (!freshConf) return ctx.reply('❌ خطا: کانفیگ کاربر در دیتابیس یافت نشد.');
 
-        // ۳. اعمال تغییرات روی نسخه تازه دیتابیس
         freshConf.uuid = newUuid;
         freshConf.email = newEmail;
         freshConf.orderId = orderId; 
@@ -3947,7 +3947,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             freshConf.name = `${freshConf.name} ${flag}`.trim();
         }
 
-        // ۴. ثبت اطلاعات مالی در دیتابیس تازه
         const priceMatch = caption.match(/💵 مبلغ: ([\d,]+) تومان/);
         const priceVal = priceMatch ? parseInt(priceMatch[1].replace(/,/g, ''), 10) : 0;
         
@@ -3966,7 +3965,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         delete freshDb.payments[payToken];
         writeDb(freshDb);
         console.log(`[DB SUCCESS] تمدید سرویس کاربر ${userId} با سفارش ${orderId} در دیتابیس ثبت شد.`);
-        await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تمدید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } }).catch(()=>{});
         await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تمدید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } }).catch(()=>{});
         await ctx.telegram.sendMessage(userId, `✅ <b>سرویس شما با موفقیت تمدید شد.</b>\n🧾 شناسه خرید: <code>${orderId}</code> (تأییدشده)\n\n♻️ <b>نکته مهم:</b> نیازی به وارد کردن کانفیگ جدید نیست! همان کانفیگ قبلی شما مجدداً شارژ شده و به درستی کار می‌کند.\n\n(اگر نیاز به دریافت مجدد کانفیگ دارید، می‌توانید از دکمه زیر استفاده کنید)`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📥 دریافت مجدد کانفیگ‌ها', `get_configs_${conf.uuid}`)]]) });
     });
