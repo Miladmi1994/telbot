@@ -2807,6 +2807,48 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             return;
         }
         
+        // --- کدهای اضافه شده برای دریافت متنی حجم و روز بسته دلخواه ---
+        if (state && state.step === 'CUSTOM_TRAFFIC') {
+            const traffic = parseInt(input);
+            if (isNaN(traffic) || traffic < 5) {
+                return ctx.reply('⚠️ <b>خطای ورودی!</b>\nلطفاً یک عدد صحیح وارد کنید.\n\n🔴 <b>حداقل حجم قابل سفارش ۵ گیگابایت است.</b>', { parse_mode: 'HTML' });
+            }
+            state.traffic = traffic;
+            state.step = 'CUSTOM_DAYS';
+            userSteps.set(ctx.from.id, state);
+            const kb = Markup.inlineKeyboard([
+                [Markup.button.callback('10 روز', 'custom_days_10'), Markup.button.callback('15 روز', 'custom_days_15')],
+                [Markup.button.callback('45 روز', 'custom_days_45'), Markup.button.callback('90 روز', 'custom_days_90')],
+                [Markup.button.callback('❌ لغو', 'cancel_flow')]
+            ]);
+            return ctx.reply(`✅ حجم انتخاب شده: <b>${traffic} گیگابایت</b>\n\n⏳ <b>مدت زمان اشتراک را به روز وارد کنید:</b>\n\nاز دکمه‌های زیر انتخاب کنید یا عدد مورد نظر را تایپ کنید.\n\n🔴 <b>حداقل: ۱۰ روز</b>`, { parse_mode: 'HTML', ...kb });
+        }
+        
+        if (state && state.step === 'CUSTOM_DAYS') {
+            const days = parseInt(input);
+            if (isNaN(days) || days < 10) {
+                return ctx.reply('⚠️ <b>خطای ورودی!</b>\nلطفاً یک عدد صحیح وارد کنید.\n\n🔴 <b>حداقل زمان قابل سفارش ۱۰ روز است.</b>', { parse_mode: 'HTML' });
+            }
+            state.days = days;
+            state.price = getCustomPlanPrice(days, state.traffic);
+            state.step = 'CUSTOM_CONFIRM';
+            userSteps.set(ctx.from.id, state);
+
+            const kb = Markup.inlineKeyboard([
+                [Markup.button.callback('✅ تایید و ادامه', 'custom_accept_invoice')],
+                [Markup.button.callback('❌ لغو', 'cancel_flow')]
+            ]);
+            return ctx.reply(
+                '📋 <b>پیش‌فاکتور بسته دلخواه شما:</b>\n\n' +
+                `🔹 حجم سرویس: <b>${state.traffic} گیگابایت</b>\n` +
+                `🔹 مدت اعتبار: <b>${days} روز</b>\n` +
+                `💰 مبلغ نهایی: <b>${state.price.toLocaleString('fa-IR')} تومان</b>\n\n` +
+                'در صورت تایید، برای رفتن به مرحله پرداخت روی دکمه زیر کلیک کنید:',
+                { parse_mode: 'HTML', ...kb }
+            );
+        }
+        // -----------------------------------------------------------
+
         if (isUserAdmin(userId) && adminState && adminState.step) {
             const db = readDb();
 
@@ -2897,9 +2939,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             if (adminState.step === 'ADD_SRV_TOKEN') {
                 const srvUrl = adminState.srvUrl;
                 const apiToken = input;
-                const webBasePath = ''; // در صورت نیاز به مسیر سفارشی، این متغیر می‌تواند بعداً از ادمین دریافت شود
+                const webBasePath = ''; 
 
-                // نمایش پیام انتظار به ادمین
                 ctx.reply('⏳ در حال بررسی ارتباط با سرور...');
 
                 testServerConnection(srvUrl, webBasePath, apiToken).then(async (testResult) => {
@@ -2913,8 +2954,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                         name: adminState.srvName,
                         panelUrl: srvUrl,
                         apiToken: apiToken,
-                        webBasePath: '', // <--- اضافه شدن این خط برای جلوگیری از ارور 404 در آینده
-                        inbounds: [] // آرایه خالی برای اینباندها
+                        webBasePath: '', 
+                        inbounds: [] 
                     };
 
                     const db = readDb();
@@ -3229,42 +3270,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 });
             } 
             
-            if (state && state.step === 'CUSTOM_TRAFFIC') {
-            const traffic = parseInt(input);
-            if (isNaN(traffic) || traffic < 5) return ctx.reply('⚠️ حداقل حجم قابل سفارش ۵ گیگابایت است. لطفاً یک عدد معتبر وارد کنید:');
-            state.traffic = traffic;
-            state.step = 'CUSTOM_DAYS';
-            userSteps.set(ctx.from.id, state);
-            const kb = Markup.inlineKeyboard([
-                [Markup.button.callback('10 روز', 'custom_days_10'), Markup.button.callback('15 روز', 'custom_days_15')],
-                [Markup.button.callback('45 روز', 'custom_days_45'), Markup.button.callback('90 روز', 'custom_days_90')],
-                [Markup.button.callback('❌ لغو', 'cancel_flow')]
-            ]);
-            return ctx.reply(`✅ حجم انتخاب شده: <b>${traffic} گیگابایت</b>\n\n⏳ <b>مدت زمان اشتراک را به روز وارد کنید:</b>\n\nاز دکمه‌های زیر انتخاب کنید یا عدد مورد نظر (حداقل ۱۰) را تایپ کنید:`, { parse_mode: 'HTML', ...kb });
-        }
-        
-        if (state && state.step === 'CUSTOM_DAYS') {
-            const days = parseInt(input);
-            if (isNaN(days) || days < 10) return ctx.reply('⚠️ حداقل زمان قابل سفارش ۱۰ روز است. لطفاً یک عدد معتبر وارد کنید:');
-            state.days = days;
-            state.price = getCustomPlanPrice(days, state.traffic);
-            state.step = 'CUSTOM_CONFIRM';
-            userSteps.set(ctx.from.id, state);
-
-            const kb = Markup.inlineKeyboard([
-                [Markup.button.callback('✅ تایید و ادامه', 'custom_accept_invoice')],
-                [Markup.button.callback('❌ لغو', 'cancel_flow')]
-            ]);
-            return ctx.reply(
-                '📋 <b>پیش‌فاکتور بسته دلخواه شما:</b>\n\n' +
-                `🔹 حجم سرویس: <b>${state.traffic} گیگابایت</b>\n` +
-                `🔹 مدت اعتبار: <b>${days} روز</b>\n` +
-                `💰 مبلغ نهایی: <b>${state.price.toLocaleString('fa-IR')} تومان</b>\n\n` +
-                'در صورت تایید، برای رفتن به مرحله پرداخت روی دکمه زیر کلیک کنید:',
-                { parse_mode: 'HTML', ...kb }
-            );
-        }
-
             if (adminState.step === 'ADD_VIP_NEW_USER') {
                 if (!db.vipUsers) db.vipUsers = [];
                 if (!db.vipUsers.includes(input)) {
@@ -3365,7 +3370,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 const db = readDb();
                 
                 let totalGB, expiryDays, isVip = false;
-                let planPrice = 0; // متغیر جدید برای ذخیره قیمت پلن
+                let planPrice = 0; 
                 
                 if (planId === 'vip') {
                     totalGB = 100;
@@ -3382,7 +3387,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     if (!plan) return ctx.reply('❌ پلن یافت نشد. لطفاً فرآیند را مجدداً شروع کنید.');
                     totalGB = plan.gb;
                     expiryDays = plan.days;
-                    planPrice = plan.price; // دریافت قیمت پلن از دیتابیس
+                    planPrice = plan.price;
                 }
                 
                 const targetServerId = (isVip && db.settings.activeVipServerId) 
@@ -3418,7 +3423,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     if (!freshDb.vipUsers.includes(targetUserId)) freshDb.vipUsers.push(targetUserId);
                 }
 
-                // --- بخش جدید: اضافه کردن مبلغ به حسابداری ---
                 if (!IGNORE_FINANCE_IDS || !IGNORE_FINANCE_IDS.includes(targetUserId.toString())) {
                     freshDb.totalIncome = (freshDb.totalIncome || 0) + planPrice;
                     freshDb.periodIncome = (freshDb.periodIncome || 0) + planPrice;
@@ -3449,8 +3453,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                         } catch (e) {}
                     }
                 }
-
-                // ---------------------------------------------
 
                 writeDb(freshDb);
                 console.log(`[DB SUCCESS] خرید دستی کاربر ${targetUserId} با سفارش ${orderId} در دیتابیس ثبت شد.`);
