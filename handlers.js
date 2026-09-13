@@ -182,6 +182,16 @@ function setupHandlers(bot) {
         else ratePerGb = 4400;
         return (days * 1000) + (trafficGb * ratePerGb);
     }
+    
+    function toEnglishDigits(str) {
+    if (typeof str !== 'string') return str;
+    const persianNumbers = [/۰/g, /۱/g, /۲/g, /۳/g, /۴/g, /۵/g, /۶/g, /۷/g, /۸/g, /۹/g];
+    const arabicNumbers  = [/٠/g, /١/g, /٢/g, /٣/g, /٤/g, /٥/g, /٦/g, /٧/g, /٨/g, /٩/g];
+    for (let i = 0; i < 10; i++) {
+        str = str.replace(persianNumbers[i], i).replace(arabicNumbers[i], i);
+    }
+    return str;
+    }
 
 
     bot.action('admin_broadcast', (ctx) => {
@@ -2795,7 +2805,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
     bot.on('text', async (ctx) => {
         const userId = ctx.from.id.toString();
-        const input = ctx.message.text.trim();
+        const input = toEnglishDigits(ctx.message.text.trim()); 
         const adminState = adminSteps.get(ctx.from.id);
         const state = userSteps.get(ctx.from.id);
 
@@ -3790,9 +3800,9 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             const customDays = isCustom ? expiryDays : 0;
             const isEligibleForReferral = !isCustom || (isCustom && customDays >= 30);
 
-            freshDb.userStats[userId].hasMadeFirstBuy = true; // فلگ خرید اول می‌سوزد
-
             if (isEligibleForReferral) {
+                freshDb.userStats[userId].hasMadeFirstBuy = true; 
+                
                 const refId = freshDb.userStats[userId].referrerId;
                 if (freshDb.userStats[refId]) {
                     freshDb.userStats[refId].referralBuys = (freshDb.userStats[refId].referralBuys || 0) + 1;
