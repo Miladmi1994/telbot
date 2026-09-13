@@ -173,7 +173,7 @@ function setupHandlers(bot) {
 
     // محاسبه قیمت بسته دلخواه بدون رند کردن
     function getCustomPlanPrice(days, trafficGb) {
-        if (days < 10 || trafficGb < 5) return null;
+        if (days < 10 || days > 60 || trafficGb < 5) return null;
         let ratePerGb = 0;
         if (trafficGb <= 5) ratePerGb = 3000;
         else if (trafficGb <= 10) ratePerGb = 4500;
@@ -2836,8 +2836,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         
         if (state && state.step === 'CUSTOM_DAYS') {
             const days = parseInt(input);
-            if (isNaN(days) || days < 10) {
-                return ctx.reply('⚠️ <b>خطای ورودی!</b>\nلطفاً یک عدد صحیح وارد کنید.\n\n🔴 <b>حداقل زمان قابل سفارش ۱۰ روز است.</b>', { parse_mode: 'HTML' });
+            if (isNaN(days) || days < 10 || days > 60) {
+                return ctx.reply('⚠️ <b>خطای ورودی!</b>\nلطفاً یک عدد صحیح وارد کنید.\n\n🔴 <b>مدت زمان باید بین ۱۰ الی ۶۰ روز باشد.</b>', { parse_mode: 'HTML' });
             }
             state.days = days;
             state.price = getCustomPlanPrice(days, state.traffic);
