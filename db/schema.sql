@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS services (
     panel_total INTEGER,
     panel_used INTEGER,
     panel_expiry INTEGER,
-    panel_email TEXT
+    panel_email TEXT,
+    is_custom INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS payments (

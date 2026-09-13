@@ -44,6 +44,7 @@ function openDatabase(dbFilePath) {
     try { db.exec("ALTER TABLE user_stats ADD COLUMN reward_tokens INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
     try { db.exec("ALTER TABLE settings ADD COLUMN custom_plan_enabled INTEGER NOT NULL DEFAULT 1;"); } catch (e) {}
     try { db.exec("ALTER TABLE plans ADD COLUMN discount_percent INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE services ADD COLUMN is_custom INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
 
     return db;
 }
@@ -92,6 +93,7 @@ function rowToService(row) {
     if (row.order_id) service.orderId = row.order_id;
     if (row.is_vip) service.isVip = true;
     if (row.deleted_from_panel) service.deletedFromPanel = true;
+    if (row.is_custom) service.isCustom = true;
 
     if (row.notified_days3 != null || row.notified_gb85 != null || row.notified_gb1 != null) {
         service.notified = {
@@ -366,8 +368,8 @@ function loadState(db) {
             INSERT INTO services (
                 telegram_id, sort_order, email, uuid, name, server_id, order_id, is_vip,
                 deleted_from_panel, notified_days3, notified_gb85, notified_gb1,
-                panel_total, panel_used, panel_expiry, panel_email
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                panel_total, panel_used, panel_expiry, panel_email, is_custom
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const telegramId of allUserIds) {
@@ -409,7 +411,8 @@ function loadState(db) {
                     service.panelStats?.total ?? null,
                     service.panelStats?.used ?? null,
                     service.panelStats?.expiry ?? null,
-                    service.panelStats?.email ?? null
+                    service.panelStats?.email ?? null,
+                    service.isCustom ? 1 : 0
                 );
             });
         }

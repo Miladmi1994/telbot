@@ -3767,7 +3767,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             orderId: orderId,
             serverId: targetServerId,
             notified: { days3: false, gb85: false, gb1: false }, 
-            ...(planId === 'vip' ? { isVip: true } : {})
+            ...(planId === 'vip' ? { isVip: true } : {}),
+            ...(isCustom ? { isCustom: true } : {})
         });
 
         const priceMatch = caption.match(/💵 مبلغ: ([\d,]+) تومان/);
@@ -3857,6 +3858,9 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const conf = userConfigs.find(c => c.email === email);
         if (!conf) return ctx.reply('❌ اکانت در دیتابیس یافت نشد.');
 
+        const oldIsCustom = conf.isCustom;
+
+
         let currentServerId = conf.serverId;
         if (!currentServerId) {
             currentServerId = (conf.isVip && db.settings.activeVipServerId) 
@@ -3881,7 +3885,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         let remainDays = 0;
         
         // --- فقط در صورتی که بسته عادی باشد حجم و زمان منتقل می‌شود ---
-        if (oldServer && !isCustom) {
+        if (oldServer && !isCustom && !oldIsCustom) {
             const traffic = await getClientTraffic(oldEmail, oldServer);
             if (traffic) {
                 const totalOldGB = traffic.total / 1073741824;
@@ -3935,6 +3939,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         freshConf.email = newEmail;
         freshConf.orderId = orderId; 
         freshConf.serverId = targetServerId; 
+        freshConf.isCustom = isCustom ? true : false;
         
         if (freshConf.name.includes('تست') || freshConf.name === 'سرویس قبلی' || freshConf.name === 'بدون اسم') {
             const cypherCount = freshUserConfigs.filter(c => c.name && c.name.startsWith('سایفر')).length;
