@@ -171,6 +171,18 @@ function setupHandlers(bot) {
         return next();
     });
 
+    // محاسبه قیمت بسته دلخواه بدون رند کردن
+    function getCustomPlanPrice(days, trafficGb) {
+        if (days < 10 || trafficGb < 5) return null;
+        let ratePerGb = 0;
+        if (trafficGb <= 5) ratePerGb = 3000;
+        else if (trafficGb <= 10) ratePerGb = 4500;
+        else if (trafficGb <= 30) ratePerGb = 5000;
+        else if (trafficGb <= 60) ratePerGb = 4900;
+        else ratePerGb = 4400;
+        return (days * 1000) + (trafficGb * ratePerGb);
+    }
+
 
     bot.action('admin_broadcast', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
@@ -2108,7 +2120,15 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         if (isThisConfigVip) {
             buttons.push([Markup.button.callback('👑 VIP: 100G - 1 ماهه (قیمت 1$)', 'renew_plan_vip')]);
         } else {
-            buttons = plans.map(plan => [Markup.button.callback(plan.btnText, `renew_plan_${plan.id}`)]);
+            let availablePlans = plans.filter(p => p.showInRenew !== false);
+            // اعمال مرتب‌سازی برای منوی تمدید
+            availablePlans.sort((a, b) => (a.order || 99) - (b.order || 99));
+            buttons = availablePlans.map(plan => [Markup.button.callback(plan.btnText, `renew_plan_${plan.id}`)]);
+            
+            // نمایش دکمه بسته دلخواه در تمدید
+            if (db.settings.customPlanEnabled !== false) {
+                buttons.push([Markup.button.callback('✨ تمدید با بسته دلخواه', 'renew_plan_custom')]);
+            }
         }
         
         buttons.push([Markup.button.callback('❌ لغو', 'cancel_flow')]);
@@ -2119,6 +2139,97 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         if (ctx.callbackQuery) ctx.editMessageText(txt, { parse_mode: 'HTML', ...kb });
         else ctx.reply(txt, { parse_mode: 'HTML', ...kb });
     }
+
+    // -- ورود به مرحله دریافت حجم برای بسته دلخواه (خرید جدید یا تمدید) --
+    bot.action(['plan_custom', 'renew_plan_custom'], (ctx) => {
+        ctx.answerCbQuery();
+        const isRenew = ctx.match[0] === 'renew_plan_custom';
+        const state = userSteps.get(ctx.from.id) || {};
+        
+        state.step = 'CUSTOM_TRAFFIC';
+        state.isRenew = isRenew;
+        state.ts = Date.now();
+        userSteps.set(ctx.from.id, state);
+
+        const kb = Markup.inlineKeyboard([
+            [Markup.button.callback('5 گیگ', 'custom_gb_5'), Markup.button.callback('15 گیگ', 'custom_gb_15')],
+            [Markup.button.callback('20 گیگ', 'custom_gb_20'), Markup.button.callback('40 گیگ', 'custom_gb_40')],
+            [Markup.button.callback('❌ لغو', 'cancel_flow')]
+        ]);
+        
+        let msg = '📦 <b>حجم دلخواه خود را به گیگابایت وارد کنید:</b>\n\nمی‌توانید از دکمه‌های زیر انتخاب کنید یا عدد مورد نظر (حداقل ۵) را در کیبورد تایپ کنید:';
+        if (isRenew) {
+            msg = `🔄 <b>تمدید با بسته دلخواه</b>\n\n⚠️ <i>نکته: در تمدید با بسته دلخواه، حجم و زمان باقی‌مانده از سرویس قبل صفر شده و به سرویس جدید منتقل نمی‌شود.</i>\n\n${msg}`;
+        }
+        return ctx.editMessageText(msg, { parse_mode: 'HTML', ...kb });
+    });
+
+    // -- انتخاب حجم و رفتن به مرحله روز --
+    bot.action(/custom_gb_(\d+)/, (ctx) => {
+        ctx.answerCbQuery();
+        const state = userSteps.get(ctx.from.id);
+        if (!state || state.step !== 'CUSTOM_TRAFFIC') return;
+        state.traffic = parseInt(ctx.match[1]);
+        state.step = 'CUSTOM_DAYS';
+        userSteps.set(ctx.from.id, state);
+        
+        const kb = Markup.inlineKeyboard([
+            [Markup.button.callback('10 روز', 'custom_days_10'), Markup.button.callback('15 روز', 'custom_days_15')],
+            [Markup.button.callback('45 روز', 'custom_days_45'), Markup.button.callback('90 روز', 'custom_days_90')],
+            [Markup.button.callback('❌ لغو', 'cancel_flow')]
+        ]);
+        ctx.editMessageText(`✅ حجم انتخاب شده: <b>${state.traffic} گیگابایت</b>\n\n⏳ <b>مدت زمان اشتراک را به روز وارد کنید:</b>\n\nاز دکمه‌های زیر انتخاب کنید یا عدد مورد نظر (حداقل ۱۰) را تایپ کنید:`, { parse_mode: 'HTML', ...kb });
+    });
+
+    // -- انتخاب روز و صدور پیش‌فاکتور --
+    bot.action(/custom_days_(\d+)/, (ctx) => {
+        ctx.answerCbQuery();
+        const state = userSteps.get(ctx.from.id);
+        if (!state || state.step !== 'CUSTOM_DAYS') return;
+        
+        state.days = parseInt(ctx.match[1]);
+        state.price = getCustomPlanPrice(state.days, state.traffic);
+        state.step = 'CUSTOM_CONFIRM';
+        userSteps.set(ctx.from.id, state);
+
+        const kb = Markup.inlineKeyboard([
+            [Markup.button.callback('✅ تایید و ادامه', 'custom_accept_invoice')],
+            [Markup.button.callback('✏️ ویرایش بسته', state.isRenew ? 'renew_plan_custom' : 'plan_custom'), Markup.button.callback('❌ لغو', 'cancel_flow')]
+        ]);
+
+        ctx.editMessageText(
+            '📋 <b>پیش‌فاکتور بسته دلخواه شما:</b>\n\n' +
+            `🔹 حجم سرویس: <b>${state.traffic} گیگابایت</b>\n` +
+            `🔹 مدت اعتبار: <b>${state.days} روز</b>\n` +
+            `💰 مبلغ نهایی: <b>${state.price.toLocaleString('fa-IR')} تومان</b>\n\n` +
+            'در صورت تایید، برای رفتن به مرحله پرداخت روی دکمه زیر کلیک کنید:',
+            { parse_mode: 'HTML', ...kb }
+        );
+    });
+
+    // -- تایید نهایی پیش‌فاکتور --
+    bot.action('custom_accept_invoice', async (ctx) => {
+        ctx.answerCbQuery();
+        const state = userSteps.get(ctx.from.id);
+        if (!state || state.step !== 'CUSTOM_CONFIRM') return;
+
+        const orderId = generateOrderId();
+        state.planId = `custom_${state.days}_${state.traffic}`; 
+        state.planName = `بسته دلخواه (${state.traffic}GB - ${state.days}d)`;
+        state.orderId = orderId;
+
+        if (state.isRenew) {
+            state.step = 'WAITING_RENEW_RECEIPT';
+            userSteps.set(ctx.from.id, state);
+            ctx.editMessageText(`💳 مبلغ تمدید: <code>${state.price.toLocaleString('en-US')}</code> تومان\n📝 نام سرویس: ${state.configName}\n🧾 شناسه خرید: <code>${state.orderId}</code> (شماره سفارش)\n\nشماره کارت:\n<code>6219861906525570</code>\nبه نام:\nح.احقاقی‌فر\n\n📸 <b>لطفا عکس رسید واریز را همینجا بفرستید:</b>`, { 
+                parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('❌ لغو', 'cancel_flow')]] }
+            });
+        } else {
+            state.step = 'WAITING_NAME';
+            userSteps.set(ctx.from.id, state);
+            ctx.editMessageText(`📝 شماره سفارش شما: <code>${orderId}</code>\n\nیک اسم دلخواه برای کانفیگت بنویس (مثلاً "گوشی خودم").\n\nاگه نمی‌خوای اسم بذاری، دکمه زیر رو بزن:`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('رد شدن (بدون اسم)', 'skip_name')], [Markup.button.callback('❌ لغو', 'cancel_flow')]] } });
+        }
+    });
 
     bot.action(/renew_plan_(.*)/, async (ctx) => {
         const planId = ctx.match[1];
@@ -2414,6 +2525,9 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         let availablePlans = plans.filter(p => !p.targetUserId || p.targetUserId === userId.toString() || p.targetUserId === '');
         availablePlans = availablePlans.filter(p => p.showInNew !== false);    
 
+        // اعمال مرتب‌سازی پکیج‌ها بر اساس عدد ترتیب
+        availablePlans.sort((a, b) => (a.order || 99) - (b.order || 99));
+
         let buttons = availablePlans.map(plan => [Markup.button.callback(plan.btnText, `plan_${plan.id}`)]);
         
         const isVipUser = db.vipUsers && db.vipUsers.includes(userId.toString());
@@ -2421,6 +2535,11 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
         if (isVipUser && !hasAnyVipConfig) {
             buttons.unshift([Markup.button.callback('👑 100 گیگ VIP - یک ماهه (1$)', 'plan_vip')]);
+        }
+        
+        // نمایش دکمه بسته دلخواه فقط در صورت فعال بودن در تنظیمات
+        if (db.settings.customPlanEnabled !== false) {
+            buttons.push([Markup.button.callback('✨ بسته دلخواه (تعیین حجم و زمان)', 'plan_custom')]);
         }
         
         buttons.push([
@@ -3109,6 +3228,42 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     reply_markup: { inline_keyboard: [[Markup.button.callback('⚙️ مدیریت این پکیج', `edit_plan_${newId}`)]] }
                 });
             } 
+            
+            if (state && state.step === 'CUSTOM_TRAFFIC') {
+            const traffic = parseInt(input);
+            if (isNaN(traffic) || traffic < 5) return ctx.reply('⚠️ حداقل حجم قابل سفارش ۵ گیگابایت است. لطفاً یک عدد معتبر وارد کنید:');
+            state.traffic = traffic;
+            state.step = 'CUSTOM_DAYS';
+            userSteps.set(ctx.from.id, state);
+            const kb = Markup.inlineKeyboard([
+                [Markup.button.callback('10 روز', 'custom_days_10'), Markup.button.callback('15 روز', 'custom_days_15')],
+                [Markup.button.callback('45 روز', 'custom_days_45'), Markup.button.callback('90 روز', 'custom_days_90')],
+                [Markup.button.callback('❌ لغو', 'cancel_flow')]
+            ]);
+            return ctx.reply(`✅ حجم انتخاب شده: <b>${traffic} گیگابایت</b>\n\n⏳ <b>مدت زمان اشتراک را به روز وارد کنید:</b>\n\nاز دکمه‌های زیر انتخاب کنید یا عدد مورد نظر (حداقل ۱۰) را تایپ کنید:`, { parse_mode: 'HTML', ...kb });
+        }
+        
+        if (state && state.step === 'CUSTOM_DAYS') {
+            const days = parseInt(input);
+            if (isNaN(days) || days < 10) return ctx.reply('⚠️ حداقل زمان قابل سفارش ۱۰ روز است. لطفاً یک عدد معتبر وارد کنید:');
+            state.days = days;
+            state.price = getCustomPlanPrice(days, state.traffic);
+            state.step = 'CUSTOM_CONFIRM';
+            userSteps.set(ctx.from.id, state);
+
+            const kb = Markup.inlineKeyboard([
+                [Markup.button.callback('✅ تایید و ادامه', 'custom_accept_invoice')],
+                [Markup.button.callback('❌ لغو', 'cancel_flow')]
+            ]);
+            return ctx.reply(
+                '📋 <b>پیش‌فاکتور بسته دلخواه شما:</b>\n\n' +
+                `🔹 حجم سرویس: <b>${state.traffic} گیگابایت</b>\n` +
+                `🔹 مدت اعتبار: <b>${days} روز</b>\n` +
+                `💰 مبلغ نهایی: <b>${state.price.toLocaleString('fa-IR')} تومان</b>\n\n` +
+                'در صورت تایید، برای رفتن به مرحله پرداخت روی دکمه زیر کلیک کنید:',
+                { parse_mode: 'HTML', ...kb }
+            );
+        }
 
             if (adminState.step === 'ADD_VIP_NEW_USER') {
                 if (!db.vipUsers) db.vipUsers = [];
