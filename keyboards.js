@@ -172,7 +172,10 @@ const getSinglePlanMenu = (plan) => {
         [Markup.button.callback(`✏️ نام: ${plan.name}`, `edit_p_name_${plan.id}`)],
         [Markup.button.callback(`✏️ حجم: ${plan.gb} GB`, `edit_p_gb_${plan.id}`), Markup.button.callback(`✏️ زمان: ${plan.days} روز`, `edit_p_days_${plan.id}`)],
         [Markup.button.callback(`✏️ قیمت پایه: ${plan.price.toLocaleString()}T`, `edit_p_price_${plan.id}`)],
-        [Markup.button.callback(`🎁 تخفیف: ${plan.discountPercent || 0} درصد`, `edit_p_disc_${plan.id}`)],
+        [
+            Markup.button.callback(`🎁 تخفیف: ${plan.discountPercent || 0} درصد`, `edit_p_disc_${plan.id}`),
+            Markup.button.callback(`↕️ ترتیب نمایش: ${plan.order || 99}`, `edit_p_order_${plan.id}`)
+        ],
         [
             Markup.button.callback(`👁 خرید جدید: ${plan.showInNew !== false ? '✅' : '❌'}`, `toggle_p_new_${plan.id}`),
             Markup.button.callback(`🔄 تمدید: ${plan.showInRenew !== false ? '✅' : '❌'}`, `toggle_p_renew_${plan.id}`)

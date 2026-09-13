@@ -1570,7 +1570,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
     });
 
     // -- درخواست مقدار جدید از ادمین برای فیلدهای پکیج --
-    bot.action(/edit_p_(name|gb|days|price|disc|user)_(.+)/, (ctx) => {
+    bot.action(/edit_p_(name|gb|days|price|disc|user|order)_(.+)/, (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         const field = ctx.match[1];
         const planId = ctx.match[2];
@@ -1582,7 +1582,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             days: '⏳ لطفاً <b>مدت زمان (روز)</b> را به عدد بفرستید:',
             price: '💵 لطفاً <b>قیمت پایه (تومان)</b> را به عدد بفرستید:',
             disc: '🎁 لطفاً <b>درصد تخفیف</b> را به عدد بین 0 تا 100 بفرستید (برای حذف تخفیف 0 بفرستید):',
-            user: '👤 لطفاً <b>آیدی عددی کاربر</b> را بفرستید (برای عمومی کردن پکیج، عدد 0 را بفرستید):'
+            user: '👤 لطفاً <b>آیدی عددی کاربر</b> را بفرستید (برای عمومی کردن 0 بفرستید):',
+            order: '↕️ لطفاً <b>عدد ترتیب نمایش</b> را بفرستید (مثلاً 1 برای اینکه اول لیست باشد):'
         };
         ctx.reply(msgs[field], { parse_mode: 'HTML' });
         ctx.answerCbQuery();
@@ -2484,17 +2485,35 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
     bot.action(/plan_(.*)/, (ctx) => {
         const planId = ctx.match[1];
-        const userId = ctx.from.id.toString();
-        if (planId === 'vip') return;
+        if (planId === 'vip' || planId === 'custom') return; // اکشن‌های مربوط به خودش هندل میکنه
         ctx.answerCbQuery();
         
         const db = readDb();
         const plan = (db.settings.plans || []).find(p => p.id === planId);
         if (!plan) return ctx.answerCbQuery('❌ خطای دریافت پلن!', { show_alert: true });
         
+        let finalPrice = plan.price;
+        let priceDisplay = `<b>${plan.price.toLocaleString('en-US')}</b> تومان`;
+        
+        // --- نمایش زیبای قیمت تخفیف خورده ---
+        if (plan.discountPercent > 0) {
+            finalPrice = plan.price - (plan.price * (plan.discountPercent / 100));
+            priceDisplay = `<s>${plan.price.toLocaleString('en-US')}</s> <b>${finalPrice.toLocaleString('en-US')}</b> تومان (🎁 ${plan.discountPercent}٪ تخفیف)`;
+        }
+        
         const orderId = generateOrderId();
-        userSteps.set(ctx.from.id, { step: 'WAITING_NAME', planId, planName: plan.name, price: plan.price.toString(), orderId, ts: Date.now() });
-        ctx.editMessageText(`📝 شماره سفارش شما: <code>${orderId}</code>\n\nیک اسم دلخواه برای کانفیگت بنویس (مثلاً "گوشی خودم").\n\nاگه نمی‌خوای اسم بذاری، دکمه زیر رو بزن:`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('رد شدن (بدون اسم)', 'skip_name')], [Markup.button.callback('❌ لغو', 'cancel_flow')]] } });
+        
+        // مقدار finalPrice باید ذخیره شود تا در مرحله بعد (دریافت فیش) اعمال شود
+        userSteps.set(ctx.from.id, { 
+            step: 'WAITING_NAME', 
+            planId, 
+            planName: plan.name, 
+            price: finalPrice.toString(), 
+            orderId, 
+            ts: Date.now() 
+        });
+        
+        ctx.editMessageText(`📝 شماره سفارش شما: <code>${orderId}</code>\n\n💰 قیمت پکیج: ${priceDisplay}\n\nیک اسم دلخواه برای کانفیگت بنویس (مثلاً "گوشی خودم").\n\nاگه نمی‌خوای اسم بذاری، دکمه زیر رو بزن:`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('رد شدن (بدون اسم)', 'skip_name')], [Markup.button.callback('❌ لغو', 'cancel_flow')]] } });
     });
 
     bot.action('skip_name', (ctx) => { ctx.answerCbQuery(); processConfigName(ctx, 'بدون اسم'); });
@@ -3010,7 +3029,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 
                 if (planIndex > -1) {
                     let val = input;
-                    if (['gb', 'days', 'price', 'disc'].includes(field)) {
+                    if (['gb', 'days', 'price', 'disc', 'order'].includes(field)) {
                         val = parseInt(input);
                         if (isNaN(val)) return ctx.reply('❌ لطفاً فقط عدد وارد کنید.');
                         if (field === 'disc' && (val < 0 || val > 100)) return ctx.reply('❌ تخفیف باید بین 0 تا 100 باشد.');
@@ -3021,12 +3040,21 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     if (field === 'days') db.settings.plans[planIndex].days = val;
                     if (field === 'price') db.settings.plans[planIndex].price = val;
                     if (field === 'disc') db.settings.plans[planIndex].discountPercent = val;
+                    if (field === 'order') db.settings.plans[planIndex].order = val;
                     if (field === 'user') db.settings.plans[planIndex].targetUserId = (val === '0' ? null : val);
 
-                    // آپدیت کردن خودکار btn_text
+                    // --- ساختار زیبای متن دکمه با تخفیف ---
                     const p = db.settings.plans[planIndex];
                     let finalPrice = p.price - (p.price * ((p.discountPercent || 0) / 100));
-                    p.btnText = `📦 ${p.name} (${finalPrice.toLocaleString('en-US')} تومان)`;
+                    
+                    if (p.discountPercent > 0) {
+                        p.btnText = `📦 ${p.name} (🎁 ${p.discountPercent}٪) 👈 ${finalPrice.toLocaleString('en-US')}T`;
+                    } else {
+                        p.btnText = `📦 ${p.name} (${finalPrice.toLocaleString('en-US')} تومان)`;
+                    }
+                    
+                    // مرتب‌سازی مجدد آرایه پکیج‌ها بعد از تغییر ترتیب
+                    db.settings.plans.sort((a, b) => (a.order || 99) - (b.order || 99));
                     
                     writeDb(db);
                     ctx.reply('✅ تغییرات پکیج با موفقیت ذخیره شد.', {
