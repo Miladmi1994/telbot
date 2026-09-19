@@ -145,6 +145,7 @@ function setupHandlers(bot) {
             return ctx.reply('🛠 <b>ربات در حال بروزرسانی است...</b>\nلطفاً دقایقی دیگر تلاش کنید.', { parse_mode: 'HTML' });
         }
 
+        // اگر کاربر روی دکمه «عضو شدم» زد، بگذار عبور کند تا اکشن پایین آن را بررسی کند
         if (ctx.callbackQuery && ctx.callbackQuery.data === 'check_channel_join') {
             return next();
         }
@@ -162,13 +163,31 @@ function setupHandlers(bot) {
                 
                 if (ctx.callbackQuery) {
                     await ctx.answerCbQuery('❌ ابتدا در کانال عضو شوید!', { show_alert: true });
-                    return ctx.reply(joinMsg, { reply_markup: joinMarkup });
-                } else {
-                    return ctx.reply(joinMsg, { reply_markup: joinMarkup });
                 }
+                return ctx.reply(joinMsg, { reply_markup: joinMarkup });
             }
         }
         return next();
+    });
+
+    // --- مدیریت کلیک روی دکمه «عضو شدم» ---
+    bot.action('check_channel_join', async (ctx) => {
+        const userId = ctx.from.id;
+        const isMember = await checkMembership(ctx, userId);
+
+        if (!isMember) {
+            return ctx.answerCbQuery('❌ هنوز در کانال عضو نشده‌اید!', { show_alert: true });
+        }
+
+        await ctx.answerCbQuery('✅ عضویت تایید شد.');
+        await ctx.deleteMessage().catch(() => {});
+        
+        userSteps.delete(ctx.from.id);
+        const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
+        return ctx.reply(
+            `سلام! خوش اومدی 🌹\n\n👤 <b>آیدی تلگرام:</b> ${username}\n🆔 <b>کد یکتای شما:</b> <code>${userId}</code>\n\n👇 لطفاً یک گزینه رو انتخاب کن:`,
+            { parse_mode: 'HTML', ...mainKeyboard }
+        );
     });
 
     // محاسبه قیمت بسته دلخواه بدون رند کردن
@@ -1691,25 +1710,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         }
         // -------------------------
 
-        const isMember = await checkMembership(ctx, ctx.from.id);
-        
-        if (!isMember) {
-            return ctx.reply('⚠️ برای استفاده از خدمات ربات، لطفاً ابتدا در کانال اطلاع‌رسانی ما عضو شوید:', {
-                reply_markup: {
-                    inline_keyboard: [
-                        [Markup.button.url('🔴 عضویت در کانال', 'https://t.me/cyphernett')],
-                        [Markup.button.callback('✅ عضو شدم', 'check_channel_join')]
-                    ]
-                }
-            });
-        }
-
-        userSteps.delete(ctx.from.id);
-        const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
-        ctx.reply(`سلام! خوش اومدی 🌹\n\n👤 <b>آیدی تلگرام:</b> ${username}\n🆔 <b>کد یکتای شما:</b> <code>${ctx.from.id}</code>\n\n👇 لطفاً یک گزینه رو انتخاب کن:`, { parse_mode: 'HTML', ...mainKeyboard });
-    });
-
-    bot.start(async (ctx) => {
         const isMember = await checkMembership(ctx, ctx.from.id);
         
         if (!isMember) {
