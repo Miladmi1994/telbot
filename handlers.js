@@ -2828,7 +2828,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             userSteps.set(ctx.from.id, state);
             const kb = Markup.inlineKeyboard([
                 [Markup.button.callback('10 روز', 'custom_days_10'), Markup.button.callback('15 روز', 'custom_days_15')],
-                [Markup.button.callback('45 روز', 'custom_days_45'), Markup.button.callback('90 روز', 'custom_days_90')],
+                [Markup.button.callback('45 روز', 'custom_days_45'), Markup.button.callback('60 روز', 'custom_days_90')],
                 [Markup.button.callback('❌ لغو', 'cancel_flow')]
             ]);
             return ctx.reply(`✅ حجم انتخاب شده: <b>${traffic} گیگابایت</b>\n\n⏳ <b>مدت زمان اشتراک را به روز وارد کنید:</b>\n\nاز دکمه‌های زیر انتخاب کنید یا عدد مورد نظر را تایپ کنید.\n\n🔴 <b>بازه مجاز: ۱۰ الی ۶۰ روز</b>`, { parse_mode: 'HTML', ...kb });

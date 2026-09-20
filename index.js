@@ -9,7 +9,11 @@ const { flushDb } = require('./db');
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 setupHandlers(bot);
-scheduleNightlyBackup(bot);
+if (process.env.ENABLE_BACKUP !== 'false') {
+    scheduleNightlyBackup(bot);
+} else {
+    console.log('Nightly backup is DISABLED for this instance.');
+}
 
 bot.catch((err, ctx) => {
     console.error(`⚠️ خطای محافظت شده در پردازش آپدیت:`, err.message);

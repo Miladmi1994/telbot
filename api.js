@@ -414,7 +414,6 @@ function generateSpecialWsConfig(uuid, configName, domain, port, sni, pathStr) {
     return JSON.stringify(config, null, 2);
 }
 
-// تغییر در generateAllConfigs
 function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
     const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [];
     let results = [];
@@ -460,7 +459,6 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
     });
     return results;
 }
-
 
 function generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, suffix) {
     const remark = encodeURIComponent(`${configName} ${suffix}`);
@@ -484,55 +482,6 @@ function generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, net
     // پارامتر host حذف شد و ساختار fm دقیقاً روی لینک شماره ۳ اعمال شد
     return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=${network}&path=${encPath}${modeParam}&fm=${encFm}#${remark}`;
 }
-
-function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
-    const inbounds = (server && server.inbounds && server.inbounds.length > 0) ? server.inbounds : [];
-    let results = [];
-    let wsCounter = 1;
-    let otherCounter = 1;
-
-    inbounds.forEach((inb) => {
-        const network = (inb.network || inb.streamSettings?.network || "xhttp").toLowerCase();
-        const port = inb.port || 443;
-        let domain = inb.domain;
-        let sni = inb.sni;
-        let pathStr = inb.path;
-
-        if (network === 'xhttp') {
-            const xhttp = inb.streamSettings?.xhttpSettings || {};
-            pathStr = pathStr || xhttp.path || "/Cypher_Net";
-            domain = domain || xhttp.host || "ns.crrc.ir";
-        } else if (network === 'ws') {
-            const ws = inb.streamSettings?.wsSettings || {};
-            pathStr = pathStr || ws.path || "/Cypher_Net";
-            domain = domain || ws.host || "ns.crrc.ir";
-        }
-        sni = sni || inb.streamSettings?.tlsSettings?.serverName || domain;
-        domain = domain || "ns.crrc.ir";
-
-        const getNextSuffix = () => {
-            if (network === 'ws') {
-                return `ws-${wsCounter++}`;
-            } else {
-                return `${otherCounter++}`;
-            }
-        };
-
-        // --- منطق جدید: اگر حالت ویژه فعال بود، فقط ۱ کانفیگ JSON ویژه بساز ---
-        if (network === 'ws' && inb.isSpecialWs) {
-            results.push(generateSpecialWsConfig(uuid, configName, domain, port, sni, pathStr));
-        } else {
-            // در غیر این صورت، همان ۳ کانفیگ همیشگی ساخته شود
-            results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
-            results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
-            results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
-        }
-    });
-    return results;
-}
-
-
-
 
 // --- Cloudflare API Functions ---
 
