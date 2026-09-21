@@ -5,10 +5,10 @@ const setupHandlers = require('./handlers');
 const { scheduleNightlyBackup } = require('./scripts/backup-db');
 const { flushDb } = require('./db');
 
-// راه‌اندازی ربات به صورت مستقیم و بدون نیاز به پروکسی
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 setupHandlers(bot);
+
 if (process.env.ENABLE_BACKUP !== 'false') {
     scheduleNightlyBackup(bot);
 } else {
@@ -16,10 +16,27 @@ if (process.env.ENABLE_BACKUP !== 'false') {
 }
 
 bot.catch((err, ctx) => {
-    console.error(`⚠️ خطای محافظت شده در پردازش آپدیت:`, err.message);
+    console.error(`⚠️ [Telegraf Catch] خطای پردازش:`, err.message);
 });
 
-bot.launch({ dropPendingUpdates: true }).then(() => console.log('ربات کامل ران شد!'));
+async function run() {
+    try {
+        const info = await bot.telegram.getWebhookInfo();
+        console.log(`[Start Check] وضعیت وب‌هوک فعلی: ${info.url || 'ندارد (Polling)'}`);
+
+        if (info.url) {
+            console.log(`[Delete Webhook] در حال حذف وب‌هوک مانده روی توکن...`);
+            await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+        }
+
+        await bot.launch({ dropPendingUpdates: true });
+        console.log('🚀 ربات بدون مشکل استارت شد و در حال پولینگ است.');
+    } catch (err) {
+        console.error('❌ [Launch Error]:', err);
+    }
+}
+
+run();
 
 function shutdown(signal) {
     try { flushDb(); } catch (e) {}
