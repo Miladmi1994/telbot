@@ -3419,12 +3419,21 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     finalName = `${finalName} ${flag}`.trim();
                 }
 
+                const expiryTimeMs = Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000);
+                const totalByteVal = Math.floor(totalGB * 1073741824);
+
                 freshDb.users[targetUserId].push({ 
                     email, 
                     uuid, 
                     name: finalName, 
                     orderId: orderId,
                     serverId: targetServerId,
+                    panelStats: {
+                        total: totalByteVal,
+                        used: 0,
+                        expiry: expiryTimeMs,
+                        email: email
+                    },
                     ...(isVip ? { isVip: true } : {})
                 });
                 
@@ -3619,6 +3628,11 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                                 successCount++;
                                 affectedUsers.add(uid);
                                 dbChanged = true;
+
+                                if (conf.panelStats) {
+                                    if (addGb > 0) conf.panelStats.total += Math.floor(addGb * 1073741824);
+                                    if (addDays > 0) conf.panelStats.expiry += Math.floor(addDays * 24 * 60 * 60 * 1000);
+                                }
                             } else {
                                 failCount++;
                             }
@@ -3830,6 +3844,15 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         }
 
         delete freshDb.payments[payToken];
+        const newlyCreatedConf = (freshDb.users[userId] || []).find(c => c.uuid === uuid);
+        if (newlyCreatedConf) {
+            newlyCreatedConf.panelStats = {
+                total: Math.floor(totalGB * 1073741824),
+                used: 0,
+                expiry: Date.now() + Math.floor(expiryDays * 24 * 60 * 60 * 1000),
+                email: email
+            };
+        }
         writeDb(freshDb);
         console.log(`[DB SUCCESS] خرید جدید کاربر ${userId} با سفارش ${orderId} در دیتابیس ثبت شد.`);
         await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تایید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
@@ -3978,6 +4001,12 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
         freshConf.notified = { days3: false, gb85: false, gb1: false };
         delete freshDb.payments[payToken];
+        freshConf.panelStats = {
+            total: Math.floor(finalGB * 1073741824),
+            used: 0,
+            expiry: Date.now() + Math.floor(finalDays * 24 * 60 * 60 * 1000),
+            email: newEmail
+        };
         writeDb(freshDb);
         console.log(`[DB SUCCESS] تمدید سرویس کاربر ${userId} با سفارش ${orderId} در دیتابیس ثبت شد.`);
         await ctx.editMessageCaption(caption + '\n\n✅ <b>وضعیت: تمدید شد</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } }).catch(()=>{});
