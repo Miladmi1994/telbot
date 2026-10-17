@@ -455,6 +455,10 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
             results.push(generateJsonConfig(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
             results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
             results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
+            
+            if (network === 'xhttp') {
+                results.push(generateEchVlessLink(uuid, configName, port, sni, pathStr, network, `${ getNextSuffix() } ech`));
+            }
         }
     });
     return results;
@@ -466,6 +470,15 @@ function generateVlessLink(uuid, configName, domain, port, sni, pathStr, network
     const modeParam = network === 'xhttp' ? '&mode=packet-up' : '';
     // پارامتر host کاملا حذف شد
     return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=${network}&path=${encPath}${modeParam}#${remark}`;
+}
+
+function generateEchVlessLink(uuid, configName, port, sni, pathStr, network, suffix) {
+    const domain = 'ns3.crrc.ir';
+    const remark = encodeURIComponent(`${configName} ${suffix}`);
+    const encPath = encodeURIComponent(pathStr);
+    const encEch = encodeURIComponent('cloudflare-ech.com+udp://1.1.1.1');
+    const modeParam = network === 'xhttp' ? '&mode=packet-up' : '';
+    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&ech=${encEch}&type=${network}&path=${encPath}${modeParam}#${remark}`;
 }
 
 function generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, suffix) {
