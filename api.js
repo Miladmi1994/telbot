@@ -478,7 +478,7 @@ function generateEchVlessLink(uuid, configName, port, sni, pathStr, network, suf
     const encPath = encodeURIComponent(pathStr);
     const encEch = encodeURIComponent('cloudflare-ech.com+udp://1.1.1.1');
     const modeParam = network === 'xhttp' ? '&mode=packet-up' : '';
-    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&ech=${encEch}&type=${network}&path=${encPath}${modeParam}#${remark}`;
+    return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h2%2Chttp%2F1.1&insecure=0&allowInsecure=0&ech=${encEch}&type=${network}&path=${encPath}${modeParam}#${remark}`;
 }
 
 function generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, suffix) {
