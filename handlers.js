@@ -803,13 +803,13 @@ function setupHandlers(bot) {
         else ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
     }
 
-    bot.action(/^ech_target_(.+)\$/, (ctx) => {
+    bot.action(/^ech_target_(.+)$/, (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         ctx.answerCbQuery();
         renderEchTargetMenu(ctx, ctx.match[1]);
     });
 
-    bot.action(/^ech_toggle_(.+)\$/, (ctx) => {
+    bot.action(/^ech_toggle_(.+)$/, (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         const target = ctx.match[1];
         const db = readDb();
@@ -825,7 +825,7 @@ function setupHandlers(bot) {
         renderEchTargetMenu(ctx, target);
     });
 
-    bot.action(/^ech_edit_(addr|conf)_(.+)\$/, (ctx) => {
+    bot.action(/^ech_edit_(addr|conf)_(.+)$/, (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         const field = ctx.match[1];
         const target = ctx.match[2];
