@@ -45,7 +45,10 @@ CREATE TABLE IF NOT EXISTS servers (
     domain TEXT NOT NULL,
     sni TEXT NOT NULL,
     path TEXT NOT NULL,
-    is_migrating INTEGER NOT NULL DEFAULT 0
+    is_migrating INTEGER NOT NULL DEFAULT 0,
+    ech_enabled INTEGER NOT NULL DEFAULT 1,
+    ech_address TEXT NOT NULL DEFAULT 'ns3.crrc.ir',
+    ech_config TEXT NOT NULL DEFAULT 'cloudflare-ech.com+udp://1.1.1.1'
 );
 
 CREATE TABLE IF NOT EXISTS server_inbounds (

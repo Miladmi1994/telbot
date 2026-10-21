@@ -19,6 +19,9 @@ function openDatabase(dbFilePath) {
     
     try { db.exec("ALTER TABLE global_stats ADD COLUMN period_income INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
     try { db.exec("ALTER TABLE global_stats ADD COLUMN period_expenses INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE servers ADD COLUMN ech_enabled INTEGER NOT NULL DEFAULT 1;"); } catch (e) {}
+    try { db.exec("ALTER TABLE servers ADD COLUMN ech_address TEXT NOT NULL DEFAULT 'ns3.crrc.ir';"); } catch (e) {}
+    try { db.exec("ALTER TABLE servers ADD COLUMN ech_config TEXT NOT NULL DEFAULT 'cloudflare-ech.com+udp://1.1.1.1';"); } catch (e) {}
 
     // ساخت جدول اینباندها اگر وجود نداشت + ستون‌های جدید
     db.exec(`
@@ -77,7 +80,10 @@ function rowToServer(row) {
         inboundId: row.inbound_id,
         domain: row.domain,
         sni: row.sni,
-        path: row.path
+        path: row.path,
+        echEnabled: row.ech_enabled !== 0,
+        echAddress: row.ech_address || 'ns3.crrc.ir',
+        echConfig: row.ech_config || 'cloudflare-ech.com+udp://1.1.1.1'
     };
     if (row.is_migrating) server.isMigrating = true;
     return server;
@@ -307,11 +313,10 @@ function loadState(db) {
         const insertServer = db.prepare(`
             INSERT INTO servers (
                 id, name, panel_url, web_base_path, api_token, inbound_id,
-                domain, sni, path, is_migrating
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                domain, sni, path, is_migrating, ech_enabled, ech_address, ech_config
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
-        // کد قبلی را با این جایگزین کنید (اضافه شدن network)
         const insertInbound = db.prepare(`
         INSERT INTO server_inbounds (server_id, inbound_id, domain, sni, path, network, is_special_ws)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -328,7 +333,10 @@ function loadState(db) {
                 server.domain || '',
                 server.sni || '',
                 server.path || '',
-                server.isMigrating ? 1 : 0
+                server.isMigrating ? 1 : 0,
+                server.echEnabled === false ? 0 : 1,
+                server.echAddress || 'ns3.crrc.ir',
+                server.echConfig || 'cloudflare-ech.com+udp://1.1.1.1'
             );
             
             // ذخیره لیست اینباندهای هر سرور همراه با فیلد شبکه

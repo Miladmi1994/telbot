@@ -743,6 +743,101 @@ function setupHandlers(bot) {
         ctx.answerCbQuery();
     });
 
+    // --- مدیریت ECH و آدرس (کانفیگ ۴) ---
+    bot.action('admin_ech_menu', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const servers = db.servers || [];
+        if (servers.length === 0) return ctx.answerCbQuery('هیچ سروری ثبت نشده است.', { show_alert: true });
+
+        let buttons = [
+            [Markup.button.callback('🌐 اعمال روی همه سرورها', 'ech_target_all')],
+            ...servers.map(s => [Markup.button.callback(`🖥 ${s.name}`, `ech_target_${s.id}`)]),
+            [Markup.button.callback('🔙 بازگشت', 'admin_servers_menu')]
+        ];
+
+        ctx.editMessageText('🛡 <b>مدیریت ECH و آدرس (کانفیگ ۴)</b>\n\nلطفاً مشخص کنید تغییرات روی کدام سرورها اعمال شود:', {
+            parse_mode: 'HTML',
+            reply_markup: { inline_keyboard: buttons }
+        });
+        ctx.answerCbQuery();
+    });
+
+    function renderEchTargetMenu(ctx, target) {
+        const db = readDb();
+        const servers = db.servers || [];
+        let title, addr, echConf, enabled;
+
+        if (target === 'all') {
+            title = '🌐 همه سرورها';
+            const first = servers[0] || {};
+            addr = first.echAddress || 'ns3.crrc.ir';
+            echConf = first.echConfig || 'cloudflare-ech.com+udp://1.1.1.1';
+            enabled = first.echEnabled !== false;
+        } else {
+            const srv = servers.find(s => s.id === target);
+            if (!srv) return ctx.answerCbQuery('سرور یافت نشد!', { show_alert: true });
+            title = `🖥 ${srv.name}`;
+            addr = srv.echAddress || 'ns3.crrc.ir';
+            echConf = srv.echConfig || 'cloudflare-ech.com+udp://1.1.1.1';
+            enabled = srv.echEnabled !== false;
+        }
+
+        const text = `🛡 <b>تنظیمات ECH (کانفیگ ۴)</b>\n` +
+                     `🎯 هدف: <b>${title}</b>\n\n` +
+                     `🔘 وضعیت: <b>${enabled ? '🟢 فعال' : '🔴 غیرفعال'}</b>\n` +
+                     `🌐 آدرس (Address): <code>${addr}</code>\n` +
+                     `🔑 مقدار ECH:\n<code>${echConf}</code>\n\n` +
+                     `👇 گزینه مورد نظر برای ویرایش را انتخاب کنید:`;
+
+        const kb = {
+            inline_keyboard: [
+                [Markup.button.callback(enabled ? '🔴 غیرفعال کردن کانفیگ ۴' : '🟢 فعال کردن کانفیگ ۴', `ech_toggle_${target}`)],
+                [Markup.button.callback('✏️ تغییر آدرس (Address)', `ech_edit_addr_${target}`)],
+                [Markup.button.callback('✏️ تغییر مقدار ECH', `ech_edit_conf_${target}`)],
+                [Markup.button.callback('🔙 بازگشت', 'admin_ech_menu')]
+            ]
+        };
+
+        if (ctx.callbackQuery) ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+        else ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    }
+
+    bot.action(/^ech_target_(.+)\$/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        ctx.answerCbQuery();
+        renderEchTargetMenu(ctx, ctx.match[1]);
+    });
+
+    bot.action(/^ech_toggle_(.+)\$/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const target = ctx.match[1];
+        const db = readDb();
+        if (target === 'all') {
+            const current = (db.servers[0]?.echEnabled !== false);
+            db.servers.forEach(s => s.echEnabled = !current);
+        } else {
+            const srv = db.servers.find(s => s.id === target);
+            if (srv) srv.echEnabled = (srv.echEnabled === false);
+        }
+        writeDb(db);
+        ctx.answerCbQuery('✅ وضعیت بروزرسانی شد.');
+        renderEchTargetMenu(ctx, target);
+    });
+
+    bot.action(/^ech_edit_(addr|conf)_(.+)\$/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const field = ctx.match[1];
+        const target = ctx.match[2];
+        adminSteps.set(ctx.from.id, { step: 'ECH_WAITING_INPUT', field, target });
+
+        const promptMsg = field === 'addr'
+            ? '🌐 لطفاً <b>آدرس (Address)</b> جدید برای کانفیگ ۴ را ارسال کنید:\n(مثال: <code>ns3.crrc.ir</code>)'
+            : '🔑 لطفاً <b>مقدار ECH</b> جدید را ارسال کنید:\n(مثال: <code>cloudflare-ech.com+udp://1.1.1.1</code>)';
+
+        ctx.reply(promptMsg, { parse_mode: 'HTML' });
+        ctx.answerCbQuery();
+    });
 
     // --- Cloudflare DNS Management ---
 
@@ -2873,6 +2968,25 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 writeDb(db);
                 ctx.reply(`✅ مبلغ <code>${amount.toLocaleString('en-US')}</code> تومان با موفقیت به عنوان هزینه‌های این دوره ثبت شد.`, { parse_mode: 'HTML' });
                 adminSteps.delete(ctx.from.id);
+                return;
+            }
+
+
+            if (adminState.step === 'ECH_WAITING_INPUT') {
+                const { field, target } = adminState;
+                const prop = field === 'addr' ? 'echAddress' : 'echConfig';
+
+                if (target === 'all') {
+                    db.servers.forEach(s => s[prop] = input);
+                } else {
+                    const srv = db.servers.find(s => s.id === target);
+                    if (srv) srv[prop] = input;
+                }
+
+                writeDb(db);
+                adminSteps.delete(ctx.from.id);
+                await ctx.reply('✅ تغییرات با موفقیت ذخیره شد.');
+                renderEchTargetMenu(ctx, target);
                 return;
             }
 

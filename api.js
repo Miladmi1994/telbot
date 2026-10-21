@@ -456,8 +456,10 @@ function generateAllConfigs(uuid, configName = "CypherNET💎", server = null) {
             results.push(generateVlessLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
             results.push(generateFinalMaskLink(uuid, configName, domain, port, sni, pathStr, network, getNextSuffix()));
             
-            if (network === 'xhttp') {
-                results.push(generateEchVlessLink(uuid, configName, port, sni, pathStr, network, `${ getNextSuffix() } ech`));
+            if (network === 'xhttp' && (!server || server.echEnabled !== false)) {
+                const echAddr = server?.echAddress || 'ns3.crrc.ir';
+                const echConf = server?.echConfig || 'cloudflare-ech.com+udp://1.1.1.1';
+                results.push(generateEchVlessLink(uuid, configName, echAddr, port, sni, pathStr, network, `${getNextSuffix()} ech`, echConf));
             }
         }
     });
@@ -472,11 +474,10 @@ function generateVlessLink(uuid, configName, domain, port, sni, pathStr, network
     return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=${network}&path=${encPath}${modeParam}#${remark}`;
 }
 
-function generateEchVlessLink(uuid, configName, port, sni, pathStr, network, suffix) {
-    const domain = 'ns3.crrc.ir';
+function generateEchVlessLink(uuid, configName, domain, port, sni, pathStr, network, suffix, echStr) {
     const remark = encodeURIComponent(`${configName} ${suffix}`);
     const encPath = encodeURIComponent(pathStr);
-    const encEch = encodeURIComponent('cloudflare-ech.com+udp://1.1.1.1');
+    const encEch = encodeURIComponent(echStr);
     const modeParam = network === 'xhttp' ? '&mode=packet-up' : '';
     return `vless://${uuid}@${domain}:${port}?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h2%2Chttp%2F1.1&insecure=0&allowInsecure=0&ech=${encEch}&type=${network}&path=${encPath}${modeParam}#${remark}`;
 }
