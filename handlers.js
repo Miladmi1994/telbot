@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
-const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, adminServersMenu, getAdminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu, getAdminPlansMenu, getSinglePlanMenu} = require('./keyboards');
+const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, getAdminServersMenu, getAdminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu, getAdminPlansMenu, getSinglePlanMenu} = require('./keyboards');
 const { readDb, writeDb } = require('./db');
 const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap } = require('./api');
 const fs = require('fs');
@@ -21,6 +21,16 @@ function generateOrderId() {
 const fetchCache = {};
 
 function getTargetServer(db, conf) {
+    // اگر حالت تک‌سرور (تفکیک با اینباند) روشن باشد، سرور واحد در اولویت است
+    if (db.settings?.inboundTierMode) {
+        let unifiedSrv = db.servers?.find(s => s.id === (db.settings.activeServerId || db.settings.activeVipServerId));
+        if (conf && conf.serverId) {
+            const confSrv = db.servers?.find(s => s.id === conf.serverId);
+            if (confSrv) return confSrv;
+        }
+        if (unifiedSrv) return unifiedSrv;
+    }
+
     if (!conf) return db.servers?.find(s => s.id === db.settings.activeServerId);
     let target = db.servers?.find(s => s.id === conf.serverId);
     if (!target && conf.isVip) target = db.servers?.find(s => s.id === db.settings.activeVipServerId);
@@ -736,11 +746,258 @@ function setupHandlers(bot) {
 
     bot.action('admin_servers_menu', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
-        ctx.editMessageText('🖥 <b>مدیریت سرورها</b>\nاز اینجا می‌تونی سرورها رو مدیریت کنی و مقصدهای پیش‌فرض رو تعیین کنی:', { 
+        const db = readDb();
+        ctx.editMessageText('🖥 <b>مدیریت سرورها</b>\nاز اینجا می‌تونی سرورها، حالت تک‌سرور (تفکیک اینباند) و انتقال دیتابیس کاربران رو مدیریت کنی:', { 
             parse_mode: 'HTML', 
-            reply_markup: adminServersMenu.reply_markup // استفاده از متغیری که تو فایل keyboards تعریف شده
+            reply_markup: getAdminServersMenu(db).reply_markup
         });
         ctx.answerCbQuery();
+    });
+
+    // --- ۱. سوییچ روشن/خاموش کردن حالت تفکیک با اینباند ---
+    bot.action('toggle_inbound_tier_mode', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        db.settings.inboundTierMode = !db.settings.inboundTierMode;
+        writeDb(db);
+
+        const statusMsg = db.settings.inboundTierMode
+            ? '🟢 حالت «تفکیک با اینباند (تک‌سرور)» فعال شد.'
+            : '⚪️ حالت «چندسروری مجزا» فعال شد.';
+
+        ctx.answerCbQuery(statusMsg, { show_alert: true });
+        ctx.editMessageReplyMarkup(getAdminServersMenu(db).reply_markup).catch(() => {});
+    });
+
+    // --- ۲. تغییر سطح دسترسی هر اینباند (عادی / VIP / مشترک) ---
+    bot.action(/^toggle_inb_tier_(.+)_(\d+)$/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const srvId = ctx.match[1];
+        const index = parseInt(ctx.match[2]);
+        const db = readDb();
+        const serverIndex = db.servers.findIndex(s => s.id === srvId);
+
+        if (serverIndex > -1 && db.servers[serverIndex].inbounds && db.servers[serverIndex].inbounds[index]) {
+            const inb = db.servers[serverIndex].inbounds[index];
+            const current = inb.tier || 'both';
+            const nextTier = current === 'both' ? 'normal' : (current === 'normal' ? 'vip' : 'both');
+            inb.tier = nextTier;
+            writeDb(db);
+
+            const tierLabel = nextTier === 'vip' ? '👑 فقط VIP' : nextTier === 'normal' ? '👤 فقط عادی' : '🌐 مشترک (هر دو)';
+            ctx.answerCbQuery(`سطح دسترسی به «${tierLabel}» تغییر کرد.`);
+
+            const text = `✅ <b>تغییرات با موفقیت ذخیره شد.</b>\n\n` +
+                         `⚙️ <b>ویرایش اینباند</b>\n\n` +
+                         `شناسه: <code>${inb.id}</code>\n` +
+                         `دامنه: <code>${inb.domain}</code>\n` +
+                         `اس‌ان‌آی: <code>${inb.sni}</code>\n` +
+                         `مسیر: <code>${inb.path}</code>\n` +
+                         `شبکه: <code>${inb.network || 'ws'}</code>\n` +
+                         `سطح دسترسی: <b>${tierLabel}</b>\n\n` +
+                         `کدام بخش را می‌خواهید تغییر دهید؟`;
+
+            await ctx.editMessageText(text, {
+                parse_mode: 'HTML',
+                reply_markup: getSingleInboundMenu(srvId, index, inb).reply_markup
+            });
+        }
+    });
+
+    // --- ۳. پنل جامع انتقال دیتابیس کاربران بین سرورها ---
+    bot.action('admin_migrate_db_menu', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const servers = db.servers || [];
+        if (servers.length === 0) return ctx.answerCbQuery('هیچ سروری ثبت نشده است.', { show_alert: true });
+
+        // شمارش دقیق کانفیگ‌های هر سرور به تفکیک عادی و VIP
+        const counts = {};
+        Object.values(db.users || {}).forEach(confs => {
+            confs.forEach(c => {
+                const sId = c.serverId || 'default';
+                if (!counts[sId]) counts[sId] = { total: 0, normal: 0, vip: 0 };
+                counts[sId].total++;
+                if (c.isVip) counts[sId].vip++;
+                else counts[sId].normal++;
+            });
+        });
+
+        let text = `🔄 <b>پنل جامع انتقال دیتابیس کاربران بین سرورها</b>\n\n` +
+                   `📋 <b>وضعیت فعلی سرورها و تعداد کانفیگ‌ها:</b>\n\n`;
+
+        let buttons = [];
+        servers.forEach(s => {
+            const st = counts[s.id] || { total: 0, normal: 0, vip: 0 };
+            text += `🖥 <b>${s.name}</b>\n` +
+                    `🔖 شناسه: <code>${s.id}</code>\n` +
+                    `👥 کل اکانت‌ها: <b>${st.total}</b> (👤 عادی: ${st.normal} | 👑 VIP: ${st.vip})\n` +
+                    `〰️〰️〰️〰️〰️\n`;
+            buttons.push([Markup.button.callback(`📤 مبدا: ${s.name} (${st.total} اکانت)`, `mig_src_${s.id}`)]);
+        });
+
+        text += `\n👇 <b>گام اول:</b> لطفاً <b>سرور مبدا</b> (سروری که می‌خواهید کاربرانش را به سرور دیگری منتقل کنید) انتخاب کنید:`;
+        buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_servers_menu')]);
+
+        ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
+        ctx.answerCbQuery();
+    });
+
+    bot.action(/^mig_src_(.+)$/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const srcId = ctx.match[1];
+        const db = readDb();
+        const srcSrv = (db.servers || []).find(s => s.id === srcId);
+        if (!srcSrv) return ctx.answerCbQuery('سرور مبدا یافت نشد!', { show_alert: true });
+
+        const otherServers = (db.servers || []).filter(s => s.id !== srcId);
+        if (otherServers.length === 0) {
+            return ctx.answerCbQuery('⚠️ حداقل ۲ سرور باید در ربات ثبت شده باشد تا بتوانید انتقال انجام دهید.', { show_alert: true });
+        }
+
+        let buttons = otherServers.map(s => [
+            Markup.button.callback(`📥 مقصد: ${s.name} (${s.id})`, `mig_dst_${srcId}_${s.id}`)
+        ]);
+        buttons.push([Markup.button.callback('🔙 تغییر سرور مبدا', 'admin_migrate_db_menu')]);
+
+        ctx.editMessageText(
+            `🔄 <b>انتقال دیتابیس کاربران</b>\n\n` +
+            `📤 <b>سرور مبدا:</b> ${srcSrv.name} (<code>${srcSrv.id}</code>)\n\n` +
+            `👇 <b>گام دوم:</b> حالا <b>سرور مقصد</b> (سرور واحدی که بکاپ کلاینت‌ها را روی آن ایمپورت کرده‌اید) انتخاب کنید:`,
+            { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }
+        );
+        ctx.answerCbQuery();
+    });
+
+    bot.action(/^mig_dst_(.+)_(srv_.+)$/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const srcId = ctx.match[1];
+        const dstId = ctx.match[2];
+        const db = readDb();
+        const srcSrv = (db.servers || []).find(s => s.id === srcId);
+        const dstSrv = (db.servers || []).find(s => s.id === dstId);
+        if (!srcSrv || !dstSrv) return ctx.answerCbQuery('سرور یافت نشد!', { show_alert: true });
+
+        const kb = {
+            inline_keyboard: [
+                [Markup.button.callback('👥 انتقال همه کاربران (عادی + VIP)', `mig_type_all_${srcId}_${dstId}`)],
+                [Markup.button.callback('👤 فقط انتقال کاربران عادی', `mig_type_normal_${srcId}_${dstId}`)],
+                [Markup.button.callback('👑 فقط انتقال کاربران VIP', `mig_type_vip_${srcId}_${dstId}`)],
+                [Markup.button.callback('🔙 مرحله قبل', `mig_src_${srcId}`)]
+            ]
+        };
+
+        ctx.editMessageText(
+            `🔄 <b>انتخاب نوع انتقال و عملیات</b>\n\n` +
+            `📤 <b>از مبدا:</b> ${srcSrv.name} (<code>${srcId}</code>)\n` +
+            `📥 <b>به مقصد:</b> ${dstSrv.name} (<code>${dstId}</code>)\n\n` +
+            `👇 <b>گام سوم:</b> کدام دسته از کانفیگ‌های این سرور منتقل شوند؟`,
+            { parse_mode: 'HTML', reply_markup: kb }
+        );
+        ctx.answerCbQuery();
+    });
+
+    bot.action(/^mig_type_(all|normal|vip)_(.+)_(srv_.+)$/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const filterType = ctx.match[1];
+        const srcId = ctx.match[2];
+        const dstId = ctx.match[3];
+        const db = readDb();
+        const srcSrv = (db.servers || []).find(s => s.id === srcId);
+        const dstSrv = (db.servers || []).find(s => s.id === dstId);
+
+        let targetCount = 0;
+        Object.values(db.users || {}).forEach(confs => {
+            confs.forEach(c => {
+                if (c.serverId === srcId) {
+                    if (filterType === 'all' || (filterType === 'normal' && !c.isVip) || (filterType === 'vip' && c.isVip)) {
+                        targetCount++;
+                    }
+                }
+            });
+        });
+
+        const typeLabel = filterType === 'all' ? 'همه کانفیگ‌ها (عادی و VIP)' : filterType === 'normal' ? 'فقط کانفیگ‌های عادی' : 'فقط کانفیگ‌های VIP';
+
+        const kb = {
+            inline_keyboard: [
+                [Markup.button.callback(`✅ تایید نهایی و انتقال (${targetCount} کانفیگ) + آپدیت پرچم و سرور پیش‌فرض`, `mig_exec_full_${filterType}_${srcId}_${dstId}`)],
+                [Markup.button.callback(`🔹 انتقال (${targetCount} کانفیگ) بدون تغییر سرور پیش‌فرض خرید`, `mig_exec_only_${filterType}_${srcId}_${dstId}`)],
+                [Markup.button.callback('❌ انصراف', 'admin_migrate_db_menu')]
+            ]
+        };
+
+        ctx.editMessageText(
+            `⚠️ <b>پیش‌نمایش و تایید نهایی انتقال دیتابیس</b>\n\n` +
+            `📤 <b>مبدا:</b> ${srcSrv?.name} (<code>${srcId}</code>)\n` +
+            `📥 <b>مقصد:</b> ${dstSrv?.name} (<code>${dstId}</code>)\n` +
+            `🎯 <b>دامنه انتقال:</b> ${typeLabel}\n` +
+            `📊 <b>تعداد کانفیگ‌های شناسایی‌شده:</b> <b>${targetCount}</b> عدد\n\n` +
+            `🛠 <b>کارهایی که به صورت خودکار انجام می‌شود:</b>\n` +
+            `1️⃣ تغییر <code>serverId</code> تمام این کانفیگ‌ها در دیتابیس ربات به سرور مقصد.\n` +
+            `2️⃣ اصلاح خودکار ایموجی پرچم کشور در انتهای نام کانفیگ‌ها بر اساس نام سرور مقصد.\n` +
+            `3️⃣ در صورت انتخاب گزینه اول، سرور پیش‌فرض خریدهای آینده نیز روی سرور مقصد تنظیم می‌شود.\n\n` +
+            `👇 لطفاً گزینه مورد نظر را برای اجرا انتخاب کنید:`,
+            { parse_mode: 'HTML', reply_markup: kb }
+        );
+        ctx.answerCbQuery();
+    });
+
+    bot.action(/^mig_exec_(full|only)_(all|normal|vip)_(.+)_(srv_.+)$/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const mode = ctx.match[1];
+        const filterType = ctx.match[2];
+        const srcId = ctx.match[3];
+        const dstId = ctx.match[4];
+
+        const db = readDb();
+        const dstSrv = (db.servers || []).find(s => s.id === dstId);
+        if (!dstSrv) return ctx.answerCbQuery('سرور مقصد یافت نشد!', { show_alert: true });
+
+        const newFlag = getServerFlag(dstSrv.name);
+        const allFlags = ['🇳🇱', '🇩🇪', '🇮🇹', '🇫🇷', '🇬🇧', '🇹🇷', '🌍', '🇫🇮'];
+        let movedConfigs = 0;
+        let affectedUsers = 0;
+
+        for (const uid in db.users) {
+            let userTouched = false;
+            (db.users[uid] || []).forEach(c => {
+                if (c.serverId === srcId) {
+                    const match = filterType === 'all' || (filterType === 'normal' && !c.isVip) || (filterType === 'vip' && c.isVip);
+                    if (match) {
+                        c.serverId = dstId;
+                        if (newFlag && c.name) {
+                            allFlags.forEach(f => { c.name = c.name.replace(f, '').trim(); });
+                            c.name = `${c.name} ${newFlag}`.trim();
+                        }
+                        movedConfigs++;
+                        userTouched = true;
+                    }
+                }
+            });
+            if (userTouched) affectedUsers++;
+        }
+
+        if (mode === 'full') {
+            if (filterType === 'all' || filterType === 'normal') db.settings.activeServerId = dstId;
+            if (filterType === 'all' || filterType === 'vip') db.settings.activeVipServerId = dstId;
+        }
+
+        writeDb(db);
+        ctx.answerCbQuery('✅ انتقال با موفقیت انجام شد!', { show_alert: true });
+
+        ctx.editMessageText(
+            `✅ <b>انتقال دیتابیس با موفقیت به پایان رسید!</b>\n\n` +
+            `📦 <b>تعداد کانفیگ‌های منتقل‌شده:</b> ${movedConfigs} عدد\n` +
+            `👥 <b>تعداد کاربران:</b> ${affectedUsers} نفر\n` +
+            `📥 <b>سرور جدید:</b> ${dstSrv.name} (<code>${dstId}</code>)\n` +
+            `${mode === 'full' ? '🟢 سرور پیش‌فرض خریدها نیز به سرور مقصد تغییر یافت.' : ''}\n\n` +
+            `اکنون ربات اطلاعات ترافیک، تمدید و کانفیگ این کاربران را مستقیماً از سرور مقصد و بر اساس سطح اینباند آن‌ها می‌خواند.`,
+            {
+                parse_mode: 'HTML',
+                reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت به مدیریت سرورها', 'admin_servers_menu')]] }
+            }
+        );
     });
 
     // --- مدیریت ECH و آدرس (کانفیگ ۴) ---
@@ -1178,7 +1435,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                          
             await ctx.editMessageText(text, {
                 parse_mode: 'HTML',
-                reply_markup: getSingleInboundMenu(srvId, index).reply_markup
+                reply_markup: getSingleInboundMenu(srvId, index, updatedInb).reply_markup
             });
         }
     });
@@ -1244,7 +1501,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         db.settings.activeServerId = srvId;
         writeDb(db);
         ctx.answerCbQuery('✅ سرور پیش‌فرض عادی تغییر کرد.', {show_alert: true});
-        ctx.editMessageText('🖥 <b>مدیریت سرورها</b>\nیک گزینه رو انتخاب کن:', { parse_mode: 'HTML', reply_markup: adminServersMenu.reply_markup });
+        ctx.editMessageText('🖥 <b>مدیریت سرورها</b>\nیک گزینه رو انتخاب کن:', { parse_mode: 'HTML', reply_markup: getAdminServersMenu(db).reply_markup });
     });
 
     bot.action(/set_vip_srv_(.*)/, (ctx) => {
@@ -1253,7 +1510,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         db.settings.activeVipServerId = srvId;
         writeDb(db);
         ctx.answerCbQuery('👑 سرور پیش‌فرض VIP تغییر کرد.', {show_alert: true});
-        ctx.editMessageText('🖥 <b>مدیریت سرورها</b>\nیک گزینه رو انتخاب کن:', { parse_mode: 'HTML', reply_markup: adminServersMenu.reply_markup });
+        ctx.editMessageText('🖥 <b>مدیریت سرورها</b>\nیک گزینه رو انتخاب کن:', { parse_mode: 'HTML', reply_markup: getAdminServersMenu(db).reply_markup });
     });
 
     bot.action('admin_remove_server', (ctx) => {
@@ -2531,7 +2788,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const targetServer = db.servers?.find(s => s.id === targetServerId);
         const email = `Test_${ctx.from.id}_${Date.now()}`;
         
-        const uuid = await createClient(email, 0.2, 1, targetServer || null); 
+        const uuid = await createClient(email, 0.2, 1, targetServer || null, false, db.settings?.inboundTierMode); 
         if (!uuid) return ctx.reply('❌ خطا در ارتباط با سرور.');
 
         const freshDb = readDb();
@@ -2564,7 +2821,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const targetServer = db.servers?.find(s => s.id === targetServerId);
 
         const email = `Test_${userId}_${Date.now()}`;
-        const uuid = await createClient(email, 0.2, 1, targetServer || null); 
+        const uuid = await createClient(email, 0.2, 1, targetServer || null, false, db.settings?.inboundTierMode); 
         if (!uuid) return ctx.reply('❌ خطا در ارتباط با سرور.');
 
         if (!db.users[userId]) db.users[userId] = [];
@@ -2592,11 +2849,21 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         // ۱. دریافت لیست ID اینباندهای فعال برای این کلاینت مستقیماً از پنل
         const activeInboundIds = await getClientActiveInboundIds(conf.email, targetServer);
 
-        // ۲. ساخت یک کپی موقت از سرور برای فیلتر کردن اینباندهای غیرفعال
+        // ۲. ساخت یک کپی موقت از سرور برای فیلتر کردن اینباندهای غیرفعال و سطح دسترسی (عادی / VIP)
         let tempServer = JSON.parse(JSON.stringify(targetServer));
         
-        if (activeInboundIds && activeInboundIds.length > 0 && tempServer.inbounds) {
-            tempServer.inbounds = tempServer.inbounds.filter(inb => activeInboundIds.includes(inb.id));
+        if (tempServer.inbounds) {
+            if (activeInboundIds && activeInboundIds.length > 0) {
+                tempServer.inbounds = tempServer.inbounds.filter(inb => activeInboundIds.includes(inb.id));
+            }
+            if (db.settings?.inboundTierMode) {
+                const isVipConf = !!(conf.isVip || conf.name?.includes('VIP'));
+                const tierFiltered = tempServer.inbounds.filter(inb => {
+                    const t = inb.tier || 'both';
+                    return t === 'both' || (isVipConf ? t === 'vip' : t === 'normal');
+                });
+                if (tierFiltered.length > 0) tempServer.inbounds = tierFiltered;
+            }
         }
 
         // ۳. تولید کانفیگ‌ها فقط برای اینباندهای فیلتر شده
@@ -3241,7 +3508,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                                     
                         return ctx.reply(text, {
                             parse_mode: 'HTML',
-                            reply_markup: getSingleInboundMenu(srvId, index).reply_markup
+                            reply_markup: getSingleInboundMenu(srvId, index, updatedInb).reply_markup
                         });
                     }
                 }
@@ -3521,7 +3788,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 const targetServer = db.servers?.find(s => s.id === targetServerId);
                 const email = `User_${targetUserId}_Ord${orderId}_${Date.now()}`;
                 
-                const uuid = await createClient(email, totalGB, expiryDays, targetServer || null);
+                const uuid = await createClient(email, totalGB, expiryDays, targetServer || null, isVip, db.settings?.inboundTierMode);
                 if (!uuid) return ctx.reply('❌ خطا در ارتباط با پنل سرور.');
 
                 const freshDb = readDb();
@@ -3891,7 +4158,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         finalName = `${finalName} ${flag}`.trim();
 
         const email = `User_${userId}_Ord${orderId}_${Date.now()}`;
-        const uuid = await createClient(email, totalGB, expiryDays, targetServer || null);
+        const uuid = await createClient(email, totalGB, expiryDays, targetServer || null, planId === 'vip', db.settings?.inboundTierMode);
         
         if (!uuid) return ctx.reply('❌ خطا در ساخت کانفیگ در پنل.');
 
@@ -4066,12 +4333,13 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         }
 
         let newUuid = conf.uuid;
+        const isVipRenew = !!(planId === 'vip' || conf.isVip);
         if (currentServerId !== targetServerId) {
             if (oldServer) await deleteClient(conf.uuid, oldServer);
-            newUuid = await createClient(newEmail, finalGB, finalDays, targetServer || null);
+            newUuid = await createClient(newEmail, finalGB, finalDays, targetServer || null, isVipRenew, db.settings?.inboundTierMode);
             if (!newUuid) return ctx.reply('❌ خطا در کوچ کانفیگ به سرور جدید.');
         } else {
-            const result = await renewClient(conf.uuid, oldEmail, newEmail, finalGB, finalDays, targetServer || null);
+            const result = await renewClient(conf.uuid, oldEmail, newEmail, finalGB, finalDays, targetServer || null, isVipRenew, db.settings?.inboundTierMode);
             if (!result.success) return ctx.reply(`❌ <b>خطا در تمدید:</b>\n<code>${result.log}</code>`, { parse_mode: 'HTML' });
         }
 

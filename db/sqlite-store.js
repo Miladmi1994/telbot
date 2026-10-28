@@ -22,6 +22,8 @@ function openDatabase(dbFilePath) {
     try { db.exec("ALTER TABLE servers ADD COLUMN ech_enabled INTEGER NOT NULL DEFAULT 1;"); } catch (e) {}
     try { db.exec("ALTER TABLE servers ADD COLUMN ech_address TEXT NOT NULL DEFAULT 'ns3.crrc.ir';"); } catch (e) {}
     try { db.exec("ALTER TABLE servers ADD COLUMN ech_config TEXT NOT NULL DEFAULT 'cloudflare-ech.com+udp://1.1.1.1';"); } catch (e) {}
+    try { db.exec("ALTER TABLE settings ADD COLUMN inbound_tier_mode INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE server_inbounds ADD COLUMN tier TEXT NOT NULL DEFAULT 'both';"); } catch (e) {}
 
     // ساخت جدول اینباندها اگر وجود نداشت + ستون‌های جدید
     db.exec(`
@@ -139,7 +141,8 @@ function loadState(db) {
                 sni: row.sni,
                 path: row.path,
                 network: row.network,
-                isSpecialWs: !!row.is_special_ws
+                isSpecialWs: !!row.is_special_ws,
+                tier: row.tier || 'both'
             }));
 
         // انتقال اتوماتیک اینباند قدیمی به ساختار جدید
@@ -150,7 +153,8 @@ function loadState(db) {
                 sni: srv.sni,
                 path: srv.path || '',
                 network: 'xhttp',
-                isSpecialWs: false
+                isSpecialWs: false,
+                tier: 'both'
             });
         }
     });
@@ -219,6 +223,7 @@ function loadState(db) {
             activeVipServerId: settingsRow?.active_vip_server_id || undefined,
             adminExemptReferral: !!settingsRow?.admin_exempt_referral,
             customPlanEnabled: settingsRow?.custom_plan_enabled !== 0,
+            inboundTierMode: !!settingsRow?.inbound_tier_mode,
             plans
         },
         testUsers,
@@ -247,7 +252,8 @@ function loadState(db) {
                 active_server_id = ?,
                 active_vip_server_id = ?,
                 admin_exempt_referral = ?,
-                custom_plan_enabled = ?
+                custom_plan_enabled = ?,
+                inbound_tier_mode = ?
             WHERE id = 1
         `).run(
             data.settings?.salesOpen ? 1 : 0,
@@ -255,7 +261,8 @@ function loadState(db) {
             data.settings?.activeServerId || null,
             data.settings?.activeVipServerId || null,
             data.settings?.adminExemptReferral ? 1 : 0,
-            data.settings?.customPlanEnabled === false ? 0 : 1 // <--- اضافه شد
+            data.settings?.customPlanEnabled === false ? 0 : 1,
+            data.settings?.inboundTierMode ? 1 : 0
         );
 
         db.prepare(`
@@ -318,8 +325,8 @@ function loadState(db) {
         `);
 
         const insertInbound = db.prepare(`
-        INSERT INTO server_inbounds (server_id, inbound_id, domain, sni, path, network, is_special_ws)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO server_inbounds (server_id, inbound_id, domain, sni, path, network, is_special_ws, tier)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const server of data.servers || []) {
@@ -341,7 +348,7 @@ function loadState(db) {
             
             // ذخیره لیست اینباندهای هر سرور همراه با فیلد شبکه
             for (const inb of server.inbounds || []) {
-                insertInbound.run(server.id, inb.id, inb.domain, inb.sni, inb.path, inb.network || 'xhttp', inb.isSpecialWs ? 1 : 0);
+                insertInbound.run(server.id, inb.id, inb.domain, inb.sni, inb.path, inb.network || 'xhttp', inb.isSpecialWs ? 1 : 0, inb.tier || 'both');
             }
         }
 

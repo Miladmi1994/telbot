@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS settings (
     active_server_id TEXT,
     active_vip_server_id TEXT,
     admin_exempt_referral INTEGER NOT NULL DEFAULT 0,
-    custom_plan_enabled INTEGER NOT NULL DEFAULT 1
+    custom_plan_enabled INTEGER NOT NULL DEFAULT 1,
+    inbound_tier_mode INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS plans (
@@ -58,7 +59,8 @@ CREATE TABLE IF NOT EXISTS server_inbounds (
     sni TEXT NOT NULL,
     path TEXT NOT NULL,
     network TEXT NOT NULL DEFAULT 'ws',
-    is_special_ws INTEGER NOT NULL DEFAULT 0  -- <--- این خط اضافه شود
+    is_special_ws INTEGER NOT NULL DEFAULT 0,  -- <--- این خط اضافه شود
+    tier TEXT NOT NULL DEFAULT 'both'
 );
 
 CREATE TABLE IF NOT EXISTS admins (

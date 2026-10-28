@@ -21,6 +21,7 @@ const defaultDb = {
         salesOpen: true,
         maintenance: false,
         customPlanEnabled: true,
+        inboundTierMode: false,
         plans: [
             { id: '30', name: '30 گیگ یک ماهه', gb: 30, days: 30, price: 180000, btnText: '📦 30 گیگ - 1 ماهه (180,000 تومان)', sold: 0 },
             { id: '50', name: '50 گیگ یک ماهه', gb: 50, days: 30, price: 275000, btnText: '📦 50 گیگ - 1 ماهه (275,000 تومان)', sold: 0 },
@@ -75,6 +76,7 @@ function normalizeDb(data) {
         if (plan.sold === undefined) { plan.sold = 0; needsUpdate = true; }
         if (plan.discountPercent === undefined) { plan.discountPercent = 0; needsUpdate = true; } // <--- اضافه شد
     });
+    if (data.settings.inboundTierMode === undefined) { data.settings.inboundTierMode = false; needsUpdate = true; }
 
     if (!data.testUsers) { data.testUsers = []; needsUpdate = true; }
     if (!data.vipUsers) { data.vipUsers = []; needsUpdate = true; }

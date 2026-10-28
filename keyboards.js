@@ -81,14 +81,20 @@ const getAdminMarketingMenu = (db) => {
     ]);
 };
 
-const adminServersMenu = Markup.inlineKeyboard([
-    [Markup.button.callback('➖ حذف', 'admin_remove_server'), Markup.button.callback('✏️ ویرایش', 'admin_edit_server'), Markup.button.callback('➕ افزودن', 'admin_add_server')],
-    [Markup.button.callback('📋 لیست سرورها', 'admin_list_servers')],
-    [Markup.button.callback('✅ سرور عادی', 'admin_set_active_server'), Markup.button.callback('👑 سرور VIP', 'admin_set_vip_server')],
-    [Markup.button.callback('🛡 مدیریت ECH و آدرس (کانفیگ ۴)', 'admin_ech_menu')],
-    [Markup.button.callback('☁️ مدیریت Cloudflare', 'admin_cf_menu')], 
-    [Markup.button.callback('🔙 بازگشت', 'back_admin')]
-]);
+const getAdminServersMenu = (db) => {
+    const tierMode = db?.settings?.inboundTierMode ? '🟢 روشن (تک‌سرور)' : '⚪️ خاموش (چندسرور)';
+    return Markup.inlineKeyboard([
+        [Markup.button.callback('➖ حذف', 'admin_remove_server'), Markup.button.callback('✏️ ویرایش', 'admin_edit_server'), Markup.button.callback('➕ افزودن', 'admin_add_server')],
+        [Markup.button.callback('📋 لیست سرورها', 'admin_list_servers')],
+        [Markup.button.callback('✅ سرور عادی', 'admin_set_active_server'), Markup.button.callback('👑 سرور VIP', 'admin_set_vip_server')],
+        [Markup.button.callback(`🔀 تفکیک با اینباند: ${tierMode}`, 'toggle_inbound_tier_mode')],
+        [Markup.button.callback('🔄 انتقال کاربران بین سرورها (DB)', 'admin_migrate_db_menu')],
+        [Markup.button.callback('🛡 مدیریت ECH و آدرس (کانفیگ ۴)', 'admin_ech_menu')],
+        [Markup.button.callback('☁️ مدیریت Cloudflare', 'admin_cf_menu')], 
+        [Markup.button.callback('🔙 بازگشت', 'back_admin')]
+    ]);
+};
+const adminServersMenu = getAdminServersMenu({});
 
 // منوی مدیریت اختصاصی یک سرور
 const getServerManageMenu = (serverId) => Markup.inlineKeyboard([
@@ -100,8 +106,9 @@ const getServerManageMenu = (serverId) => Markup.inlineKeyboard([
 
 // منوی لیست اینباندهای یک سرور
 const getInboundsMenu = (serverId, inbounds = []) => {
+    const tierBadge = (t) => t === 'vip' ? '👑 VIP' : t === 'normal' ? '👤 عادی' : '🌐 مشترک';
     const buttons = inbounds.map((inb, index) => [
-        Markup.button.callback(`🔌 شناسه: ${inb.id} | ${inb.domain}`, `edit_inbound_${serverId}_${index}`)
+        Markup.button.callback(`🔌 ID: ${inb.id} | ${tierBadge(inb.tier)} | ${inb.domain}`, `edit_inbound_${serverId}_${index}`)
     ]);
     buttons.push([Markup.button.callback('➕ افزودن اینباند جدید', `add_inbound_${serverId}`)]);
     buttons.push([Markup.button.callback('🔙 بازگشت به مدیریت سرور', `manage_srv_${serverId}`)]);
@@ -109,15 +116,19 @@ const getInboundsMenu = (serverId, inbounds = []) => {
 };
 
 // منوی ویرایش یک اینباند خاص
-const getSingleInboundMenu = (serverId, inboundIndex, inb) => Markup.inlineKeyboard([
-    [Markup.button.callback('✏️ ویرایش شناسه (ID)', `edit_inb_id_${serverId}_${inboundIndex}`)],
-    [Markup.button.callback('✏️ ویرایش دامنه', `edit_inb_domain_${serverId}_${inboundIndex}`), Markup.button.callback('✏️ ویرایش SNI', `edit_inb_sni_${serverId}_${inboundIndex}`)],
-    [Markup.button.callback('✏️ ویرایش مسیر (Path)', `edit_inb_path_${serverId}_${inboundIndex}`)],
-    [Markup.button.callback('🌐 ویرایش نوع شبکه', `edit_inb_net_${serverId}_${inboundIndex}`)],
-    [Markup.button.callback(inb?.isSpecialWs ? '✅ کانفیگ ویژه WS: فعال' : '❌ کانفیگ ویژه WS: غیرفعال', `toggle_special_ws_${serverId}_${inboundIndex}`)],
-    [Markup.button.callback('🗑 حذف این اینباند', `del_inb_${serverId}_${inboundIndex}`)],
-    [Markup.button.callback('🔙 بازگشت به لیست اینباندها', `manage_inbounds_${serverId}`)]
-]);
+const getSingleInboundMenu = (serverId, inboundIndex, inb) => {
+    const tierText = inb?.tier === 'vip' ? '👑 فقط VIP' : inb?.tier === 'normal' ? '👤 فقط عادی' : '🌐 مشترک (عادی و VIP)';
+    return Markup.inlineKeyboard([
+        [Markup.button.callback('✏️ ویرایش شناسه (ID)', `edit_inb_id_${serverId}_${inboundIndex}`)],
+        [Markup.button.callback('✏️ ویرایش دامنه', `edit_inb_domain_${serverId}_${inboundIndex}`), Markup.button.callback('✏️ ویرایش SNI', `edit_inb_sni_${serverId}_${inboundIndex}`)],
+        [Markup.button.callback('✏️ ویرایش مسیر (Path)', `edit_inb_path_${serverId}_${inboundIndex}`)],
+        [Markup.button.callback('🌐 ویرایش نوع شبکه', `edit_inb_net_${serverId}_${inboundIndex}`)],
+        [Markup.button.callback(`👥 سطح دسترسی: ${tierText}`, `toggle_inb_tier_${serverId}_${inboundIndex}`)],
+        [Markup.button.callback(inb?.isSpecialWs ? '✅ کانفیگ ویژه WS: فعال' : '❌ کانفیگ ویژه WS: غیرفعال', `toggle_special_ws_${serverId}_${inboundIndex}`)],
+        [Markup.button.callback('🗑 حذف این اینباند', `del_inb_${serverId}_${inboundIndex}`)],
+        [Markup.button.callback('🔙 بازگشت به لیست اینباندها', `manage_inbounds_${serverId}`)]
+    ]);
+};
 
 // زیرمنوی مدیریت کاربران
 const adminUsersMenu = Markup.inlineKeyboard([
@@ -195,7 +206,7 @@ module.exports = {
     receiptKeyboard, 
     supportMenuKeyboard, 
     getAdminKeyboard,
-    adminServersMenu,
+    getAdminServersMenu,
     adminVipMenu,
     adminUsersMenu,
     adminFinanceMenu,

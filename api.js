@@ -86,7 +86,21 @@ async function testServerConnection(panelUrl, webBasePath, apiToken) {
     }
 }
 
-async function createClient(email, totalGB, expiryDays, server) {
+function getFilteredInboundIds(server, isVip = false, tierModeEnabled = false) {
+    if (!server || !server.inbounds || server.inbounds.length === 0) return [];
+    if (!tierModeEnabled) return server.inbounds.map(inb => inb.id);
+
+    const matched = server.inbounds.filter(inb => {
+        const tier = inb.tier || 'both';
+        if (tier === 'both') return true;
+        return isVip ? tier === 'vip' : tier === 'normal';
+    });
+
+    // اگر ادمین یادش رفته بود اینباندی برای آن سطح ست کند، برای جلوگیری از خطا همه را برگردان
+    return (matched.length > 0 ? matched : server.inbounds).map(inb => inb.id);
+}
+
+async function createClient(email, totalGB, expiryDays, server, isVip = false, tierModeEnabled = false) {
     const apiClient = getApiClient(server);
     const uuid = crypto.randomUUID();
     const subId = crypto.randomBytes(8).toString('hex');
@@ -99,7 +113,7 @@ async function createClient(email, totalGB, expiryDays, server) {
         return false;
     }
 
-    const inboundIds = server.inbounds.map(inb => inb.id);
+    const inboundIds = getFilteredInboundIds(server, isVip, tierModeEnabled);
 
     const payload = {
         client: {
@@ -224,7 +238,7 @@ async function getClientActiveInboundIds(email, server = null) {
     }
 }
 
-async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server) {
+async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server, isVip = false, tierModeEnabled = false) {
     const apiClient = getApiClient(server);
 
     const totalByte = totalGB === 0 ? 0 : Math.floor(totalGB * 1073741824);
@@ -235,7 +249,7 @@ async function renewClient(uuid, oldEmail, newEmail, totalGB, expiryDays, server
         return { success: false, log: 'اینباندی برای این سرور یافت نشد.' };
     }
 
-    const inboundIds = server.inbounds.map(inb => inb.id);
+    const inboundIds = getFilteredInboundIds(server, isVip, tierModeEnabled);
 
     try {
         // ۱. عملیات خودترمیمی (Self-Healing): حذف کامل کلاینت با UUID
