@@ -808,4 +808,19 @@ async function deleteClientByEmailAndUuid(email, uuid, server) {
     return deleted;
 }
 
+wallexWs.on('message', (data) => {
+        try {
+            const parsed = JSON.parse(data);
+            if (parsed.push && parsed.push.channel === 'public:all@price') {
+                const marketData = parsed.push.pub.data;
+                if (marketData && marketData.symbol === 'USDTTMN') {
+                    latestWallexUsdtPrice = Math.ceil(Number(marketData.price));
+                    
+                    // 👈 این خط را موقتاً اضافه کنید تا مطمئن شوید قیمت از والکس می‌رسد
+                    console.log('🟢 [Wallex WS] قیمت جدید تتر دریافت شد:', latestWallexUsdtPrice);
+                }
+            }
+        } catch (e) {}
+    });
+
 module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap, adminModifyClient, deleteClientByEmailAndUuid };
