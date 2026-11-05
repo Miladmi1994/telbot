@@ -82,7 +82,7 @@ const getAdminMarketingMenu = (db) => {
     ]);
 };
 
-const getAdminServersMenu = (db) => {
+const getAdminServersMenu = (db = {}) => {
     const tierMode = db?.settings?.inboundTierMode ? '🟢 روشن (تک‌سرور)' : '⚪️ خاموش (چندسرور)';
     return Markup.inlineKeyboard([
         [Markup.button.callback('➖ حذف', 'admin_remove_server'), Markup.button.callback('✏️ ویرایش', 'admin_edit_server'), Markup.button.callback('➕ افزودن', 'admin_add_server')],
@@ -92,10 +92,15 @@ const getAdminServersMenu = (db) => {
         [Markup.button.callback('🔄 انتقال کاربران بین سرورها (DB)', 'admin_migrate_db_menu')],
         [Markup.button.callback('🛡 مدیریت ECH و آدرس (کانفیگ ۴)', 'admin_ech_menu')],
         [Markup.button.callback('☁️ مدیریت Cloudflare', 'admin_cf_menu')],
-        [Markup.button.callback('🧹 پاکسازی سایلنت اکانت‌های منقضی (+48h)', 'admin_silent_cleanup_exec')],
+        // دو دکمه مجزا برای پاکسازی پنل و دیتابیس
+        [
+            Markup.button.callback('🗑 پاکسازی پنل (+48h)', 'admin_cleanup_panel_exec'),
+            Markup.button.callback('🧹 پاکسازی دیتابیس (+48h)', 'admin_cleanup_db_exec')
+        ],
         [Markup.button.callback('🔙 بازگشت', 'back_admin')]
     ]);
 };
+
 const adminServersMenu = getAdminServersMenu({});
 
 // منوی مدیریت اختصاصی یک سرور

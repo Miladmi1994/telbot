@@ -3448,27 +3448,25 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         });
     });
 
-    // --- پاکسازی سایلنت اکانت‌های منقضی‌شده پس از ۴۸ ساعت توسط ادمین ---
-    bot.action('admin_silent_cleanup_exec', async (ctx) => {
+    // پاکسازی اکانت‌های منقضی‌شده از روی پنل سرور (+48h)
+    bot.action('admin_cleanup_panel_exec', async (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
-        await ctx.answerCbQuery('⏳ در حال بررسی و پاکسازی سایلنت اکانت‌ها...', { show_alert: false });
+        await ctx.answerCbQuery('⏳ در حال بررسی و پاکسازی از روی پنل سرور...', { show_alert: false });
 
         const db = readDb();
         const now = Date.now();
         const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
-        let cleanedCount = 0;
+        let deletedPanelCount = 0;
 
         for (const userId of Object.keys(db.users || {})) {
             const configs = db.users[userId];
             if (!configs || !Array.isArray(configs)) continue;
 
-            let userChanged = false;
             for (let conf of configs) {
                 if (conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
                 const targetServer = getTargetServer(db, conf);
                 if (!targetServer) continue;
 
-                // استعلام لحظه‌ای ترافیک از پنل
                 const traffic = await getClientTraffic(conf.email, targetServer).catch(() => undefined);
                 if (!traffic) continue;
 
@@ -3480,32 +3478,90 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 const isTest = conf.email.startsWith('Test_') || conf.name.includes('تست');
 
                 if (isVolumeEnded || isTimeEnded) {
-                    if (!conf.exhaustedAt) {
-                        conf.exhaustedAt = (isTimeEnded && (now - exp) > FORTY_EIGHT_HOURS) ? exp : now;
-                        userChanged = true;
-                    }
-
+                    const baseExhausted = conf.exhaustedAt || exp || now;
                     const waitLimit = isTest ? (24 * 60 * 60 * 1000) : FORTY_EIGHT_HOURS;
-                    if ((now - conf.exhaustedAt) >= waitLimit) {
-                        // حذف قطعی از پنل سنایی بدون ارسال پیام به کاربر (سایلنت)
+                    
+                    if ((now - baseExhausted) >= waitLimit || (now - exp) >= waitLimit) {
                         const deleted = await deleteClientByEmailAndUuid(conf.email, conf.uuid, targetServer);
                         if (deleted) {
                             conf.deletedFromPanel = true;
-                            conf.exhaustedAt = null;
-                            cleanedCount++;
-                            userChanged = true;
+                            deletedPanelCount++;
                         }
                     }
                 }
             }
-            if (userChanged) writeDb(db);
         }
-
+        writeDb(db);
         ctx.reply(
-            `🧹 <b>عملیات پاکسازی سایلنت به پایان رسید.</b>\n\n` +
-            `تعداد <b>${cleanedCount}</b> اکانت منقضی‌شده که بیش از ۴۸ ساعت از مهلتشان گذشته بود، به صورت کاملاً پنهانی از پنل و ربات حذف شدند.`,
+            `✅ <b>پاکسازی پنل سرور انجام شد.</b>\n\n` +
+            `🗑 تعداد اکانت‌هایی که از روی پنل سرور پاک/غیرفعال شدند: <b>${deletedPanelCount}</b> عدد`,
             { parse_mode: 'HTML' }
         );
+    });
+
+    // پاکسازی کامل اکانت‌های منقضی‌شده از دیتابیس ربات (+48h)
+    bot.action('admin_cleanup_db_exec', async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        await ctx.answerCbQuery('⏳ در حال پاکسازی و محو کردن اکانت‌ها از دیتابیس...', { show_alert: false });
+
+        const db = readDb();
+        const now = Date.now();
+        const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
+        let removedFromDbCount = 0;
+
+        for (const userId of Object.keys(db.users || {})) {
+            const configs = db.users[userId];
+            if (!configs || !Array.isArray(configs)) continue;
+
+            db.users[userId] = configs.filter(conf => {
+                if (conf.name === 'سرویس قبلی') return true;
+
+                let expTime = conf.panelStats?.expiry || 0;
+                if (expTime > 0 && expTime < 1e12) expTime *= 1000;
+
+                const isVolumeEnded = conf.panelStats?.total > 0 && (conf.panelStats?.used || 0) >= conf.panelStats.total;
+                const isTimeEnded = expTime > 0 && now >= expTime;
+
+                if (isVolumeEnded || isTimeEnded) {
+                    const baseExhausted = conf.exhaustedAt || expTime || now;
+                    if ((now - baseExhausted) >= FORTY_EIGHT_HOURS || (now - expTime) >= FORTY_EIGHT_HOURS) {
+                        removedFromDbCount++;
+                        return false; // این رکورد از دیتابیس حذف می‌شود
+                    }
+                }
+                return true;
+            });
+        }
+        writeDb(db);
+        ctx.reply(
+            `✅ <b>پاکسازی دیتابیس ربات انجام شد.</b>\n\n` +
+            `🧹 تعداد اکانت‌هایی که به طور کامل از دیتابیس و داشبورد کاربران پاک شدند: <b>${removedFromDbCount}</b> عدد`,
+            { parse_mode: 'HTML' }
+        );
+    });
+
+    // کلیک کاربر روی دکمه ارسال پاسخ جدید به تیکت
+    bot.action(/^t_user_reply_(T\d+)$/, (ctx) => {
+        const ticketId = ctx.match[1];
+        const db = readDb();
+        const t = db.tickets?.[ticketId];
+
+        if (!t || t.status === 'closed') {
+            return ctx.answerCbQuery('❌ این تیکت بسته شده یا وجود ندارد.', { show_alert: true });
+        }
+
+        // اگر ادمین هنوز جواب نداده باشد (وضعیت pending_admin)، اجازه ارسال پاسخ نیست
+        if (t.status === 'pending_admin') {
+            return ctx.answerCbQuery('⏳ تا زمانی که پشتیبانی پاسخی نداده است، امکان ارسال پیام جدید وجود ندارد.', { show_alert: true });
+        }
+
+        // ذخیره استیت برای دریافت متن پاسخ کاربر
+        userSteps.set(ctx.from.id, { step: 'TICKET_REPLY_WAIT', ticketId, ts: Date.now() });
+        ctx.editMessageText(
+            `💬 <b>ارسال پاسخ به تیکت #${ticketId}</b>\n\nلطفاً پیام یا توضیحات خود را ارسال کنید:`,
+            { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 انصراف', `t_view_${ticketId}`)]] } }
+        );
+        ctx.answerCbQuery();
     });
 
     // شاخه ۱: پیگیری پرداخت
@@ -3959,6 +4015,43 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             return;
         }
 
+        if (state && state.step === 'TICKET_REPLY_WAIT') {
+            const ticketId = state.ticketId;
+            const db = readDb();
+            const t = db.tickets?.[ticketId];
+            if (!t) {
+                userSteps.delete(ctx.from.id);
+                return ctx.reply('❌ تیکت مورد نظر یافت نشد.');
+            }
+
+            const rawCaption = ctx.message.caption || '[ارسال تصویر/فایل جدید]';
+            t.status = 'pending_admin';
+            t.description = rawCaption;
+            t.updatedAt = Date.now();
+            writeDb(db);
+            userSteps.delete(ctx.from.id);
+
+            const userId = ctx.from.id.toString();
+            const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
+            const header = `💬 <b>پیام جدید (فایل/عکس) روی تیکت #${ticketId}</b>\n` +
+                           `👤 <b>کاربر:</b> #User_${userId} (${username})\n\n` +
+                           `<blockquote>${rawCaption.substring(0, 700).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</blockquote>`;
+
+            const isBanned = (db.bannedUsers || []).includes(userId);
+            const kb = buildAdminTicketKeyboard(ticketId, userId, isBanned, false);
+
+            try {
+                await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
+                    caption: header,
+                    parse_mode: 'HTML',
+                    message_thread_id: parseInt(TOPIC_ERROR),
+                    reply_markup: kb
+                });
+            } catch (e) {}
+
+            return ctx.reply('✅ فایل و پاسخ شما برای پشتیبانی ارسال شد.', { ...mainKeyboard });
+        }
+
             // 1. ارسال پیام DM توسط ادمین
         if (isUserAdmin(ctx.from.id.toString()) && adminState && adminState.step === 'DM_GET_MSG') {
             try {
@@ -4055,6 +4148,48 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 await finalizeAndSendTicket(ctx, state);
                 return;
             }
+
+        if (state && state.step === 'TICKET_REPLY_WAIT') {
+            const ticketId = state.ticketId;
+            const db = readDb();
+            const t = db.tickets?.[ticketId];
+            if (!t) {
+                userSteps.delete(ctx.from.id);
+                return ctx.reply('❌ تیکت مورد نظر یافت نشد.');
+            }
+
+            const rawText = ctx.message.text.trim();
+            const safeText = rawText.substring(0, 700).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            
+            // آپدیت وضعیت تیکت در دیتابیس (برگشت به حالت انتظار بررسی)
+            t.status = 'pending_admin';
+            t.description = rawText; // به‌روزرسانی شرح یا اضافه کردن به تاریخچه
+            t.updatedAt = Date.now();
+            writeDb(db);
+            userSteps.delete(ctx.from.id);
+
+            const userId = ctx.from.id.toString();
+            const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
+            const header = `💬 <b>پیام جدید از کاربر روی تیکت #${ticketId}</b>\n` +
+                           `👤 <b>کاربر:</b> #User_${userId} (${username})\n\n` +
+                           `<blockquote>${safeText}</blockquote>`;
+
+            const isBanned = (db.bannedUsers || []).includes(userId);
+            const kb = buildAdminTicketKeyboard(ticketId, userId, isBanned, false);
+            
+            try {
+                await ctx.telegram.sendMessage(GROUP_ID, header, {
+                    parse_mode: 'HTML',
+                    message_thread_id: parseInt(TOPIC_ERROR),
+                    reply_markup: kb
+                });
+            } catch (e) {}
+
+            return ctx.reply(
+                `✅ پاسخ شما با موفقیت برای تیم پشتیبانی ارسال شد.\nتیکت دوباره در وضعیت بررسی قرار گرفت.`,
+                { parse_mode: 'HTML', ...mainKeyboard }
+            );
+        }    
         
         // --- کدهای اضافه شده برای دریافت متنی حجم و روز بسته دلخواه ---
         if (state && state.step === 'CUSTOM_TRAFFIC') {
