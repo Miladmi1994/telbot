@@ -89,55 +89,6 @@ async function checkMembership(ctx, userId) {
     }
 }
 
-// تابع فوروارد پیام کاربر به ادمین در تاپیک پشتیبانی
-// تابع فوروارد پیام کاربر به ادمین در تاپیک پشتیبانی
-async function forwardToAdmin(ctx, state) {
-    state.lastUserMsgId = ctx.message.message_id;
-    const userId = ctx.from.id;
-    const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
-    const topicId = parseInt(state.step === 'CHAT_ERROR' ? TOPIC_ERROR : TOPIC_SUPPORT);
-    
-    
-    const kb = Markup.inlineKeyboard([
-        [Markup.button.callback('🔒 بستن تیکت', `close_ticket_${userId}`), Markup.button.callback('🚫 مسدود کردن', `ban_ticket_${userId}`)]
-    ]);
-
-    try {
-        let extraOptions = { parse_mode: 'HTML', message_thread_id: topicId, ...kb };
-        let isThread = !!state.lastAdminMsgId;
-        
-        // اگر قبلا ادمین جوابی داده، پیام جدید کاربر به همون جواب ریپلای بشه
-        if (isThread) {
-            extraOptions.reply_to_message_id = state.lastAdminMsgId;
-        }
-
-        if (ctx.message.text) {
-            const safeText = ctx.message.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const header = isThread 
-                ? `💬 <b>پیام جدید</b> | 👤 #User_${userId}` 
-                : `📩 <b>تیکت جدید</b>\n👤 #User_${userId}\n🆔 ${username}`;
-            const text = `${header}\n\n<blockquote>${safeText}</blockquote>`;
-            
-            await ctx.telegram.sendMessage(GROUP_ID, text, extraOptions);
-        } else {
-            let originalCaption = ctx.message.caption || '';
-            if (originalCaption.length > 800) originalCaption = originalCaption.substring(0, 800) + '...';
-            originalCaption = originalCaption.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            
-            const header = isThread 
-                ? `💬 <b>پیام جدید</b> | 👤 #User_${userId} | 🔖 #Msg_${ctx.message.message_id}` 
-                : `📩 <b>تیکت جدید</b>\n👤 #User_${userId}\n🆔 ${username}\n🔖 #Msg_${ctx.message.message_id}`;
-            const newCaption = `${header}\n\n<blockquote>${originalCaption}</blockquote>`;
-            
-            await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
-                ...extraOptions,
-                caption: newCaption
-            });
-        }
-    } catch (err) {
-        console.error("Error forwarding support message:", err);
-    }
-}
 
 function setupHandlers(bot) {
     
@@ -3417,28 +3368,27 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         if (!t) return ctx.answerCbQuery('❌ تیکت یافت نشد.', { show_alert: true });
 
         let historyText = `📜 <b>تاریخچه کامل گفتگوی تیکت #${ticketId}</b>\n\n`;
-        
-        // نمایش شرح اولیه
         historyText += `👤 <b>شرح اولیه کاربر:</b>\n<blockquote>${t.description || 'ندارد'}</blockquote>\n\n`;
 
-        // نمایش آرایه پیام‌های بعدی اگر وجود داشته باشد
         if (t.messages && t.messages.length > 0) {
-            historyText += `💬 <b>پیام‌های رد و بدل‌شده:</b>\n`;
+            historyText += `💬 <b>پیام‌های بعدی:</b>\n`;
             t.messages.forEach((m) => {
                 const senderLabel = m.sender === 'user' ? '👤 کاربر' : '👨‍💻 پشتیبانی';
-                historyText.append ? '' : null; // Safe append
                 historyText += `▪️ <b>${senderLabel}:</b> ${m.text}\n`;
             });
             historyText += `\n`;
         }
 
-        if (t.adminReply) {
-            historyText += `👨‍💻 <b>آخرین پاسخ پشتیبانی:</b>\n<blockquote>${t.adminReply}</blockquote>`;
-        }
-
-        const backCallback = `t_view_${ticketId}`;
-        
-        if (ctx.callbackQuery) {
+        if (mode === 'admin') {
+            await ctx.answerCbQuery();
+            // در گروه ادمین، تاریخچه را ریپلای می‌کنیم تا کارت اصلی تیکت ادیت و خراب نشود
+            return ctx.reply(historyText, { 
+                parse_mode: 'HTML', 
+                reply_to_message_id: ctx.callbackQuery.message.message_id 
+            });
+        } else {
+            // در چت کاربر، پیام ادیت می‌شود
+            const backCallback = `t_view_${ticketId}`;
             await ctx.answerCbQuery();
             await ctx.editMessageText(historyText, {
                 parse_mode: 'HTML',
@@ -3970,6 +3920,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ticket.status = 'answered';
         ticket.adminReply = replyMsg;
         ticket.updatedAt = Date.now();
+        if (!ticket.messages) ticket.messages = [];
+        ticket.messages.push({ sender: 'admin', text: replyMsg, time: Date.now() });
         writeDb(db);
 
         try {
@@ -4124,6 +4076,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 db.tickets[ticketId].status = 'answered';
                 db.tickets[ticketId].adminReply = ctx.message.caption || '[فایل/مستندات ارسال شد]';
                 db.tickets[ticketId].updatedAt = Date.now();
+                if (!db.tickets[ticketId].messages) db.tickets[ticketId].messages = [];
+                db.tickets[ticketId].messages.push({ sender: 'admin', text: ctx.message.text, time: Date.now() });
                 writeDb(db);
             }
             try {
@@ -4150,7 +4104,11 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             const safeText = rawText.substring(0, 700).replace(/</g, '&lt;').replace(/>/g, '&gt;');
             
             t.status = 'pending_admin';
-            t.description = rawText; // برای سازگاری
+            if (!t.messages) t.messages = [];
+            t.messages.push({ sender: 'user', text: rawText, time: Date.now() });
+            
+            t.status = 'pending_admin';
+            t.updatedAt = Date.now();
             t.updatedAt = Date.now();
 
             // ذخیره در آرایه تاریخچه پیام‌ها
@@ -4452,6 +4410,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     db.tickets[ticketId].status = 'answered';
                     db.tickets[ticketId].adminReply = ctx.message.text;
                     db.tickets[ticketId].updatedAt = Date.now();
+                    if (!db.tickets[ticketId].messages) db.tickets[ticketId].messages = [];
+                    db.tickets[ticketId].messages.push({ sender: 'admin', text: ctx.message.text, time: Date.now() });
                     writeDb(db);
                 }
                 try {
