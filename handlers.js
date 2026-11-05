@@ -4118,25 +4118,25 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const state = userSteps.get(ctx.from.id);
         const adminState = adminSteps.get(ctx.from.id);
 
-        // 0. ارسال مستندات/فایل توسط ادمین در پاسخ به تیکت
         if (isUserAdmin(ctx.from.id.toString()) && adminState && adminState.step === 'TICKET_ADMIN_CUSTOM_REPLY') {
             const { ticketId, targetUserId } = adminState;
             const db = readDb();
             if (db.tickets?.[ticketId]) {
                 db.tickets[ticketId].status = 'answered';
-                db.tickets[ticketId].adminReply = ctx.message.caption || '[فایل/مستندات ارسال شد]';
-                const replyText = ctx.message.text || ctx.message.caption || '[رسانه ارسال شد]';
+                const replyText = ctx.message.caption || '[فایل/مستندات ارسال شد]';
+                db.tickets[ticketId].adminReply = replyText;
                 db.tickets[ticketId].description = (db.tickets[ticketId].description || '') + `\n\n〰️〰️〰️\n👨‍💻 <b>پشتیبانی:</b>\n${replyText}`;
                 db.tickets[ticketId].updatedAt = Date.now();
-                if (!db.tickets[ticketId].messages) db.tickets[ticketId].messages = [];
-                db.tickets[ticketId].messages.push({ sender: 'admin', text: ctx.message.text, time: Date.now() });
                 writeDb(db);
             }
             try {
-                if (t.adminMsgId) {
-                    await ctx.telegram.deleteMessage(GROUP_ID, t.adminMsgId).catch(() => {});
-                }
-                await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی به تیکت #${ticketId}:</b>`, { parse_mode: 'HTML' });
+                const userTicketReplyKeyboard = {
+                    inline_keyboard: [
+                        [Markup.button.callback('💬 ارسال پاسخ جدید به پشتیبانی', `t_user_reply_${ticketId}`)],
+                        [Markup.button.callback('❌ بستن این تیکت', `t_close_ask_${ticketId}`)]
+                    ]
+                };
+                await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی به تیکت #${ticketId}:</b>`, { parse_mode: 'HTML', reply_markup: userTicketReplyKeyboard });
                 await ctx.telegram.copyMessage(targetUserId, ctx.chat.id, ctx.message.message_id);
                 ctx.reply(`✅ مستندات/پاسخ برای تیکت #${ticketId} ارسال شد.`);
             } catch (e) {
@@ -4155,17 +4155,12 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 return ctx.reply('❌ تیکت مورد نظر یافت نشد.');
             }
 
-            // باگ خواندن متن برای فایل اینجا فیکس شد (باید کپشن خوانده شود)
             const rawText = ctx.message.caption ? ctx.message.caption.trim() : '[فایل/رسانه ارسال شد]';
             const safeText = rawText.substring(0, 700).replace(/</g, '&lt;').replace(/>/g, '&gt;');
             
             t.status = 'pending_admin';
             t.description = (t.description || '') + `\n\n〰️〰️〰️\n👤 <b>پیام جدید کاربر:</b>\n${rawText}`;
             t.updatedAt = Date.now();
-
-            // ذخیره پیام در تاریخچه
-            if (!t.messages) t.messages = [];
-            t.messages.push({ sender: 'user', text: rawText, time: Date.now() });
 
             const userId = ctx.from.id.toString();
             const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
@@ -4182,10 +4177,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     await ctx.telegram.deleteMessage(GROUP_ID, oldMsgId).catch(() => {});
                 }
 
-                if (sentMsg) activeAdminMsgs.set(ticketId, sentMsg.message_id); // ذخیره در RAM
-            } catch (e) {}
-
-                // ۲. ارسال پیام مدیا (عکس/فایل) به همراه کپشن و دکمه‌ها برای ادمین
                 const sentMsg = await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
                     caption: header,
                     parse_mode: 'HTML',
@@ -4193,11 +4184,11 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     reply_markup: kb
                 });
 
-                // ۳. آپدیت و ذخیره آیدی پیام جدید ربات برای دفعات بعدی
-                t.adminMsgId = sentMsg.message_id;
-            } catch (e) {}
+                if (sentMsg) activeAdminMsgs.set(ticketId, sentMsg.message_id);
+            } catch (e) {
+                console.error("Error sending media ticket reply:", e);
+            }
 
-            // ۴. ذخیره در دیتابیس (حتماً بعد از گرفتن آیدی پیام جدید)
             writeDb(db);
             userSteps.delete(ctx.from.id);
 
@@ -4316,12 +4307,9 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             const rawText = ctx.message.text.trim();
             const safeText = rawText.substring(0, 700).replace(/</g, '&lt;').replace(/>/g, '&gt;');
             
-            // آپدیت وضعیت تیکت در دیتابیس (برگشت به حالت انتظار بررسی)
             t.status = 'pending_admin';
-            t.description = rawText; // به‌روزرسانی شرح یا اضافه کردن به تاریخچه
+            t.description = (t.description || '') + `\n\n〰️〰️〰️\n👤 <b>پیام جدید کاربر:</b>\n${rawText}`;
             t.updatedAt = Date.now();
-            writeDb(db);
-            userSteps.delete(ctx.from.id);
 
             const userId = ctx.from.id.toString();
             const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
@@ -4333,18 +4321,30 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             const kb = buildAdminTicketKeyboard(ticketId, userId, isBanned, false);
             
             try {
-                await ctx.telegram.sendMessage(GROUP_ID, header, {
+                const oldMsgId = activeAdminMsgs.get(ticketId);
+                if (oldMsgId) {
+                    await ctx.telegram.deleteMessage(GROUP_ID, oldMsgId).catch(() => {});
+                }
+
+                const sentMsg = await ctx.telegram.sendMessage(GROUP_ID, header, {
                     parse_mode: 'HTML',
                     message_thread_id: parseInt(TOPIC_ERROR),
                     reply_markup: kb
                 });
-            } catch (e) {}
+
+                if (sentMsg) activeAdminMsgs.set(ticketId, sentMsg.message_id);
+            } catch (e) {
+                console.error("Error sending text ticket reply:", e);
+            }
+
+            writeDb(db);
+            userSteps.delete(ctx.from.id);
 
             return ctx.reply(
                 `✅ پاسخ شما با موفقیت برای تیم پشتیبانی ارسال شد.\nتیکت دوباره در وضعیت بررسی قرار گرفت.`,
                 { parse_mode: 'HTML', ...mainKeyboard }
             );
-        }    
+        }
         
         // --- کدهای اضافه شده برای دریافت متنی حجم و روز بسته دلخواه ---
         if (state && state.step === 'CUSTOM_TRAFFIC') {
