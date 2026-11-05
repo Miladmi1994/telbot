@@ -89,6 +89,8 @@ async function checkMembership(ctx, userId) {
     }
 }
 
+// حافظه موقت برای ذخیره آیدی پیام‌ها جهت پاک کردن در گروه ادمین
+const activeAdminMsgs = new Map();
 
 function setupHandlers(bot) {
     
@@ -3355,7 +3357,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kbRows } }).catch(() => {});
     });
 
-    // نمایش کل تاریخچه تیکت به صورت کامل برای کاربر یا ادمین
+    // نمایش تاریخچه کامل چت (با دور زدن محدودیت دیتابیس)
     bot.action(/^t_(user|admin)_history_(T\d+)$/, async (ctx) => {
         const mode = ctx.match[1];
         const ticketId = ctx.match[2];
@@ -3363,28 +3365,18 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const t = db.tickets?.[ticketId];
         if (!t) return ctx.answerCbQuery('❌ تیکت یافت نشد.', { show_alert: true });
 
+        // چون تمام دیالوگ‌ها را به هم چسباندیم، فقط کافیست همان فیلد را نمایش دهیم
         let historyText = `📜 <b>تاریخچه کامل گفتگوی تیکت #${ticketId}</b>\n\n`;
-        
-        if (t.messages && t.messages.length > 0) {
-            t.messages.forEach((m) => {
-                const senderLabel = m.sender === 'user' ? '👤 کاربر' : '👨‍💻 پشتیبانی';
-                historyText += `▪️ <b>${senderLabel}:</b> ${m.text}\n`;
-            });
-        } else {
-            historyText += `👤 <b>کاربر:</b> ${t.description || 'ندارد'}\n`;
-            if (t.adminReply) historyText += `👨‍💻 <b>پشتیبانی:</b> ${t.adminReply}\n`;
-        }
+        historyText += t.description || 'محتوایی ثبت نشده است.';
 
         await ctx.answerCbQuery();
         
         if (mode === 'admin') {
-            // برای ادمین، تاریخچه را ریپلای می‌کنیم تا کارت اصلی تیکت خراب نشود
             return ctx.reply(historyText, { 
                 parse_mode: 'HTML', 
                 reply_to_message_id: ctx.callbackQuery.message.message_id 
             });
         } else {
-            // برای کاربر پیام ادیت می‌شود
             return ctx.editMessageText(historyText, {
                 parse_mode: 'HTML',
                 reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', `t_view_${ticketId}`)]] }
@@ -3472,7 +3464,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
         const replyMsg = QUICK_REPLIES[repKey];
         ticket.status = 'answered';
-        ticket.adminReply = replyMsg;
+        ticket.description = (ticket.description || '') + `\n\n〰️〰️〰️\n👨‍💻 <b>پشتیبانی:</b>\n${replyMsg}`;
         ticket.updatedAt = Date.now();
         writeDb(db);
 
@@ -4133,6 +4125,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             if (db.tickets?.[ticketId]) {
                 db.tickets[ticketId].status = 'answered';
                 db.tickets[ticketId].adminReply = ctx.message.caption || '[فایل/مستندات ارسال شد]';
+                const replyText = ctx.message.text || ctx.message.caption || '[رسانه ارسال شد]';
+                db.tickets[ticketId].description = (db.tickets[ticketId].description || '') + `\n\n〰️〰️〰️\n👨‍💻 <b>پشتیبانی:</b>\n${replyText}`;
                 db.tickets[ticketId].updatedAt = Date.now();
                 if (!db.tickets[ticketId].messages) db.tickets[ticketId].messages = [];
                 db.tickets[ticketId].messages.push({ sender: 'admin', text: ctx.message.text, time: Date.now() });
@@ -4166,7 +4160,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             const safeText = rawText.substring(0, 700).replace(/</g, '&lt;').replace(/>/g, '&gt;');
             
             t.status = 'pending_admin';
-            t.description = rawText; 
+            t.description = (t.description || '') + `\n\n〰️〰️〰️\n👤 <b>پیام جدید کاربر:</b>\n${rawText}`;
             t.updatedAt = Date.now();
 
             // ذخیره پیام در تاریخچه
@@ -4183,10 +4177,13 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             const kb = buildAdminTicketKeyboard(ticketId, userId, isBanned, false);
             
             try {
-                // ۱. پاک کردن پیام قبلی در گروه ادمین
-                if (t.adminMsgId) {
-                    await ctx.telegram.deleteMessage(GROUP_ID, t.adminMsgId).catch(() => {});
+                const oldMsgId = activeAdminMsgs.get(ticketId);
+                if (oldMsgId) {
+                    await ctx.telegram.deleteMessage(GROUP_ID, oldMsgId).catch(() => {});
                 }
+
+                if (sentMsg) activeAdminMsgs.set(ticketId, sentMsg.message_id); // ذخیره در RAM
+            } catch (e) {}
 
                 // ۲. ارسال پیام مدیا (عکس/فایل) به همراه کپشن و دکمه‌ها برای ادمین
                 const sentMsg = await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
@@ -4471,6 +4468,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 if (db.tickets?.[ticketId]) {
                     db.tickets[ticketId].status = 'answered';
                     db.tickets[ticketId].adminReply = ctx.message.text;
+                    const replyText = ctx.message.text || ctx.message.caption || '[رسانه ارسال شد]';
+                    db.tickets[ticketId].description = (db.tickets[ticketId].description || '') + `\n\n〰️〰️〰️\n👨‍💻 <b>پشتیبانی:</b>\n${replyText}`;
                     db.tickets[ticketId].updatedAt = Date.now();
                     writeDb(db);
                 }
