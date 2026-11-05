@@ -37,22 +37,63 @@ function getApiClient(server) {
     });
 }
 
+const WebSocket = require('ws');
+
 // API Bitpin
 const BITPIN_API = 'https://api.bitpin.org/api/v1/mkt/tickers/';
 
-// سیستم دریافت قیمت بر بستر HTTPS با کش ۳۰ ثانیه‌ای
+// سیستم کش و پشتیبان والکس
 let cachedUsdtPrice = null;
 let lastFetchTime = 0;
+let latestWallexUsdtPrice = null;
+let wallexWs = null;
 
+// اتصال خودکار به وب‌سکت والکس به عنوان پشتیبان
+function connectWallexFallback() {
+    wallexWs = new WebSocket('wss://api.wallex.ir/connection/websocket');
+
+    wallexWs.on('open', () => {
+        const subMessage = {
+            "id": 3,
+            "subscribe": { "channel": "public:all@price" }
+        };
+        wallexWs.send(JSON.stringify(subMessage));
+    });
+
+    wallexWs.on('message', (data) => {
+        try {
+            const parsed = JSON.parse(data);
+            if (parsed.push && parsed.push.channel === 'public:all@price') {
+                const marketData = parsed.push.pub.data;
+                if (marketData && marketData.symbol === 'USDTTMN') {
+                    // تبدیل تومان والکس به ریال یا هم‌سطح‌سازی (در صورت نیاز به عدد کفایت می‌کند)
+                    latestWallexUsdtPrice = Math.ceil(Number(marketData.price));
+                }
+            }
+        } catch (e) {}
+    });
+
+    wallexWs.on('close', () => {
+        setTimeout(connectWallexFallback, 5000);
+    });
+
+    wallexWs.on('error', (err) => {});
+}
+
+// استارت زدن وب‌سکت والکس در پس‌زمینه
+connectWallexFallback();
+
+// تابع جدید که اول بیت‌پین رو تست میکنه، اگر خطا داد میره سراغ والکس
 async function getUsdtRate() {
     const now = Date.now();
     if (cachedUsdtPrice !== null && (now - lastFetchTime) < 30000) {
         return cachedUsdtPrice;
     }
+
+    // ۱. اولویت اول: بیت‌پین با هدرهای مرورگر برای جلوگیری از خطای 403
     try {
-        // اضافه‌کردن هدرها برای عبور از فیلتر کلودفلر/بیت‌پین
         const res = await axios.get(BITPIN_API, { 
-            timeout: 8000,
+            timeout: 5000,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'application/json'
@@ -67,8 +108,16 @@ async function getUsdtRate() {
             }
         }
     } catch (error) {
-        console.error('⚠️ [USDT] خطا در دریافت قیمت از بیت‌پین:', error.message);
+        console.warn('⚠️ [Bitpin] خطا یا مسدودیت، استفاده از پشتیبان والکس...');
     }
+
+    // ۲. اولویت دوم (پشتیبان): وب‌سکت والکس
+    if (latestWallexUsdtPrice !== null) {
+        cachedUsdtPrice = latestWallexUsdtPrice;
+        lastFetchTime = now;
+        return cachedUsdtPrice;
+    }
+
     return cachedUsdtPrice;
 }
 
