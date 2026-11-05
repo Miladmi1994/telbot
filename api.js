@@ -37,51 +37,90 @@ function getApiClient(server) {
     });
 }
 
-const WebSocket = require('ws');
-
-// API Bitpin
+// APIهای صرافی‌ها
 const BITPIN_API = 'https://api.bitpin.org/api/v1/mkt/tickers/';
+const NOBITEX_API = 'https://api.nobitex.ir/v2/orderbook/USDTIRT';
+const ABANTETHER_API = 'https://api.abantether.com/api/v1/otc/prices'; // یا اندپوینت عمومی آبان‌تتر
 
-// سیستم کش و پشتیبان والکس
+// سیستم کش قیمت تتر
 let cachedUsdtPrice = null;
 let lastFetchTime = 0;
-let latestWallexUsdtPrice = null;
-let wallexWs = null;
 
-// اتصال خودکار به وب‌سکت والکس به عنوان پشتیبان
-function connectWallexFallback() {
-    wallexWs = new WebSocket('wss://api.wallex.ir/connection/websocket');
+async function getUsdtRate() {
+    const now = Date.now();
+    if (cachedUsdtPrice !== null && (now - lastFetchTime) < 30000) {
+        return cachedUsdtPrice;
+    }
 
-    wallexWs.on('open', () => {
-        console.log('🟢 [Wallex WS] با موفقیت به وب‌سکت والکس متصل شد!'); // 👈 این را اضافه کنید
-        const subMessage = {
-            "id": 3,
-            "subscribe": { "channel": "public:all@price" }
-        };
-        wallexWs.send(JSON.stringify(subMessage));
-    });
-
-    wallexWs.on('message', (data) => {
-        try {
-            const parsed = JSON.parse(data);
-            if (parsed.push && parsed.push.channel === 'public:all@price') {
-                const marketData = parsed.push.pub.data;
-                if (marketData && marketData.symbol === 'USDTTMN') {
-                    latestWallexUsdtPrice = Math.ceil(Number(marketData.price));
-                    console.log('💰 [Wallex WS] قیمت جدید تتر دریافت شد:', latestWallexUsdtPrice);
-                }
+    // ۱. اولویت اول: بیت‌پین
+    try {
+        const res = await axios.get(BITPIN_API, { 
+            timeout: 5000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json'
             }
-        } catch (e) {}
-    });
+        });
+        if (res.data && Array.isArray(res.data)) {
+            const usdt = res.data.find(ticker => ticker.symbol === 'USDT_IRT');
+            if (usdt && usdt.price) {
+                cachedUsdtPrice = Math.ceil(Number(usdt.price));
+                lastFetchTime = now;
+                console.log('🟢 [Bitpin] قیمت تتر با موفقیت دریافت شد:', cachedUsdtPrice);
+                return cachedUsdtPrice;
+            }
+        }
+    } catch (error) {
+        console.warn('⚠️ [Bitpin] خطا یا مسدودیت، تلاش برای استفاده از پشتیبان اول (نوبیتکس)...');
+    }
 
-    wallexWs.on('close', () => {
-        console.log('🔴 [Wallex WS] اتصال قطع شد، تلاش مجدد...');
-        setTimeout(connectWallexFallback, 5000);
-    });
+    // ۲. اولویت دوم (پشتیبان اول): نوبیتکس
+    try {
+        const res = await axios.get(NOBITEX_API, { 
+            timeout: 5000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json'
+            }
+        });
+        // ساختار پاسخ نوبیتکس برای آخرین قیمت معاملات
+        if (res.data && res.data.status === 'ok' && res.data.lastTradePrice) {
+            cachedUsdtPrice = Math.ceil(Number(res.data.lastTradePrice));
+            lastFetchTime = now;
+            console.log('🟢 [Nobitex] قیمت تتر از پشتیبان اول دریافت شد:', cachedUsdtPrice);
+            return cachedUsdtPrice;
+        }
+    } catch (error) {
+        console.warn('⚠️ [Nobitex] خطا در دریافت از نوبیتکس، تلاش برای استفاده از پشتیبان دوم (آبان‌تتر)...');
+    }
 
-    wallexWs.on('error', (err) => {
-        console.error('❌ [Wallex WS] خطا در وب‌سکت:', err.message);
-    });
+    // ۳. اولویت سوم (پشتیبان دوم): آبان‌تتر
+    try {
+        const res = await axios.get(ABANTETHER_API, { 
+            timeout: 5000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json'
+            }
+        });
+        // بسته به ساختار پاسخ آبان‌تتر (معمولاً قیمت خرید/فروش تتر را برمی‌گرداند)
+        if (res.data) {
+            // فرض بر این است که قیمت تتر را در پاسخ پیدا می‌کنیم
+            const usdtData = Array.isArray(res.data) ? res.data.find(item => item.coin === 'USDT' || item.symbol === 'USDT') : res.data.USdt || res.data.usdt;
+            const price = usdtData?.price || usdtData?.sellPrice || usdtData?.rtPrice;
+            if (price) {
+                cachedUsdtPrice = Math.ceil(Number(price));
+                lastFetchTime = now;
+                console.log('🟢 [Abantether] قیمت تتر از پشتیبان دوم دریافت شد:', cachedUsdtPrice);
+                return cachedUsdtPrice;
+            }
+        }
+    } catch (error) {
+        console.error('❌ [Abantether] خطا در دریافت از آبان‌تتر:', error.message);
+    }
+
+    // اگر هیچ‌کدام پاسخ ندادند، آخرین قیمت معتبر قبلی برگردانده می‌شود
+    return cachedUsdtPrice;
 }
 
 // استارت زدن وب‌سکت والکس در پس‌زمینه
