@@ -407,7 +407,10 @@ function setupHandlers(bot) {
                 }
             }
             return next();
-        });
+        }
+
+        return next();
+    });
 
     bot.command('sync_period', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
@@ -3822,14 +3825,26 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             return;
         }
 
-        // 1. ارسال پیام DM توسط ادمین
+            // 1. ارسال پیام DM توسط ادمین
         if (isUserAdmin(ctx.from.id.toString()) && adminState && adminState.step === 'DM_GET_MSG') {
+            try {
+                await ctx.telegram.copyMessage(adminState.targetUserId, ctx.chat.id, ctx.message.message_id);
+                ctx.reply('✅ فایل/پیام شما با موفقیت برای کاربر ارسال شد.');
+            } catch (e) {
+                ctx.reply('❌ ارسال ناموفق! (احتمالاً کاربر ربات را بلاک کرده است)');
+            }
+            adminSteps.delete(ctx.from.id);
+            return;
+        }
+
+        // 2. ثبت تیکت همراه با اسکرین‌شات/فایل توسط کاربر
+        if (state && state.step === 'TICKET_WAIT_DESC') {
+            await finalizeAndSendTicket(ctx, state);
+            return;
+        }
 
         // 3. دریافت رسید (فقط عکس مجاز است)
         if (state && (state.step === 'WAITING_RECEIPT' || state.step === 'WAITING_RENEW_RECEIPT')) {
-            if (!ctx.message.photo) {
-                return ctx.reply('⚠️ لطفاً برای بررسی پرداخت، فقط عکس (اسکرین‌شات رسید) ارسال کنید.');
-            }
 
             if (state.step === 'WAITING_RECEIPT') {
                 const payToken = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
