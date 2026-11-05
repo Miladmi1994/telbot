@@ -3284,9 +3284,12 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             ],
             [
                 Markup.button.callback('💳 تایید پرداخت', `t_qrep_payok_${ticketId}`),
-                Markup.button.callback('✍️ تایپ پاسخ دلخواه', `t_customrep_${ticketId}`)
+                Markup.button.callback('📜 تاریخچه چت', `t_admin_history_${ticketId}`)
             ],
-            [Markup.button.callback('🔒 بستن تیکت', `close_ticket_${ticketId}`)]
+            [
+                Markup.button.callback('✍️ ارسال پاسخ دلخواه (در یک پیام)', `t_customrep_${ticketId}`),
+                Markup.button.callback('🔒 بستن تیکت', `close_ticket_${ticketId}`)
+            ]
         ];
 
         if (isBanned) {
@@ -3381,6 +3384,9 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             kbRows.push([Markup.button.callback('💬 ارسال پاسخ جدید به پشتیبانی', `t_user_reply_${t.id}`)]);
         }
 
+        // 👉 اضافه کردن دکمه تاریخچه چت همینجا برای کاربر:
+        kbRows.push([Markup.button.callback('📜 مشاهده کل تاریخچه گفتگو', `t_user_history_${ticketId}`)]);
+
         if (t.status !== 'closed') {
             kbRows.push([Markup.button.callback('❌ بستن این تیکت', `t_close_ask_${t.id}`)]);
         }
@@ -3388,6 +3394,29 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         kbRows.push([Markup.button.callback('🔙 بازگشت به لیست تیکت‌ها', 'ticket_my_list')]);
 
         ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kbRows } }).catch(() => {});
+    });
+
+    // نمایش کل تاریخچه تیکت برای کاربر یا ادمین
+    bot.action(/^t_(user|admin)_history_(T\d+)$/, async (ctx) => {
+        const mode = ctx.match[1];
+        const ticketId = ctx.match[2];
+        const db = readDb();
+        const t = db.tickets?.[ticketId];
+        if (!t) return ctx.answerCbQuery('❌ تیکت یافت نشد.', { show_alert: true });
+
+        let historyText = `📜 <b>تاریخچه کامل گفتگوی تیکت #${ticketId}</b>\n\n` +
+                          `👤 <b>شرح اولیه کاربر:</b>\n<blockquote>${t.description || 'ندارد'}</blockquote>\n\n` +
+                          `👨‍💻 <b>آخرین پاسخ پشتیبانی:</b>\n<blockquote>${t.adminReply || 'هنوز پاسخی داده نشده'}</blockquote>`;
+
+        const backCallback = mode === 'user' ? `t_view_${ticketId}` : `t_view_${ticketId}`;
+        
+        if (ctx.callbackQuery) {
+            await ctx.answerCbQuery();
+            await ctx.editMessageText(historyText, {
+                parse_mode: 'HTML',
+                reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', backCallback)]] }
+            }).catch(() => {});
+        }
     });
 
     // ارور کلیک روی دکمه قفل‌شده
@@ -3446,6 +3475,61 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 ]
             }
         });
+    });
+
+    // کیبورد مدیریتی تیکت که زیر پاسخ ادمین در گروه قرار می‌گیرد
+    function buildAdminReplyKeyboard(ticketId, userId) {
+        return Markup.inlineKeyboard([
+            [
+                Markup.button.callback('💬 ارسال پاسخ جدید', `t_admin_reply_trigger_${ticketId}`),
+                Markup.button.callback('🔒 بستن تیکت', `close_ticket_${ticketId}`)
+            ],
+            [Markup.button.callback('📜 مشاهده کل تاریخچه', `t_admin_history_${ticketId}`)]
+        ]);
+    }
+
+    // هنگام ارسال پاسخ آماده ادمین به کاربر (همراه با اتصال دکمه‌های مدیریتی به پیام کاربر):
+    bot.action(/^t_qrep_(checking|reget|update|net|tryall|payok|fixapplied)_(T\d+)$/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const repKey = ctx.match[1];
+        const ticketId = ctx.match[2];
+        const db = readDb();
+        const ticket = db.tickets?.[ticketId];
+        if (!ticket) return ctx.answerCbQuery('❌ تیکت یافت نشد.', { show_alert: true });
+
+        const replyMsg = QUICK_REPLIES[repKey];
+        ticket.status = 'answered';
+        ticket.adminReply = replyMsg;
+        ticket.updatedAt = Date.now();
+        writeDb(db);
+
+        // ساخت دکمه‌های زیر پیام کاربر در ربات
+        const userTicketReplyKeyboard = {
+            inline_keyboard: [
+                [Markup.button.callback('💬 ارسال پاسخ جدید به پشتیبانی', `t_user_reply_${ticketId}`)],
+                [Markup.button.callback('📜 مشاهده کل تاریخچه گفتگو', `t_user_history_${ticketId}`)],
+                [Markup.button.callback('❌ بستن این تیکت', `t_close_ask_${ticketId}`)]
+            ]
+        };
+
+        try {
+            // ۱. ارسال پاسخ به همراه دکمه‌های مدیریتی به چت خصوصی کاربر
+            await ctx.telegram.sendMessage(
+                ticket.userId,
+                `👨‍💻 <b>پاسخ پشتیبانی به تیکت #${ticketId}:</b>\n\n${replyMsg}`,
+                { parse_mode: 'HTML', reply_markup: userTicketReplyKeyboard }
+            );
+
+            // ۲. تأییدیه در گروه ادمین همراه با یادآوری ارسال در یک پیام
+            await ctx.reply(
+                `✅ <b>پاسخ زیر برای تیکت #${ticketId} ارسال شد:</b>\n<i>${replyMsg}</i>\n\n💡 <i>(اگر خواستید پاسخ دیگری بدهید، لطفاً کل متن یا فایل خود را در <b>یک پیام</b> ارسال کنید):</i>`,
+                { parse_mode: 'HTML' }
+            );
+
+            ctx.answerCbQuery('✅ پاسخ ارسال شد.', { show_alert: true });
+        } catch (e) {
+            ctx.answerCbQuery('⚠️ ثبت شد اما کاربر ربات را بلاک کرده است.', { show_alert: true });
+        }
     });
 
     // پاکسازی اکانت‌های منقضی‌شده از روی پنل سرور (+48h)
@@ -3761,8 +3845,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         askFinalDescriptionStep(ctx, state);
     });
 
-    // ثبت نهایی تیکت و ارسال به تاپیک گزارش خطا (TOPIC_ERROR)
-    async function finalizeAndSendTicket(ctx, state) {
+   async function finalizeAndSendTicket(ctx, state) {
         const db = readDb();
         if (!db.tickets) db.tickets = {};
 
@@ -3811,19 +3894,25 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const topicId = parseInt(TOPIC_ERROR);
 
         try {
+            let sentMsg;
             if (ctx.message.text) {
-                await ctx.telegram.sendMessage(GROUP_ID, header, {
+                sentMsg = await ctx.telegram.sendMessage(GROUP_ID, header, {
                     parse_mode: 'HTML',
                     message_thread_id: topicId,
                     reply_markup: kb
                 });
             } else {
-                await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
+                sentMsg = await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
                     caption: header,
                     parse_mode: 'HTML',
                     message_thread_id: topicId,
                     reply_markup: kb
                 });
+            }
+            if (sentMsg) {
+                ticketObj.adminMsgId = sentMsg.message_id;
+                db.tickets[ticketId] = ticketObj;
+                writeDb(db);
             }
         } catch (err) {
             console.error('Error sending ticket to TOPIC_ERROR:', err.message);
@@ -4034,32 +4123,43 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 return ctx.reply('❌ تیکت مورد نظر یافت نشد.');
             }
 
-            const rawCaption = ctx.message.caption || '[ارسال تصویر/فایل جدید]';
+            const rawText = ctx.message.text.trim();
+            const safeText = rawText.substring(0, 700).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            
             t.status = 'pending_admin';
-            t.description = rawCaption;
+            t.description = rawText;
             t.updatedAt = Date.now();
-            writeDb(db);
-            userSteps.delete(ctx.from.id);
 
             const userId = ctx.from.id.toString();
             const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
-            const header = `💬 <b>پیام جدید (فایل/عکس) روی تیکت #${ticketId}</b>\n` +
+            const header = `💬 <b>پیام جدید از کاربر روی تیکت #${ticketId}</b>\n` +
                            `👤 <b>کاربر:</b> #User_${userId} (${username})\n\n` +
-                           `<blockquote>${rawCaption.substring(0, 700).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</blockquote>`;
+                           `<blockquote>${safeText}</blockquote>`;
 
             const isBanned = (db.bannedUsers || []).includes(userId);
             const kb = buildAdminTicketKeyboard(ticketId, userId, isBanned, false);
-
+            
             try {
-                await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
-                    caption: header,
+                if (t.adminMsgId) {
+                    await ctx.telegram.deleteMessage(GROUP_ID, t.adminMsgId).catch(() => {});
+                }
+
+                const sentMsg = await ctx.telegram.sendMessage(GROUP_ID, header, {
                     parse_mode: 'HTML',
                     message_thread_id: parseInt(TOPIC_ERROR),
                     reply_markup: kb
                 });
+
+                t.adminMsgId = sentMsg.message_id;
             } catch (e) {}
 
-            return ctx.reply('✅ فایل و پاسخ شما برای پشتیبانی ارسال شد.', { ...mainKeyboard });
+            writeDb(db);
+            userSteps.delete(ctx.from.id);
+
+            return ctx.reply(
+                `✅ پاسخ شما با موفقیت برای تیم پشتیبانی ارسال شد.\nتیکت دوباره در وضعیت بررسی قرار گرفت.`,
+                { parse_mode: 'HTML', ...mainKeyboard }
+            );
         }
 
             // 1. ارسال پیام DM توسط ادمین
