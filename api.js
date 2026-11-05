@@ -680,4 +680,76 @@ async function getServerTrafficMap(server) {
     return null;
 }
 
-module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap };
+// --- تابع اختصاصی مدیریت و ویرایش دستی حجم و زمان کلاینت توسط ادمین (مبتنی بر مسیر ایمیل) ---
+async function adminModifyClient(email, uuid, deltaGB, deltaDays, server) {
+    const apiClient = getApiClient(server);
+    try {
+        const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
+        if (!clientRes.data || !clientRes.data.success || !clientRes.data.obj) {
+            return { success: false, msg: 'کلاینت در پنل یافت نشد.' };
+        }
+
+        const obj = clientRes.data.obj;
+        let currentTotal = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
+        let currentExpiry = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
+        if (currentExpiry > 0 && currentExpiry < 1e12) currentExpiry *= 1000;
+
+        let newTotalByte = currentTotal;
+        if (deltaGB !== 0) {
+            const deltaBytes = Math.floor(deltaGB * 1073741824);
+            newTotalByte = Math.max(0, currentTotal + deltaBytes);
+        }
+
+        let newExpiryTime = currentExpiry;
+        if (deltaDays !== 0) {
+            const deltaMs = Math.floor(deltaDays * 24 * 60 * 60 * 1000);
+            // اگر قبلاً منقضی شده بود و ادمین روز مثبت اضافه کرد، از لحظه حال محاسبه کن
+            const baseTime = (currentExpiry > 0 && currentExpiry < Date.now() && deltaDays > 0) ? Date.now() : (currentExpiry > 0 ? currentExpiry : Date.now());
+            newExpiryTime = Math.max(0, baseTime + deltaMs);
+        }
+
+        const updatePayload = {
+            id: obj.client?.id || obj.id || uuid,
+            email: email,
+            enable: true,
+            total: newTotalByte,
+            totalGB: newTotalByte,
+            expiryTime: newExpiryTime,
+            limitIp: obj.client?.limitIp || obj.limitIp || 0,
+            tgId: obj.client?.tgId || obj.tgId || 0,
+            subId: obj.client?.subId || obj.subId || ''
+        };
+
+        const updateRes = await apiClient.post(`panel/api/clients/update/${encodeURIComponent(email)}`, updatePayload);
+        if (updateRes.data && updateRes.data.success) {
+            return { success: true, newTotal: newTotalByte, newExpiry: newExpiryTime };
+        }
+        return { success: false, msg: updateRes.data?.msg || 'خطای پنل در بروزرسانی' };
+    } catch (error) {
+        return { success: false, msg: error.message };
+    }
+}
+
+// --- تابع حذف قطعی کلاینت با بررسی مسیر ایمیل و UUID ---
+async function deleteClientByEmailAndUuid(email, uuid, server) {
+    const apiClient = getApiClient(server);
+    let deleted = false;
+    try {
+        if (email) {
+            const resEmail = await apiClient.post(`panel/api/clients/del/${encodeURIComponent(email)}`).catch(() => null);
+            if (resEmail?.data?.success) deleted = true;
+        }
+        if (uuid) {
+            const resUuid = await apiClient.post(`panel/api/clients/del/${uuid}`).catch(() => null);
+            if (resUuid?.data?.success) deleted = true;
+        }
+        // بررسی نهایی: اگر کلاینت دیگر در پنل وجود ندارد یعنی حذف موفق بوده است
+        const checkRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`).catch(() => null);
+        if (!checkRes || !checkRes.data || !checkRes.data.success || !checkRes.data.obj) {
+            deleted = true;
+        }
+    } catch (e) {}
+    return deleted;
+}
+
+module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap, adminModifyClient, deleteClientByEmailAndUuid };

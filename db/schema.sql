@@ -105,7 +105,9 @@ CREATE TABLE IF NOT EXISTS services (
     panel_used INTEGER,
     panel_expiry INTEGER,
     panel_email TEXT,
-    is_custom INTEGER NOT NULL DEFAULT 0
+    is_custom INTEGER NOT NULL DEFAULT 0,
+    notified_expired INTEGER NOT NULL DEFAULT 0,
+    exhausted_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS payments (
@@ -125,6 +127,22 @@ CREATE TABLE IF NOT EXISTS settlements (
     expense INTEGER NOT NULL,
     net_profit INTEGER NOT NULL,
     partner_share INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tickets (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending_admin',
+    net_type TEXT,
+    mobile_isp TEXT,
+    wifi_isp TEXT,
+    os TEXT,
+    app TEXT,
+    description TEXT,
+    admin_reply TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
 );
 
 INSERT OR IGNORE INTO global_stats (id) VALUES (1);

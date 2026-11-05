@@ -11,6 +11,7 @@ const defaultDb = {
     users: {},
     userStats: {},
     payments: {},
+    tickets: {},
     admins: [],
     servers: [],
     stats: {
@@ -84,6 +85,7 @@ function normalizeDb(data) {
     if (!data.users) { data.users = {}; needsUpdate = true; }
     if (!data.userStats) { data.userStats = {}; needsUpdate = true; }
     if (!data.payments) { data.payments = {}; needsUpdate = true; }
+    if (!data.tickets) { data.tickets = {}; needsUpdate = true; }
     if (!data.admins) { data.admins = []; needsUpdate = true; }
     if (!data.servers) { data.servers = []; needsUpdate = true; }
     if (!data.stats) { data.stats = { abandonedCarts: 0, testToBuyConversion: 0 }; needsUpdate = true; }
@@ -166,6 +168,13 @@ function mergeStaleIntoCache(incoming) {
     // wipe payments created after the snapshot was taken)
     for (const [token, payment] of Object.entries(incoming.payments || {})) {
         memoryCache.payments[token] = payment;
+    }
+
+    if (incoming.tickets) {
+    if (!memoryCache.tickets) memoryCache.tickets = {};
+    for (const [tId, tObj] of Object.entries(incoming.tickets)) {
+        memoryCache.tickets[tId] = tObj;
+    }
     }
 }
 

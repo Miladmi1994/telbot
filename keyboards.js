@@ -44,8 +44,9 @@ const receiptKeyboard = Markup.inlineKeyboard([
 ]);
 
 const supportMenuKeyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔌 پشتیبانی و گزارش مشکل', 'support_error')],
-    [cancelBtn]
+    [Markup.button.callback('➕ ثبت تیکت جدید', 'ticket_new_init')],
+    [Markup.button.callback('🗂 تیکت‌های من (وضعیت و تاریخچه)', 'ticket_my_list')],
+    [Markup.button.callback('❌ بستن', 'close_menu')]
 ]);
 
 // پنل مدیریت ادمین
@@ -150,7 +151,7 @@ const adminFinanceMenu = Markup.inlineKeyboard([
 // منوی دفتر حساب‌وکتاب (تسویه حساب شرکا)
 const adminAccountingMenu = Markup.inlineKeyboard([
     [Markup.button.callback('📊 وضعیت دوره فعلی', 'acc_status')],
-    [Markup.button.callback('➖ ثبت هزینه سرور', 'acc_add_expense')],
+    [Markup.button.callback('➕ ثبت درآمد دستی', 'acc_add_income'), Markup.button.callback('➖ ثبت هزینه سرور', 'acc_add_expense')],
     [Markup.button.callback('🤝 تسویه‌حساب (تقسیم سود)', 'acc_settle')],
     [Markup.button.callback('🗂 تاریخچه تسویه‌ها', 'acc_history')],
     [Markup.button.callback('🔙 بازگشت', 'admin_finance_menu')]

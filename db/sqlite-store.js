@@ -50,6 +50,25 @@ function openDatabase(dbFilePath) {
     try { db.exec("ALTER TABLE settings ADD COLUMN custom_plan_enabled INTEGER NOT NULL DEFAULT 1;"); } catch (e) {}
     try { db.exec("ALTER TABLE plans ADD COLUMN discount_percent INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
     try { db.exec("ALTER TABLE services ADD COLUMN is_custom INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE services ADD COLUMN notified_expired INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE services ADD COLUMN exhausted_at INTEGER;"); } catch (e) {}
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS tickets (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            category TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending_admin',
+            net_type TEXT,
+            mobile_isp TEXT,
+            wifi_isp TEXT,
+            os TEXT,
+            app TEXT,
+            description TEXT,
+            admin_reply TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+    `);
 
     return db;
 }
@@ -102,12 +121,14 @@ function rowToService(row) {
     if (row.is_vip) service.isVip = true;
     if (row.deleted_from_panel) service.deletedFromPanel = true;
     if (row.is_custom) service.isCustom = true;
+    if (row.exhausted_at != null) service.exhaustedAt = row.exhausted_at;
 
-    if (row.notified_days3 != null || row.notified_gb85 != null || row.notified_gb1 != null) {
+    if (row.notified_days3 != null || row.notified_gb85 != null || row.notified_gb1 != null || row.notified_expired != null) {
         service.notified = {
             days3: !!row.notified_days3,
             gb85: !!row.notified_gb85,
-            gb1: !!row.notified_gb1
+            gb1: !!row.notified_gb1,
+            expired: !!row.notified_expired
         };
     }
 
@@ -210,6 +231,25 @@ function loadState(db) {
         partnerShare: row.partner_share
     }));
 
+    const tickets = {};
+    for (const row of db.prepare('SELECT * FROM tickets ORDER BY created_at DESC').all()) {
+        tickets[row.id] = {
+            id: row.id,
+            userId: row.user_id,
+            category: row.category,
+            status: row.status,
+            netType: row.net_type || undefined,
+            mobileIsp: row.mobile_isp || undefined,
+            wifiIsp: row.wifi_isp || undefined,
+            os: row.os || undefined,
+            app: row.app || undefined,
+            description: row.description || undefined,
+            adminReply: row.admin_reply || undefined,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        };
+    }
+
     return {
         periodIncome: global?.period_income || 0,
         periodExpenses: global?.period_expenses || 0,
@@ -232,6 +272,7 @@ function loadState(db) {
         users,
         userStats,
         payments,
+        tickets,
         admins,
         servers,
         stats: {
@@ -292,6 +333,7 @@ function loadState(db) {
         db.prepare('DELETE FROM server_inbounds').run();
         db.prepare('DELETE FROM plans').run();
         db.prepare('DELETE FROM settlements').run();
+        db.prepare('DELETE FROM tickets').run();   
 
         const insertPlan = db.prepare(`
             INSERT INTO plans (
@@ -383,8 +425,9 @@ function loadState(db) {
             INSERT INTO services (
                 telegram_id, sort_order, email, uuid, name, server_id, order_id, is_vip,
                 deleted_from_panel, notified_days3, notified_gb85, notified_gb1,
-                panel_total, panel_used, panel_expiry, panel_email, is_custom
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                panel_total, panel_used, panel_expiry, panel_email, is_custom,
+                notified_expired, exhausted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const telegramId of allUserIds) {
@@ -427,7 +470,9 @@ function loadState(db) {
                     service.panelStats?.used ?? null,
                     service.panelStats?.expiry ?? null,
                     service.panelStats?.email ?? null,
-                    service.isCustom ? 1 : 0
+                    service.isCustom ? 1 : 0,
+                    service.notified?.expired ? 1 : 0,
+                    service.exhaustedAt ?? null
                 );
             });
         }
@@ -454,6 +499,30 @@ function loadState(db) {
         `);
         for (const s of data.settlements || []) {
             insertSettlement.run(s.id, s.date, s.income, s.expense, s.netProfit, s.partnerShare);
+        }
+        
+        const insertTicket = db.prepare(`
+            INSERT INTO tickets (
+                id, user_id, category, status, net_type, mobile_isp, wifi_isp,
+                os, app, description, admin_reply, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const t of Object.values(data.tickets || {})) {
+            insertTicket.run(
+                t.id,
+                String(t.userId),
+                t.category || 'error',
+                t.status || 'pending_admin',
+                t.netType || null,
+                t.mobileIsp || null,
+                t.wifiIsp || null,
+                t.os || null,
+                t.app || null,
+                t.description || null,
+                t.adminReply || null,
+                t.createdAt || Date.now(),
+                t.updatedAt || Date.now()
+            );
         }
         
         db.exec('COMMIT');
