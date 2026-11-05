@@ -3239,7 +3239,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             ],
             [
                 Markup.button.callback('🛠 اعمال تغییرات فنی', `t_qrep_fixapplied_${ticketId}`),
-                Markup.button.callback('🌐 اختلال موقت شبکه', `t_qrep_net_${ticketId}`)
+                Markup.button.callback('🌐 اختلال شبکه', `t_qrep_net_${ticketId}`)
             ],
             [
                 Markup.button.callback('📱 آپدیت برنامه/ساعت', `t_qrep_update_${ticketId}`),
@@ -3247,22 +3247,19 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             ],
             [
                 Markup.button.callback('💳 تایید پرداخت', `t_qrep_payok_${ticketId}`),
-                Markup.button.callback('📜 تاریخچه چت', `t_admin_history_${ticketId}`)
+                Markup.button.callback('✍️ پاسخ دلخواه', `t_customrep_${ticketId}`)
             ],
             [
-                Markup.button.callback('✍️ ارسال پاسخ دلخواه (در یک پیام)', `t_customrep_${ticketId}`),
                 Markup.button.callback('🔒 بستن تیکت', `close_ticket_${ticketId}`)
             ]
         ];
 
-        if (isBanned) {
-            rows.push([Markup.button.callback('✅ رفع مسدودی کاربر (Unban)', `t_unban_${ticketId}_${userId}`)]);
-        } else if (confirmBan) {
+        if (confirmBan) {
             rows.push([
                 Markup.button.callback('⚠️ تایید مسدودسازی قطعی', `t_ban_confirm_${ticketId}_${userId}`),
                 Markup.button.callback('🔙 انصراف', `t_ban_cancel_${ticketId}_${userId}`)
             ]);
-        } else {
+        } else if (!isBanned) {
             rows.push([Markup.button.callback('🚫 مسدود کردن کاربر', `t_ban_ask_${ticketId}_${userId}`)]);
         }
 
@@ -3347,9 +3344,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             kbRows.push([Markup.button.callback('💬 ارسال پاسخ جدید به پشتیبانی', `t_user_reply_${t.id}`)]);
         }
 
-        // 👉 اضافه کردن دکمه تاریخچه چت همینجا برای کاربر:
-        kbRows.push([Markup.button.callback('📜 مشاهده کل تاریخچه گفتگو', `t_user_history_${ticketId}`)]);
-
         if (t.status !== 'closed') {
             kbRows.push([Markup.button.callback('❌ بستن این تیکت', `t_close_ask_${t.id}`)]);
         }
@@ -3357,44 +3351,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         kbRows.push([Markup.button.callback('🔙 بازگشت به لیست تیکت‌ها', 'ticket_my_list')]);
 
         ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kbRows } }).catch(() => {});
-    });
-
-    // نمایش کل تاریخچه تیکت به صورت کامل برای کاربر یا ادمین
-    bot.action(/^t_(user|admin)_history_(T\d+)$/, async (ctx) => {
-        const mode = ctx.match[1];
-        const ticketId = ctx.match[2];
-        const db = readDb();
-        const t = db.tickets?.[ticketId];
-        if (!t) return ctx.answerCbQuery('❌ تیکت یافت نشد.', { show_alert: true });
-
-        let historyText = `📜 <b>تاریخچه کامل گفتگوی تیکت #${ticketId}</b>\n\n`;
-        historyText += `👤 <b>شرح اولیه کاربر:</b>\n<blockquote>${t.description || 'ندارد'}</blockquote>\n\n`;
-
-        if (t.messages && t.messages.length > 0) {
-            historyText += `💬 <b>پیام‌های بعدی:</b>\n`;
-            t.messages.forEach((m) => {
-                const senderLabel = m.sender === 'user' ? '👤 کاربر' : '👨‍💻 پشتیبانی';
-                historyText += `▪️ <b>${senderLabel}:</b> ${m.text}\n`;
-            });
-            historyText += `\n`;
-        }
-
-        if (mode === 'admin') {
-            await ctx.answerCbQuery();
-            // در گروه ادمین، تاریخچه را ریپلای می‌کنیم تا کارت اصلی تیکت ادیت و خراب نشود
-            return ctx.reply(historyText, { 
-                parse_mode: 'HTML', 
-                reply_to_message_id: ctx.callbackQuery.message.message_id 
-            });
-        } else {
-            // در چت کاربر، پیام ادیت می‌شود
-            const backCallback = `t_view_${ticketId}`;
-            await ctx.answerCbQuery();
-            await ctx.editMessageText(historyText, {
-                parse_mode: 'HTML',
-                reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', backCallback)]] }
-            }).catch(() => {});
-        }
     });
 
     // ارور کلیک روی دکمه قفل‌شده
@@ -3671,7 +3627,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             inline_keyboard: [
                 [Markup.button.callback('همراه اول', 't_misp_همراه اول'), Markup.button.callback('ایرانسل', 't_misp_ایرانسل')],
                 [Markup.button.callback('رایتل', 't_misp_رایتل'), Markup.button.callback('✏️ سایر (تایپ دستی)', 't_misp_OTHER')],
-                [Markup.button.callback('❌ انصراف', 'ticket_menu_main')]
+                // اضافه شدن دکمه‌های بازگشت و لغو
+                [Markup.button.callback('🔙 مرحله قبل', 't_cat_error'), Markup.button.callback('❌ لغو', 'ticket_menu_main')]
             ]
         };
         const msg = '📱 <b>اپراتور سیم‌کارت</b> خود را انتخاب کنید:';
@@ -3685,7 +3642,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 [Markup.button.callback('مخابرات', 't_wisp_مخابرات'), Markup.button.callback('شاتل', 't_wisp_شاتل')],
                 [Markup.button.callback('آسیاتک', 't_wisp_آسیاتک'), Markup.button.callback('ایرانسل ثابت', 't_wisp_ایرانسل ثابت')],
                 [Markup.button.callback('مبین‌نت', 't_wisp_مبین‌نت'), Markup.button.callback('✏️ سایر (تایپ دستی)', 't_wisp_OTHER')],
-                [Markup.button.callback('❌ انصراف', 'ticket_menu_main')]
+                [Markup.button.callback('🔙 مرحله قبل', 't_cat_error'), Markup.button.callback('❌ لغو', 'ticket_menu_main')]
             ]
         };
         const msg = '🏠 <b>شرکت ارائه‌دهنده اینترنت خانگی / Wi-Fi</b> خود را انتخاب کنید:';
@@ -3698,12 +3655,41 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             inline_keyboard: [
                 [Markup.button.callback('🤖 اندروید (Android)', 't_os_اندروید'), Markup.button.callback('🍎 آیفون (iOS)', 't_os_آیفون (iOS)')],
                 [Markup.button.callback('💻 ویندوز (Windows)', 't_os_ویندوز'), Markup.button.callback('🍏 مک / لینوکس', 't_os_مک/لینوکس')],
-                [Markup.button.callback('❌ انصراف', 'ticket_menu_main')]
+                [Markup.button.callback('🔙 مرحله قبل', 't_back_isp'), Markup.button.callback('❌ لغو', 'ticket_menu_main')]
             ]
         };
         const msg = '💻 <b>سیستم‌عامل دستگاه</b> خود را انتخاب کنید:';
         if (ctx.callbackQuery) ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
         else ctx.reply(msg, { parse_mode: 'HTML', reply_markup: kb });
+    }
+
+    function askAppStep(ctx) {
+        const kb = {
+            inline_keyboard: [
+                [Markup.button.callback('v2rayNG', 't_app_v2rayNG'), Markup.button.callback('v2rayN', 't_app_v2rayN')],
+                [Markup.button.callback('V2Box', 't_app_V2Box'), Markup.button.callback('Happ Proxy', 't_app_Happ Proxy')],
+                [Markup.button.callback('Incy', 't_app_Incy'), Markup.button.callback('Streisand', 't_app_Streisand')],
+                [Markup.button.callback('✏️ سایر (تایپ دستی)', 't_app_OTHER')],
+                [Markup.button.callback('🔙 مرحله قبل', 't_back_os'), Markup.button.callback('❌ لغو', 'ticket_menu_main')]
+            ]
+        };
+        const msg = '📲 <b>از چه نرم‌افزاری برای اتصال استفاده می‌کنید؟</b>';
+        if (ctx.callbackQuery) ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+        else ctx.reply(msg, { parse_mode: 'HTML', reply_markup: kb });
+    }
+
+    function askFinalDescriptionStep(ctx, state) {
+        state.step = 'TICKET_WAIT_DESC';
+        userSteps.set(ctx.from.id, state);
+        const summary = `✅ <b>اطلاعات اتصال ثبت شد:</b>\n` +
+                        `🌐 اینترنت: ${state.netType === 'both' ? `سیم‌کارت (${state.mobileIsp}) + وای‌فای (${state.wifiIsp})` : (state.netType === 'mobile' ? `سیم‌کارت (${state.mobileIsp})` : `وای‌فای (${state.wifiIsp})`)}\n` +
+                        `📱 دستگاه و برنامه: ${state.os} | ${state.app}\n\n` +
+                        `📝 <b>گام آخر:</b> لطفاً در <b>یک پیام</b> شرح کامل مشکل خود را بنویسید.\n` +
+                        `📸 <i>اگر اسکرین‌شات دارید، توضیحات را در کپشن همان عکس بنویسید و یکجا ارسال کنید:</i>`;
+        
+        const kb = { inline_keyboard: [[Markup.button.callback('🔙 مرحله قبل', 't_back_app'), Markup.button.callback('❌ لغو', 'ticket_menu_main')]] };
+        if (ctx.callbackQuery) ctx.editMessageText(summary, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+        else ctx.reply(summary, { parse_mode: 'HTML', reply_markup: kb });
     }
 
     function askAppStep(ctx) {
@@ -3733,6 +3719,40 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         if (ctx.callbackQuery) ctx.editMessageText(summary, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
         else ctx.reply(summary, { parse_mode: 'HTML', reply_markup: kb });
     }
+
+    // === هندلرهای بازگشت به مراحل قبل در ویزارد تیکت ===
+    bot.action('t_back_isp', (ctx) => {
+        ctx.answerCbQuery();
+        const state = userSteps.get(ctx.from.id);
+        if (!state) return;
+        if (state.netType === 'mobile' || state.netType === 'both') {
+            state.step = 'TICKET_MOBILE_ISP';
+            userSteps.set(ctx.from.id, state);
+            askMobileIsp(ctx);
+        } else {
+            state.step = 'TICKET_WIFI_ISP';
+            userSteps.set(ctx.from.id, state);
+            askWifiIsp(ctx);
+        }
+    });
+    
+    bot.action('t_back_os', (ctx) => {
+        ctx.answerCbQuery();
+        const state = userSteps.get(ctx.from.id);
+        if (!state) return;
+        state.step = 'TICKET_OS';
+        userSteps.set(ctx.from.id, state);
+        askOsStep(ctx);
+    });
+
+    bot.action('t_back_app', (ctx) => {
+        ctx.answerCbQuery();
+        const state = userSteps.get(ctx.from.id);
+        if (!state) return;
+        state.step = 'TICKET_APP';
+        userSteps.set(ctx.from.id, state);
+        askAppStep(ctx);
+    });
 
     bot.action(/^t_net_(mobile|wifi|both)$/, (ctx) => {
         ctx.answerCbQuery();
@@ -4081,6 +4101,9 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 writeDb(db);
             }
             try {
+                if (t.adminMsgId) {
+                    await ctx.telegram.deleteMessage(GROUP_ID, t.adminMsgId).catch(() => {});
+                }
                 await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی به تیکت #${ticketId}:</b>`, { parse_mode: 'HTML' });
                 await ctx.telegram.copyMessage(targetUserId, ctx.chat.id, ctx.message.message_id);
                 ctx.reply(`✅ مستندات/پاسخ برای تیکت #${ticketId} ارسال شد.`);
@@ -4104,16 +4127,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             const safeText = rawText.substring(0, 700).replace(/</g, '&lt;').replace(/>/g, '&gt;');
             
             t.status = 'pending_admin';
-            if (!t.messages) t.messages = [];
-            t.messages.push({ sender: 'user', text: rawText, time: Date.now() });
-            
-            t.status = 'pending_admin';
+            t.description = rawText; // فقط آخرین پیام را نگه می‌داریم
             t.updatedAt = Date.now();
-            t.updatedAt = Date.now();
-
-            // ذخیره در آرایه تاریخچه پیام‌ها
-            if (!t.messages) t.messages = [];
-            t.messages.push({ sender: 'user', text: rawText, time: Date.now() });
 
             const userId = ctx.from.id.toString();
             const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
@@ -4125,7 +4140,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             const kb = buildAdminTicketKeyboard(ticketId, userId, isBanned, false);
             
             try {
-                // پاک کردن پیام قبلی کاربر در گروه ادمین برای جلوگیری از شلوغی
+                // 👈 اینجا مشکل پاک نشدن حل شد:
                 if (t.adminMsgId) {
                     await ctx.telegram.deleteMessage(GROUP_ID, t.adminMsgId).catch(() => {});
                 }
@@ -4135,8 +4150,8 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     message_thread_id: parseInt(TOPIC_ERROR),
                     reply_markup: kb
                 });
-
-                t.adminMsgId = sentMsg.message_id;
+                
+                t.adminMsgId = sentMsg.message_id; // ذخیره شناسه پیام جدید
             } catch (e) {}
 
             writeDb(db);
@@ -4410,12 +4425,18 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     db.tickets[ticketId].status = 'answered';
                     db.tickets[ticketId].adminReply = ctx.message.text;
                     db.tickets[ticketId].updatedAt = Date.now();
-                    if (!db.tickets[ticketId].messages) db.tickets[ticketId].messages = [];
-                    db.tickets[ticketId].messages.push({ sender: 'admin', text: ctx.message.text, time: Date.now() });
                     writeDb(db);
                 }
+                
+                const userTicketReplyKeyboard = {
+                    inline_keyboard: [
+                        [Markup.button.callback('💬 ارسال پاسخ جدید به پشتیبانی', `t_user_reply_${ticketId}`)],
+                        [Markup.button.callback('❌ بستن این تیکت', `t_close_ask_${ticketId}`)]
+                    ]
+                };
+
                 try {
-                    await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی به تیکت #${ticketId}:</b>\n\n${ctx.message.text}`, { parse_mode: 'HTML' });
+                    await ctx.telegram.sendMessage(targetUserId, `👨‍💻 <b>پاسخ پشتیبانی به تیکت #${ticketId}:</b>\n\n${ctx.message.text}`, { parse_mode: 'HTML', reply_markup: userTicketReplyKeyboard });
                     ctx.reply(`✅ پاسخ شما برای تیکت #${ticketId} ارسال شد.`);
                 } catch (e) {
                     ctx.reply('❌ ارسال ناموفق! (کاربر ربات را مسدود کرده است)');
@@ -5884,6 +5905,34 @@ async function runCleanupJob() {
     }
 }
 
+// ۴. پاکسازی خودکار تیکت‌های قدیمی (بیشتر از ۴۸ ساعت از آخرین فعالیت)
+    async function runTicketCleanupJob() {
+        try {
+            const db = readDb();
+            if (!db.tickets) return;
+            
+            const now = Date.now();
+            const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
+            let deletedTickets = 0;
+
+            for (const ticketId in db.tickets) {
+                const t = db.tickets[ticketId];
+                // اگر از آخرین پیام کاربر یا ادمین ۴۸ ساعت گذشته باشد
+                if ((now - t.updatedAt) > FORTY_EIGHT_HOURS) {
+                    delete db.tickets[ticketId];
+                    deletedTickets++;
+                }
+            }
+
+            if (deletedTickets > 0) {
+                writeDb(db);
+                console.log(`[Ticket Cleanup] ✅ تعداد ${deletedTickets} تیکت قدیمی پاکسازی شد.`);
+            }
+        } catch (error) {
+            logError('Ticket Cleanup Job', error);
+        }
+    }
+
 // ==========================================
 // فعال‌سازی زمان‌بندها (هر ۱ ساعت بررسی حجم/اتمام + پاکسازی ۴۸ ساعته)
 // ==========================================
@@ -5896,7 +5945,9 @@ async function runCleanupJob() {
 setInterval(async () => {
     await runVolumeCheckJob();
     await runCleanupJob();
+    await runTicketCleanupJob();
 }, 60 * 60 * 1000);
+
 
 setInterval(runExpiryWarningJob, 6 * 60 * 60 * 1000);
 }
