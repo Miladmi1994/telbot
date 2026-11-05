@@ -50,7 +50,14 @@ async function getUsdtRate() {
         return cachedUsdtPrice;
     }
     try {
-        const res = await axios.get(BITPIN_API, { timeout: 8000 });
+        // اضافه‌کردن هدرها برای عبور از فیلتر کلودفلر/بیت‌پین
+        const res = await axios.get(BITPIN_API, { 
+            timeout: 8000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json'
+            }
+        });
         if (res.data && Array.isArray(res.data)) {
             const usdt = res.data.find(ticker => ticker.symbol === 'USDT_IRT');
             if (usdt && usdt.price) {
