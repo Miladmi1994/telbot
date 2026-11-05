@@ -3250,7 +3250,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 Markup.button.callback('✍️ پاسخ دلخواه', `t_customrep_${ticketId}`)
             ],
             [
-                [Markup.button.callback('📜 تاریخچه چت', `t_admin_history_${ticketId}`)],
+                Markup.button.callback('📜 تاریخچه چت', `t_admin_history_${ticketId}`), // ✅ اصلاح شد
                 Markup.button.callback('🔒 بستن تیکت', `close_ticket_${ticketId}`)
             ]
         ];
