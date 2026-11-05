@@ -53,6 +53,7 @@ function connectWallexFallback() {
     wallexWs = new WebSocket('wss://api.wallex.ir/connection/websocket');
 
     wallexWs.on('open', () => {
+        console.log('🟢 [Wallex WS] با موفقیت به وب‌سکت والکس متصل شد!'); // 👈 این را اضافه کنید
         const subMessage = {
             "id": 3,
             "subscribe": { "channel": "public:all@price" }
@@ -67,19 +68,20 @@ function connectWallexFallback() {
                 const marketData = parsed.push.pub.data;
                 if (marketData && marketData.symbol === 'USDTTMN') {
                     latestWallexUsdtPrice = Math.ceil(Number(marketData.price));
-                    
-                    // 👈 این خط را موقتاً اضافه کنید تا مطمئن شوید قیمت از والکس می‌رسد
-                    console.log('🟢 [Wallex WS] قیمت جدید تتر دریافت شد:', latestWallexUsdtPrice);
+                    console.log('💰 [Wallex WS] قیمت جدید تتر دریافت شد:', latestWallexUsdtPrice);
                 }
             }
         } catch (e) {}
     });
 
     wallexWs.on('close', () => {
+        console.log('🔴 [Wallex WS] اتصال قطع شد، تلاش مجدد...');
         setTimeout(connectWallexFallback, 5000);
     });
 
-    wallexWs.on('error', (err) => {});
+    wallexWs.on('error', (err) => {
+        console.error('❌ [Wallex WS] خطا در وب‌سکت:', err.message);
+    });
 }
 
 // استارت زدن وب‌سکت والکس در پس‌زمینه
