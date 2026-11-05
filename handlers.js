@@ -3272,17 +3272,20 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const rows = [
             [
                 Markup.button.callback('⏳ در حال بررسی', `t_qrep_checking_${ticketId}`),
-                Markup.button.callback('🔄 دریافت مجدد کانفیگ', `t_qrep_reget_${ticketId}`)
+                Markup.button.callback('🔄 دریافت کانفیگ', `t_qrep_reget_${ticketId}`)
             ],
             [
-                Markup.button.callback('📱 آپدیت برنامه و ساعت', `t_qrep_update_${ticketId}`),
+                Markup.button.callback('🛠 اعمال تغییرات فنی', `t_qrep_fixapplied_${ticketId}`),
                 Markup.button.callback('🌐 اختلال موقت شبکه', `t_qrep_net_${ticketId}`)
             ],
             [
-                Markup.button.callback('🔀 تست سایر کانفیگ‌ها (ECH/WS)', `t_qrep_tryall_${ticketId}`),
-                Markup.button.callback('💳 بررسی و تایید پرداخت', `t_qrep_payok_${ticketId}`)
+                Markup.button.callback('📱 آپدیت برنامه/ساعت', `t_qrep_update_${ticketId}`),
+                Markup.button.callback('🔀 تست سایر کانفیگ‌ها', `t_qrep_tryall_${ticketId}`)
             ],
-            [Markup.button.callback('✍️ تایپ پاسخ دلخواه / ارسال مستندات', `t_customrep_${ticketId}`)],
+            [
+                Markup.button.callback('💳 تایید پرداخت', `t_qrep_payok_${ticketId}`),
+                Markup.button.callback('✍️ تایپ پاسخ دلخواه', `t_customrep_${ticketId}`)
+            ],
             [Markup.button.callback('🔒 بستن تیکت', `close_ticket_${ticketId}`)]
         ];
 
@@ -3317,7 +3320,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ).catch(() => {});
     });
 
-    // لیست تیکت‌های کاربر
     bot.action('ticket_my_list', (ctx) => {
         ctx.answerCbQuery();
         const db = readDb();
@@ -3325,28 +3327,99 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const myTickets = Object.values(db.tickets || {})
             .filter(t => String(t.userId) === uid)
             .sort((a, b) => b.createdAt - a.createdAt)
-            .slice(0, 8);
+            .slice(0, 10);
 
         if (myTickets.length === 0) {
             return ctx.editMessageText('📭 شما تاکنون هیچ تیکتی ثبت نکرده‌اید.', {
-                reply_markup: { inline_keyboard: [[Markup.button.callback('➕ ثبت تیکت جدید', 'ticket_new_init')], [Markup.button.callback('🔙 بازگشت', 'ticket_menu_main')]] }
+                reply_markup: {
+                    inline_keyboard: [
+                        [Markup.button.callback('🗂 تیکت‌های من', 'ticket_my_list')],
+                        [Markup.button.callback('➕ ثبت تیکت جدید', 'ticket_new_init')],
+                        [Markup.button.callback('🔙 بازگشت', 'ticket_menu_main')]
+                    ]
+                }
             });
         }
 
-        const statusBadge = (s) => s === 'pending_admin' ? '🟡 در انتظار پاسخ پشتیبانی' : (s === 'answered' ? '🟢 پاسخ داده شده' : '⚫️ بسته شده');
-        let text = `🗂 <b>تیکت‌های اخیر شما:</b>\n\n`;
-        myTickets.forEach(t => {
-            const catName = t.category === 'payment' ? '💳 پیگیری پرداخت' : '🔌 گزارش اختلال';
-            const dStr = new Date(t.createdAt).toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' });
-            text += `🎫 <b>#${t.id}</b> | ${catName} (${dStr})\n`;
-            text += `📌 وضعیت: <b>${statusBadge(t.status)}</b>\n`;
-            if (t.adminReply) text += `👨‍💻 آخرین پاسخ: <i>${t.adminReply.substring(0, 80)}</i>\n`;
-            text += `〰️〰️〰️〰️〰️\n`;
+        const statusBadge = (s) => s === 'pending_admin' ? '🟡 در انتظار بررسی' : (s === 'answered' ? '🟢 پاسخ داده شده' : '⚫️ بسته شده');
+        let buttons = myTickets.map(t => {
+            const catName = t.category === 'payment' ? '💳 پرداخت' : '🔌 اختلال';
+            return [Markup.button.callback(`🎫 #${t.id} | ${catName} (${statusBadge(t.status)})`, `t_view_${t.id}`)];
         });
 
-        ctx.editMessageText(text, {
+        buttons.push([Markup.button.callback('➕ ثبت تیکت جدید', 'ticket_new_init')]);
+        buttons.push([Markup.button.callback('🔙 بازگشت', 'ticket_menu_main')]);
+
+        ctx.editMessageText('🗂 <b>لیست تیکت‌های شما:</b>\nبرای مشاهده جزئیات، آخرین پیام و وضعیت، روی تیکت مورد نظر کلیک کنید:', {
             parse_mode: 'HTML',
-            reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'ticket_menu_main')]] }
+            reply_markup: { inline_keyboard: buttons }
+        });
+    });
+
+    bot.action(/^t_view_(T\d+)$/, (ctx) => {
+        ctx.answerCbQuery();
+        const ticketId = ctx.match[1];
+        const db = readDb();
+        const t = db.tickets?.[ticketId];
+        if (!t) return ctx.answerCbQuery('❌ تیکت یافت نشد.', { show_alert: true });
+
+        const statusText = t.status === 'pending_admin' ? '🟡 در انتظار پاسخ پشتیبانی' : (t.status === 'answered' ? '🟢 پاسخ داده شده' : '⚫️ بسته شده');
+        const catName = t.category === 'payment' ? '💳 پیگیری پرداخت و تمدید' : '🔌 گزارش اختلال و اتصال';
+
+        let text = `🎫 <b>جزئیات تیکت #${t.id}</b>\n\n` +
+                   `📂 <b>موضوع:</b> ${catName}\n` +
+                   `📌 <b>وضعیت:</b> ${statusText}\n\n` +
+                   `💬 <b>شرح درخواست شما:</b>\n<blockquote>${t.description || 'ندارد'}</blockquote>\n\n` +
+                   `👨‍💻 <b>آخرین پاسخ پشتیبانی:</b>\n<blockquote>${t.adminReply || 'هنوز پاسخی ارسال نشده است.'}</blockquote>`;
+
+        let kbRows = [];
+
+        // قفل پاسخ کاربر تا زمانی که ادمین جواب نداده است
+        if (t.status === 'pending_admin') {
+            kbRows.push([Markup.button.callback('🔒 ارسال پاسخ جدید (منتظر پاسخ ادمین...)', `t_locked_reply_${t.id}`)]);
+        } else if (t.status === 'answered') {
+            kbRows.push([Markup.button.callback('💬 ارسال پاسخ جدید به پشتیبانی', `t_user_reply_${t.id}`)]);
+        }
+
+        if (t.status !== 'closed') {
+            kbRows.push([Markup.button.callback('❌ بستن این تیکت', `t_close_ask_${t.id}`)]);
+        }
+
+        kbRows.push([Markup.button.callback('🔙 بازگشت به لیست تیکت‌ها', 'ticket_my_list')]);
+
+        ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kbRows } }).catch(() => {});
+    });
+
+    // ارور کلیک روی دکمه قفل‌شده
+    bot.action(/^t_locked_reply_/, (ctx) => {
+        ctx.answerCbQuery('⏳ تا زمانی که پشتیبانی به تیکت شما پاسخ نداده است، امکان ارسال پیام جدید وجود ندارد.', { show_alert: true });
+    });
+
+    // تاییدیه بستن تیکت توسط کاربر
+    bot.action(/^t_close_ask_(T\d+)$/, (ctx) => {
+        ctx.answerCbQuery();
+        const ticketId = ctx.match[1];
+        ctx.editMessageReplyMarkup({
+            inline_keyboard: [
+                [Markup.button.callback('✅ بله، مشکلم برطرف شد (بستن تیکت)', `t_close_yes_${ticketId}`)],
+                [Markup.button.callback('🔙 خیر، بازگشت', `t_view_${ticketId}`)]
+            ]
+        }).catch(() => {});
+    });
+
+    // بستن قطعی توسط کاربر
+    bot.action(/^t_close_yes_(T\d+)$/, (ctx) => {
+        const ticketId = ctx.match[1];
+        const db = readDb();
+        if (db.tickets?.[ticketId]) {
+            db.tickets[ticketId].status = 'closed';
+            db.tickets[ticketId].updatedAt = Date.now();
+            writeDb(db);
+        }
+        ctx.answerCbQuery('✅ تیکت شما بسته شد.');
+        ctx.editMessageText(`✅ <b>تیکت #${ticketId} با موفقیت بسته شد.</b>\nاز اینکه با ما همراه بودید سپاسگزاریم 🌹`, {
+            parse_mode: 'HTML',
+            reply_markup: { inline_keyboard: [[Markup.button.callback('🗂 بازگشت به تیکت‌ها', 'ticket_my_list')]] }
         });
     });
 
@@ -3373,6 +3446,66 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 ]
             }
         });
+    });
+
+    // --- پاکسازی سایلنت اکانت‌های منقضی‌شده پس از ۴۸ ساعت توسط ادمین ---
+    bot.action('admin_silent_cleanup_exec', async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        await ctx.answerCbQuery('⏳ در حال بررسی و پاکسازی سایلنت اکانت‌ها...', { show_alert: false });
+
+        const db = readDb();
+        const now = Date.now();
+        const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
+        let cleanedCount = 0;
+
+        for (const userId of Object.keys(db.users || {})) {
+            const configs = db.users[userId];
+            if (!configs || !Array.isArray(configs)) continue;
+
+            let userChanged = false;
+            for (let conf of configs) {
+                if (conf.deletedFromPanel || conf.name === 'سرویس قبلی') continue;
+                const targetServer = getTargetServer(db, conf);
+                if (!targetServer) continue;
+
+                // استعلام لحظه‌ای ترافیک از پنل
+                const traffic = await getClientTraffic(conf.email, targetServer).catch(() => undefined);
+                if (!traffic) continue;
+
+                let exp = traffic.expiryTime || 0;
+                if (exp > 0 && exp < 1e12) exp *= 1000;
+
+                const isVolumeEnded = traffic.total > 0 && ((traffic.up || 0) + (traffic.down || 0)) >= traffic.total;
+                const isTimeEnded = exp > 0 && now >= exp;
+                const isTest = conf.email.startsWith('Test_') || conf.name.includes('تست');
+
+                if (isVolumeEnded || isTimeEnded) {
+                    if (!conf.exhaustedAt) {
+                        conf.exhaustedAt = (isTimeEnded && (now - exp) > FORTY_EIGHT_HOURS) ? exp : now;
+                        userChanged = true;
+                    }
+
+                    const waitLimit = isTest ? (24 * 60 * 60 * 1000) : FORTY_EIGHT_HOURS;
+                    if ((now - conf.exhaustedAt) >= waitLimit) {
+                        // حذف قطعی از پنل سنایی بدون ارسال پیام به کاربر (سایلنت)
+                        const deleted = await deleteClientByEmailAndUuid(conf.email, conf.uuid, targetServer);
+                        if (deleted) {
+                            conf.deletedFromPanel = true;
+                            conf.exhaustedAt = null;
+                            cleanedCount++;
+                            userChanged = true;
+                        }
+                    }
+                }
+            }
+            if (userChanged) writeDb(db);
+        }
+
+        ctx.reply(
+            `🧹 <b>عملیات پاکسازی سایلنت به پایان رسید.</b>\n\n` +
+            `تعداد <b>${cleanedCount}</b> اکانت منقضی‌شده که بیش از ۴۸ ساعت از مهلتشان گذشته بود، به صورت کاملاً پنهانی از پنل و ربات حذف شدند.`,
+            { parse_mode: 'HTML' }
+        );
     });
 
     // شاخه ۱: پیگیری پرداخت
@@ -3638,12 +3771,13 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
     // --- اکشن‌های پاسخ آماده ادمین به تیکت ---
     const QUICK_REPLIES = {
-        checking: '⏳ پیام شما دریافت شد و همکاران ما در حال بررسی موضوع هستند. لطفاً تا دریافت پاسخ نهایی شکیبا باشید.',
+        checking: 'پیام شما دریافت شد و در حال بررسی مشکل هستیم.',
         reget: '🔄 تغییرات جدیدی روی سرور اعمال شده است. لطفاً کانفیگ‌های قبلی را از برنامه خود پاک کرده و از بخش «👤 داشبورد من» در ربات، کانفیگ‌های جدید را دریافت و اضافه نمایید.',
         update: '📱 لطفاً مطمئن شوید آخرین نسخه نرم‌افزار را از بخش «📥 اپلیکیشن و آموزش» ربات نصب کرده‌اید و تنظیمات ساعت و تاریخ دستگاه شما روی حالت اتوماتیک (Automatic) قرار دارد.',
-        net: '🌐 در حال حاضر اختلال موقتی روی شبکه زیرساخت رخ داده و تیم فنی در حال بهینه‌سازی مسیرهاست. به‌زودی اتصال به حالت پایدار برمی‌گردد.',
-        tryall: '🔀 لطفاً تمام کانفیگ‌های دریافتی از ربات (به‌خصوص کانفیگ ۴ ECH و کانفیگ ویژه WS) را تست بفرمایید؛ هر کانفیگ برای یک اپراتور و شرایط شبکه خاص بهینه شده است.',
-        payok: '💳 مورد پرداختی شما بررسی و تایید شد. می‌توانید وضعیت سرویس خود را از بخش «👤 داشبورد من» مشاهده نمایید.'
+        net: 'در حال حاضر اختلال سراسری یا موقتی روی شبکه زیرساخت وجود داره در حال بررسی مشکل هستیم نکته ای باشه از طریق کانال (@cyphernett) اطلاع داده خواهد شد.',
+        tryall: 'لطفاً تمام کانفیگ‌های دریافتی از ربات را تست بفرمایید؛ هر کانفیگ برای شرایط شبکه خاصی بهینه شده است.',
+        payok: '💳 مورد پرداختی شما بررسی و تایید شد. می‌توانید وضعیت سرویس خود را از بخش «👤 داشبورد من» مشاهده نمایید.',
+        fixapplied: 'یک سری تغییرات از سمت ما اعمال شد به احتمال زیاد به زودی مشکل شما برطرف خواهد شد'
     };
 
     bot.action(/^t_qrep_(checking|reget|update|net|tryall|payok)_(T\d+)$/, async (ctx) => {

@@ -44,8 +44,8 @@ const receiptKeyboard = Markup.inlineKeyboard([
 ]);
 
 const supportMenuKeyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('➕ ثبت تیکت جدید', 'ticket_new_init')],
     [Markup.button.callback('🗂 تیکت‌های من (وضعیت و تاریخچه)', 'ticket_my_list')],
+    [Markup.button.callback('➕ ثبت تیکت جدید', 'ticket_new_init')],
     [Markup.button.callback('❌ بستن', 'close_menu')]
 ]);
 
@@ -91,7 +91,8 @@ const getAdminServersMenu = (db) => {
         [Markup.button.callback(`🔀 تفکیک با اینباند: ${tierMode}`, 'toggle_inbound_tier_mode')],
         [Markup.button.callback('🔄 انتقال کاربران بین سرورها (DB)', 'admin_migrate_db_menu')],
         [Markup.button.callback('🛡 مدیریت ECH و آدرس (کانفیگ ۴)', 'admin_ech_menu')],
-        [Markup.button.callback('☁️ مدیریت Cloudflare', 'admin_cf_menu')], 
+        [Markup.button.callback('☁️ مدیریت Cloudflare', 'admin_cf_menu')],
+        [Markup.button.callback('🧹 پاکسازی سایلنت اکانت‌های منقضی (+48h)', 'admin_silent_cleanup_exec')]
         [Markup.button.callback('🔙 بازگشت', 'back_admin')]
     ]);
 };
