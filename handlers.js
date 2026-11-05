@@ -3499,7 +3499,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         );
     });
 
-    // پاکسازی کامل اکانت‌های منقضی‌شده از دیتابیس ربات (+48h)
+    // پاکسازی کامل و تضمینی اکانت‌های منقضی‌شده از دیتابیس ربات (+48h)
     bot.action('admin_cleanup_db_exec', async (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         await ctx.answerCbQuery('⏳ در حال پاکسازی و محو کردن اکانت‌ها از دیتابیس...', { show_alert: false });
@@ -3516,23 +3516,33 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             db.users[userId] = configs.filter(conf => {
                 if (conf.name === 'سرویس قبلی') return true;
 
+                // بررسی ۱: آیا سرویس از قبل در پنل حذف شده یا فلگ حذف خورده؟
+                if (conf.deletedFromPanel) {
+                    removedFromDbCount++;
+                    return false;
+                }
+
                 let expTime = conf.panelStats?.expiry || 0;
                 if (expTime > 0 && expTime < 1e12) expTime *= 1000;
 
                 const isVolumeEnded = conf.panelStats?.total > 0 && (conf.panelStats?.used || 0) >= conf.panelStats.total;
                 const isTimeEnded = expTime > 0 && now >= expTime;
 
-                if (isVolumeEnded || isTimeEnded) {
+                // بررسی ۲: اگر حجم یا زمان تمام شده بود، یا اگر exhaustedAt از قبل ست شده بود
+                if (isVolumeEnded || isTimeEnded || conf.exhaustedAt) {
                     const baseExhausted = conf.exhaustedAt || expTime || now;
-                    if ((now - baseExhausted) >= FORTY_EIGHT_HOURS || (now - expTime) >= FORTY_EIGHT_HOURS) {
+                    // اگر ۴۸ ساعت از زمان اتمام گذشته باشد (یا اگر زمان انقضا گذشته و panelStats ثبت نشده بود)
+                    if ((now - baseExhausted) >= FORTY_EIGHT_HOURS || (expTime > 0 && (now - expTime) >= FORTY_EIGHT_HOURS)) {
                         removedFromDbCount++;
-                        return false; // این رکورد از دیتابیس حذف می‌شود
+                        return false; // حذف کامل از دیتابیس
                     }
                 }
                 return true;
             });
         }
+        
         writeDb(db);
+        
         ctx.reply(
             `✅ <b>پاکسازی دیتابیس ربات انجام شد.</b>\n\n` +
             `🧹 تعداد اکانت‌هایی که به طور کامل از دیتابیس و داشبورد کاربران پاک شدند: <b>${removedFromDbCount}</b> عدد`,
