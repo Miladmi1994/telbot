@@ -39,8 +39,12 @@ function getApiClient(server) {
 
 // APIهای صرافی‌ها
 const BITPIN_API = 'https://api.bitpin.org/api/v1/mkt/tickers/';
-const NOBITEX_API = 'https://api.nobitex.ir/v2/orderbook/USDTIRT';
-const ABANTETHER_API = 'https://api.abantether.com/api/v1/otc/prices'; // یا اندپوینت عمومی آبان‌تتر
+const ABANTETHER_API = 'https://api.abantether.ir/api/v1/manager/otc/ticker';
+
+const RATE_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json'
+};
 
 // سیستم کش قیمت تتر
 let cachedUsdtPrice = null;
@@ -54,69 +58,34 @@ async function getUsdtRate() {
 
     // ۱. اولویت اول: بیت‌پین
     try {
-        const res = await axios.get(BITPIN_API, { 
-            timeout: 5000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json'
-            }
-        });
-        if (res.data && Array.isArray(res.data)) {
-            const usdt = res.data.find(ticker => ticker.symbol === 'USDT_IRT');
-            if (usdt && usdt.price) {
-                cachedUsdtPrice = Math.ceil(Number(usdt.price));
-                lastFetchTime = now;
-                console.log('🟢 [Bitpin] قیمت تتر با موفقیت دریافت شد:', cachedUsdtPrice);
+        const res = await axios.get(BITPIN_API, { timeout: 5000, headers: RATE_HEADERS });
+        if (Array.isArray(res.data)) {
+            const usdt = res.data.find(t => t.symbol === 'USDT_IRT');
+            const price = Number(usdt?.price);
+            if (price > 0) {
+                cachedUsdtPrice = Math.ceil(price);
+                lastFetchTime = Date.now();
+                console.log('🟢 [Bitpin] قیمت تتر:', cachedUsdtPrice);
                 return cachedUsdtPrice;
             }
         }
     } catch (error) {
-        console.warn('⚠️ [Bitpin] خطا یا مسدودیت، تلاش برای استفاده از پشتیبان اول (نوبیتکس)...');
+        console.warn('⚠️ [Bitpin] خطا یا مسدودیت، تلاش برای استفاده از پشتیبان (آبان‌تتر)...');
     }
 
-    // ۲. اولویت دوم (پشتیبان اول): نوبیتکس
+    // ۲. پشتیبان: آبان‌تتر
     try {
-        const res = await axios.get(NOBITEX_API, { 
-            timeout: 5000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json'
-            }
-        });
-        // ساختار پاسخ نوبیتکس برای آخرین قیمت معاملات
-        if (res.data && res.data.status === 'ok' && res.data.lastTradePrice) {
-            cachedUsdtPrice = Math.ceil(Number(res.data.lastTradePrice));
-            lastFetchTime = now;
-            console.log('🟢 [Nobitex] قیمت تتر از پشتیبان اول دریافت شد:', cachedUsdtPrice);
+        const res = await axios.get(ABANTETHER_API, { timeout: 5000, headers: RATE_HEADERS });
+        const usdt = res.data?.data?.markets?.USDTIRT;
+        const price = Number(usdt?.buy_price);
+        if (usdt && usdt.active !== false && price > 0) {
+            cachedUsdtPrice = Math.ceil(price);
+            lastFetchTime = Date.now();
+            console.log('🟢 [Abantether] قیمت تتر از پشتیبان دریافت شد:', cachedUsdtPrice);
             return cachedUsdtPrice;
         }
     } catch (error) {
-        console.warn('⚠️ [Nobitex] خطا در دریافت از نوبیتکس، تلاش برای استفاده از پشتیبان دوم (آبان‌تتر)...');
-    }
-
-    // ۳. اولویت سوم (پشتیبان دوم): آبان‌تتر
-    try {
-        const res = await axios.get(ABANTETHER_API, { 
-            timeout: 5000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json'
-            }
-        });
-        // بسته به ساختار پاسخ آبان‌تتر (معمولاً قیمت خرید/فروش تتر را برمی‌گرداند)
-        if (res.data) {
-            // فرض بر این است که قیمت تتر را در پاسخ پیدا می‌کنیم
-            const usdtData = Array.isArray(res.data) ? res.data.find(item => item.coin === 'USDT' || item.symbol === 'USDT') : res.data.USdt || res.data.usdt;
-            const price = usdtData?.price || usdtData?.sellPrice || usdtData?.rtPrice;
-            if (price) {
-                cachedUsdtPrice = Math.ceil(Number(price));
-                lastFetchTime = now;
-                console.log('🟢 [Abantether] قیمت تتر از پشتیبان دوم دریافت شد:', cachedUsdtPrice);
-                return cachedUsdtPrice;
-            }
-        }
-    } catch (error) {
-        console.error('❌ [Abantether] خطا در دریافت از آبان‌تتر:', error.message);
+        console.error('❌ [Abantether] خطا در دریافت قیمت:', error.message);
     }
 
     // اگر هیچ‌کدام پاسخ ندادند، آخرین قیمت معتبر قبلی برگردانده می‌شود
