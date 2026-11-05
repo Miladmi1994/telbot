@@ -123,46 +123,6 @@ async function getUsdtRate() {
     return cachedUsdtPrice;
 }
 
-// استارت زدن وب‌سکت والکس در پس‌زمینه
-connectWallexFallback();
-
-// تابع جدید که اول بیت‌پین رو تست میکنه، اگر خطا داد میره سراغ والکس
-async function getUsdtRate() {
-    const now = Date.now();
-    if (cachedUsdtPrice !== null && (now - lastFetchTime) < 30000) {
-        return cachedUsdtPrice;
-    }
-
-    // ۱. اولویت اول: بیت‌پین با هدرهای مرورگر برای جلوگیری از خطای 403
-    try {
-        const res = await axios.get(BITPIN_API, { 
-            timeout: 5000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json'
-            }
-        });
-        if (res.data && Array.isArray(res.data)) {
-            const usdt = res.data.find(ticker => ticker.symbol === 'USDT_IRT');
-            if (usdt && usdt.price) {
-                cachedUsdtPrice = Math.ceil(Number(usdt.price));
-                lastFetchTime = now;
-                return cachedUsdtPrice;
-            }
-        }
-    } catch (error) {
-        console.warn('⚠️ [Bitpin] خطا یا مسدودیت، استفاده از پشتیبان والکس...');
-    }
-
-    // ۲. اولویت دوم (پشتیبان): وب‌سکت والکس
-    if (latestWallexUsdtPrice !== null) {
-        cachedUsdtPrice = latestWallexUsdtPrice;
-        lastFetchTime = now;
-        return cachedUsdtPrice;
-    }
-
-    return cachedUsdtPrice;
-}
 
 // تابع تست اتصال سرور (موقع ثبت سرور جدید در ربات استفاده میشه)
 async function testServerConnection(panelUrl, webBasePath, apiToken) {
