@@ -3250,6 +3250,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 Markup.button.callback('✍️ پاسخ دلخواه', `t_customrep_${ticketId}`)
             ],
             [
+                [Markup.button.callback('📜 تاریخچه چت', `t_admin_history_${ticketId}`)],
                 Markup.button.callback('🔒 بستن تیکت', `close_ticket_${ticketId}`)
             ]
         ];
@@ -3344,13 +3345,51 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             kbRows.push([Markup.button.callback('💬 ارسال پاسخ جدید به پشتیبانی', `t_user_reply_${t.id}`)]);
         }
 
+        kbRows.push([Markup.button.callback('📜 مشاهده کل تاریخچه گفتگو', `t_user_history_${ticketId}`)]);
+
         if (t.status !== 'closed') {
             kbRows.push([Markup.button.callback('❌ بستن این تیکت', `t_close_ask_${t.id}`)]);
         }
-
         kbRows.push([Markup.button.callback('🔙 بازگشت به لیست تیکت‌ها', 'ticket_my_list')]);
 
         ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kbRows } }).catch(() => {});
+    });
+
+    // نمایش کل تاریخچه تیکت به صورت کامل برای کاربر یا ادمین
+    bot.action(/^t_(user|admin)_history_(T\d+)$/, async (ctx) => {
+        const mode = ctx.match[1];
+        const ticketId = ctx.match[2];
+        const db = readDb();
+        const t = db.tickets?.[ticketId];
+        if (!t) return ctx.answerCbQuery('❌ تیکت یافت نشد.', { show_alert: true });
+
+        let historyText = `📜 <b>تاریخچه کامل گفتگوی تیکت #${ticketId}</b>\n\n`;
+        
+        if (t.messages && t.messages.length > 0) {
+            t.messages.forEach((m) => {
+                const senderLabel = m.sender === 'user' ? '👤 کاربر' : '👨‍💻 پشتیبانی';
+                historyText += `▪️ <b>${senderLabel}:</b> ${m.text}\n`;
+            });
+        } else {
+            historyText += `👤 <b>کاربر:</b> ${t.description || 'ندارد'}\n`;
+            if (t.adminReply) historyText += `👨‍💻 <b>پشتیبانی:</b> ${t.adminReply}\n`;
+        }
+
+        await ctx.answerCbQuery();
+        
+        if (mode === 'admin') {
+            // برای ادمین، تاریخچه را ریپلای می‌کنیم تا کارت اصلی تیکت خراب نشود
+            return ctx.reply(historyText, { 
+                parse_mode: 'HTML', 
+                reply_to_message_id: ctx.callbackQuery.message.message_id 
+            });
+        } else {
+            // برای کاربر پیام ادیت می‌شود
+            return ctx.editMessageText(historyText, {
+                parse_mode: 'HTML',
+                reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', `t_view_${ticketId}`)]] }
+            }).catch(() => {});
+        }
     });
 
     // ارور کلیک روی دکمه قفل‌شده
@@ -3441,7 +3480,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const userTicketReplyKeyboard = {
             inline_keyboard: [
                 [Markup.button.callback('💬 ارسال پاسخ جدید به پشتیبانی', `t_user_reply_${ticketId}`)],
-                [Markup.button.callback('📜 مشاهده کل تاریخچه گفتگو', `t_user_history_${ticketId}`)],
                 [Markup.button.callback('❌ بستن این تیکت', `t_close_ask_${ticketId}`)]
             ]
         };
@@ -4123,16 +4161,21 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 return ctx.reply('❌ تیکت مورد نظر یافت نشد.');
             }
 
-            const rawText = ctx.message.text.trim();
+            // باگ خواندن متن برای فایل اینجا فیکس شد (باید کپشن خوانده شود)
+            const rawText = ctx.message.caption ? ctx.message.caption.trim() : '[فایل/رسانه ارسال شد]';
             const safeText = rawText.substring(0, 700).replace(/</g, '&lt;').replace(/>/g, '&gt;');
             
             t.status = 'pending_admin';
-            t.description = rawText; // فقط آخرین پیام را نگه می‌داریم
+            t.description = rawText; 
             t.updatedAt = Date.now();
+
+            // ذخیره پیام در تاریخچه
+            if (!t.messages) t.messages = [];
+            t.messages.push({ sender: 'user', text: rawText, time: Date.now() });
 
             const userId = ctx.from.id.toString();
             const username = ctx.from.username ? `@${ctx.from.username}` : 'ندارد';
-            const header = `💬 <b>پیام جدید از کاربر روی تیکت #${ticketId}</b>\n` +
+            const header = `💬 <b>پیام (فایل/رسانه) جدید از کاربر روی تیکت #${ticketId}</b>\n` +
                            `👤 <b>کاربر:</b> #User_${userId} (${username})\n\n` +
                            `<blockquote>${safeText}</blockquote>`;
 
@@ -4140,25 +4183,29 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             const kb = buildAdminTicketKeyboard(ticketId, userId, isBanned, false);
             
             try {
-                // 👈 اینجا مشکل پاک نشدن حل شد:
+                // ۱. پاک کردن پیام قبلی در گروه ادمین
                 if (t.adminMsgId) {
                     await ctx.telegram.deleteMessage(GROUP_ID, t.adminMsgId).catch(() => {});
                 }
 
-                const sentMsg = await ctx.telegram.sendMessage(GROUP_ID, header, {
+                // ۲. ارسال پیام مدیا (عکس/فایل) به همراه کپشن و دکمه‌ها برای ادمین
+                const sentMsg = await ctx.telegram.copyMessage(GROUP_ID, ctx.chat.id, ctx.message.message_id, {
+                    caption: header,
                     parse_mode: 'HTML',
                     message_thread_id: parseInt(TOPIC_ERROR),
                     reply_markup: kb
                 });
-                
-                t.adminMsgId = sentMsg.message_id; // ذخیره شناسه پیام جدید
+
+                // ۳. آپدیت و ذخیره آیدی پیام جدید ربات برای دفعات بعدی
+                t.adminMsgId = sentMsg.message_id;
             } catch (e) {}
 
+            // ۴. ذخیره در دیتابیس (حتماً بعد از گرفتن آیدی پیام جدید)
             writeDb(db);
             userSteps.delete(ctx.from.id);
 
             return ctx.reply(
-                `✅ پاسخ شما با موفقیت برای تیم پشتیبانی ارسال شد.\nتیکت دوباره در وضعیت بررسی قرار گرفت.`,
+                `✅ فایل/پاسخ شما با موفقیت برای تیم پشتیبانی ارسال شد.\nتیکت دوباره در وضعیت بررسی قرار گرفت.`,
                 { parse_mode: 'HTML', ...mainKeyboard }
             );
         }
