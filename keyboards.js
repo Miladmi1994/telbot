@@ -92,7 +92,7 @@ const getAdminServersMenu = (db) => {
         [Markup.button.callback('🔄 انتقال کاربران بین سرورها (DB)', 'admin_migrate_db_menu')],
         [Markup.button.callback('🛡 مدیریت ECH و آدرس (کانفیگ ۴)', 'admin_ech_menu')],
         [Markup.button.callback('☁️ مدیریت Cloudflare', 'admin_cf_menu')],
-        [Markup.button.callback('🧹 پاکسازی سایلنت اکانت‌های منقضی (+48h)', 'admin_silent_cleanup_exec')]
+        [Markup.button.callback('🧹 پاکسازی سایلنت اکانت‌های منقضی (+48h)', 'admin_silent_cleanup_exec')],
         [Markup.button.callback('🔙 بازگشت', 'back_admin')]
     ]);
 };
