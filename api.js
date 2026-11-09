@@ -737,7 +737,7 @@ async function adminModifyClient(email, uuid, deltaGB, deltaDays, server) {
         }
 
         const updatePayload = {
-            id: obj.client?.id || obj.id || uuid,
+            id: String(uuid || obj.client?.id || ''),
             email: email,
             enable: true,
             total: newTotalByte,

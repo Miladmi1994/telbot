@@ -5143,6 +5143,17 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     writeDb(freshDb);
                 }
 
+                try {
+                    const actionWord = val > 0 ? 'به سرویس شما اضافه گردید' : 'از سرویس شما کسر گردید';
+                    const unitWord = modType === 'gb' ? `🔋 <b>${Math.abs(val)} گیگابایت</b> حجم` : `⏳ <b>${Math.abs(val)} روز</b> زمان`;
+                    await ctx.telegram.sendMessage(
+                        targetId,
+                        `♻️ <b>بروزرسانی سرویس (${conf.name})</b>\n\nتوسط مدیریت مقدار ${unitWord} ${actionWord}.`,
+                        { parse_mode: 'HTML' }
+                    );
+                } catch (e) {}
+                // -------------------------------------
+
                 adminSteps.delete(ctx.from.id);
                 await ctx.reply(`✅ تغییر ${modType === 'gb' ? `${val} گیگابایت` : `${val} روز`} با موفقیت روی سرویس <b>${conf.name}</b> اعمال شد.`, { parse_mode: 'HTML' });
                 await renderAdminSingleService(ctx, targetId, confIdx, false);
