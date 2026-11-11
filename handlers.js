@@ -2748,12 +2748,12 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
 
         buttons.push([Markup.button.callback('🔙 بازگشت به لیست سرویس‌ها', isActive ? 'dash_active' : 'dash_expired')]);
 
-        const captionMsg = `📊 <b>خلاصه وضعیت (مخصوص نسخه‌های قدیمی تلگرام):</b>\n` +
-                           `<blockquote expandable>📝 سرویس: ${conf.name} (${chatData.status})\n` +
+        const captionMsg = `📊 <b>خلاصه وضعیت:</b>\n` +
+                           `📝 سرویس: ${conf.name} (${chatData.status})\n` +
                            `🟢 حجم مانده: ${chatData.remain} از ${chatData.total}\n` +
                            `📉 مصرف‌شده: ${chatData.used}\n` +
                            `⏳ اعتبار: ${chatData.days} (${chatData.expDateStr})\n` +
-                           `🧾 سفارش: #${chatData.orderId}</blockquote>`;
+                           `🧾 سفارش: #${chatData.orderId}`;
 
         try {
             await ctx.deleteMessage().catch(() => {});
