@@ -2609,7 +2609,7 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
 .time-grid{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px}
 .exp-info{display:flex;flex-direction:column;gap:3px}
 .exp-date{font-size:12px;font-weight:700;color:var(--tg-theme-text-color)}
-.timers{display:flex;gap:6px;direction:ltr}
+.timers{display:flex;gap:6px;direction:rtl}
 .t-box{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.12));border:1px solid ${timeColor}44;border-radius:8px;padding:4px 8px;min-width:46px;text-align:center}
 .t-num{font-size:13px;font-weight:800;color:${timeColor};line-height:1.1;display:block}
 .t-unit{font-size:9px;color:var(--tg-theme-hint-color,#888);display:block}
@@ -2748,16 +2748,21 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
 
         buttons.push([Markup.button.callback('🔙 بازگشت به لیست سرویس‌ها', isActive ? 'dash_active' : 'dash_expired')]);
 
-        const captionMsg = `📝 <b>سرویس:</b> ${conf.name} | <b>وضعیت:</b> ${chatData.status}\n` +
-                           `📦 <b>مصرف:</b> ${chatData.used} از ${chatData.total} (<b>مانده:</b> ${chatData.remain})\n` +
-                           `⏳ <b>اعتبار:</b> ${chatData.days} | 🧾 <b>سفارش:</b> <code>${chatData.orderId}</code>`;
+        const captionMsg = `📊 <b>خلاصه وضعیت (مخصوص نسخه‌های قدیمی تلگرام):</b>\n` +
+                           `<blockquote expandable>📝 سرویس: ${conf.name} (${chatData.status})\n` +
+                           `🟢 حجم مانده: ${chatData.remain} از ${chatData.total}\n` +
+                           `📉 مصرف‌شده: ${chatData.used}\n` +
+                           `⏳ اعتبار: ${chatData.days} (${chatData.expDateStr})\n` +
+                           `🧾 سفارش: #${chatData.orderId}</blockquote>`;
 
         try {
             await ctx.deleteMessage().catch(() => {});
             await ctx.telegram.callApi('sendWidget', {
                 chat_id: ctx.chat.id,
-                height: 0, // تنظیم خودکار ارتفاع بر اساس محتوای کامل کارت (بدون بریدگی)
+                height: 0,
                 html: buildServiceWidgetHtml(chatData),
+                caption: captionMsg,
+                parse_mode: 'HTML',
                 reply_markup: { inline_keyboard: buttons }
             });
         } catch (err) {
