@@ -2744,10 +2744,16 @@ if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.rea
 
         buttons.push([Markup.button.callback('🔙 بازگشت به لیست سرویس‌ها', isActive ? 'dash_active' : 'dash_expired')]);
 
+        const captionMsg = `📝 <b>سرویس:</b> ${conf.name} | <b>وضعیت:</b> ${chatData.status}\n` +
+                           `📦 <b>مصرف:</b> ${chatData.used} از ${chatData.total} (<b>مانده:</b> ${chatData.remain})\n` +
+                           `⏳ <b>اعتبار:</b> ${chatData.days} | 🧾 <b>سفارش:</b> <code>${chatData.orderId}</code>`;
+
         try {
             await ctx.telegram.callApi('sendWidget', {
                 chat_id: ctx.chat.id,
                 html: buildServiceWidgetHtml(chatData),
+                caption: captionMsg,
+                parse_mode: 'HTML',
                 reply_markup: { inline_keyboard: buttons }
             });
             await ctx.deleteMessage().catch(() => {});
