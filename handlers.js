@@ -2720,7 +2720,7 @@ if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.rea
         };
     }
 
-    // --- هندلر نمایش و بروزرسانی کارت سرویس ---
+    // --- هندلر نمایش کارت سرویس ---
     bot.action(/dash_detail_(.+)/, async (ctx) => {
         const uuid = ctx.match[1];
         await ctx.answerCbQuery('⏳ در حال دریافت آخرین وضعیت از سرور...', { show_alert: false });
@@ -2733,13 +2733,11 @@ if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.rea
         const { isActive, chatData } = await getServiceWidgetData(conf, targetServer);
         const isTest = conf.name.includes('Test') || conf.name.includes('تست');
 
-        // چیدمان تمیز دکمه‌های شیشه‌ای استاندارد زیر کارت گرافیکی (تضمین کارکرد ۱۰۰٪)
+        // چیدمان دکمه‌های شیشه‌ای (بدون دکمه بروزرسانی)
         let buttons = [];
-        buttons.push([Markup.button.callback('🔄 بروزرسانی زنده وضعیت', `dash_detail_${conf.uuid}`)]);
-        
         let actionRow = [];
         if (isActive) actionRow.push(Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${conf.uuid}`));
-        if (!isTest) actionRow.push(Markup.button.callback('⚡ تمدید سرویس', `init_renew_${conf.email}`));
+        if (!isTest) actionRow.push(Markup.button.callback('🔄 تمدید سرویس', `init_renew_${conf.email}`));
         if (actionRow.length > 0) buttons.push(actionRow);
 
         buttons.push([Markup.button.callback('🔙 بازگشت به لیست سرویس‌ها', isActive ? 'dash_active' : 'dash_expired')]);
@@ -2767,8 +2765,6 @@ if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.rea
             }
         }
     });
-
-   
 
     bot.hears('🔄 تمدید سرویس', async (ctx) => {
         userSteps.delete(ctx.from.id);
@@ -2801,7 +2797,7 @@ if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.rea
         triggerRenewPlanMenu(ctx, email, conf ? conf.name : 'سرویس شما');
     });
 
-    function triggerRenewPlanMenu(ctx, email, name) {
+    async function triggerRenewPlanMenu(ctx, email, name) {
         userSteps.set(ctx.from.id, { step: 'RENEW_SELECT_PLAN', email, configName: name, ts: Date.now() });
         
         const db = readDb();
@@ -2817,11 +2813,9 @@ if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.rea
             buttons.push([Markup.button.callback('👑 VIP: 100G - 1 ماهه (قیمت 1$)', 'renew_plan_vip')]);
         } else {
             let availablePlans = plans.filter(p => p.showInRenew !== false);
-            // اعمال مرتب‌سازی برای منوی تمدید
             availablePlans.sort((a, b) => (a.order || 99) - (b.order || 99));
             buttons = availablePlans.map(plan => [Markup.button.callback(plan.btnText, `renew_plan_${plan.id}`)]);
             
-            // نمایش دکمه بسته دلخواه در تمدید
             if (db.settings.customPlanEnabled !== false) {
                 buttons.push([Markup.button.callback('✨ تمدید با بسته دلخواه', 'renew_plan_custom')]);
             }
@@ -2830,10 +2824,18 @@ if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.rea
         buttons.push([Markup.button.callback('❌ لغو', 'cancel_flow')]);
 
         const txt = `🔄 قصد تمدید سرویس <b>${name}</b> را دارید.\nبسته مورد نظرت رو انتخاب کن:`;
-        const kb = { reply_markup: { inline_keyboard: buttons } };
+        const extra = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
         
-        if (ctx.callbackQuery) ctx.editMessageText(txt, { parse_mode: 'HTML', ...kb });
-        else ctx.reply(txt, { parse_mode: 'HTML', ...kb });
+        if (ctx.callbackQuery) {
+            try {
+                await ctx.editMessageText(txt, extra);
+            } catch (e) {
+                await ctx.deleteMessage().catch(() => {});
+                await ctx.reply(txt, extra);
+            }
+        } else {
+            await ctx.reply(txt, extra);
+        }
     }
 
     // -- ورود به مرحله دریافت حجم برای بسته دلخواه (خرید جدید یا تمدید) --
