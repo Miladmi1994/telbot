@@ -2577,88 +2577,93 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         }
     });
 
-    // --- ساخت ویجت گرافیکی مدرن با نمودارهای دایره‌ای (SVG Donut Charts) ---
-    // --- ساخت ویجت گرافیکی جمع‌وجور و استاندارد برای موبایل ---
+    // --- ساخت ویجت گرافیکی میله‌ای (ترافیک) + شمارنده دیجیتال و تاریخ شمسی (زمان) ---
     function buildServiceWidgetHtml(d) {
         const volRemainPct = Math.max(0, Math.min(100, 100 - (Number(d.pct) || 0)));
-        const timeRemainPct = Math.max(0, Math.min(100, Number(d.timePct) || 0));
-
         const volColor = volRemainPct <= 15 ? '#ef4444' : (volRemainPct <= 35 ? '#f59e0b' : '#10b981');
-        const timeColor = timeRemainPct <= 15 ? '#ef4444' : (timeRemainPct <= 35 ? '#f59e0b' : '#3b82f6');
-        const badgeBg = d.isActive ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
+        
+        // رنگ وضعیت زمان بر اساس روزهای باقی‌مانده
+        const dNum = parseInt(d.daysOnly, 10);
+        const timeColor = !d.isActive ? '#ef4444' : (!isNaN(dNum) && dNum <= 3 ? '#ef4444' : (!isNaN(dNum) && dNum <= 7 ? '#f59e0b' : '#3b82f6'));
+        const badgeBg = d.isActive ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)';
         const badgeColor = d.isActive ? '#10b981' : '#ef4444';
 
         return `<style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,sans-serif;color:var(--tg-theme-text-color,#fafafa);background:transparent}
-.card{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.08));border:1px solid rgba(128,128,128,0.14);border-radius:12px;padding:10px}
-.hdr{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(128,128,128,0.12)}
-.nm{font-weight:700;font-size:14px;color:var(--tg-theme-text-color)}
-.ord{font-size:10px;color:var(--tg-theme-hint-color,#888);margin-right:6px}
-.bdg{font-size:10px;font-weight:600;padding:3px 8px;border-radius:12px;background:${badgeBg};color:${badgeColor}}
-.rings{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
-.ring-box{background:var(--tg-theme-bg-color,rgba(0,0,0,0.15));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 6px;display:flex;align-items:center;gap:8px}
-.svg-wrap{position:relative;width:54px;height:54px;flex-shrink:0}
-svg{width:54px;height:54px;transform:rotate(-90deg)}
-.track{fill:none;stroke:rgba(128,128,128,0.16);stroke-width:3.8}
-.fill-vol{fill:none;stroke:${volColor};stroke-width:3.8;stroke-linecap:round}
-.fill-time{fill:none;stroke:${timeColor};stroke-width:3.8;stroke-linecap:round}
-.center-txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.pct{font-size:12px;font-weight:800;line-height:1}
-.info{display:flex;flex-direction:column;text-align:right;overflow:hidden}
-.r-title{font-size:10px;color:var(--tg-theme-hint-color,#888);margin-bottom:2px}
-.r-val{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.m-item{background:var(--tg-theme-bg-color,rgba(0,0,0,0.15));border:1px solid rgba(128,128,128,0.1);border-radius:8px;padding:6px 8px;display:flex;justify-content:space-between;align-items:center}
-.m-lbl{font-size:10px;color:var(--tg-theme-hint-color,#888)}
-.m-val{font-size:11px;font-weight:700;direction:ltr}
+body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--tg-theme-text-color,#fafafa);background:transparent}
+.card{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.08));border:1px solid rgba(128,128,128,0.14);border-radius:12px;padding:12px}
+.hdr{display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid rgba(128,128,128,0.12)}
+.title-grp{display:flex;align-items:center;gap:6px}
+.nm{font-weight:700;font-size:14px}
+.ord{font-size:11px;color:var(--tg-theme-hint-color,#888);direction:ltr}
+.bdg{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;background:${badgeBg};color:${badgeColor};border:1px solid ${badgeColor}33}
+.sec{background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:10px;margin-bottom:8px}
+.sec-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.lbl{font-size:11px;color:var(--tg-theme-hint-color,#888)}
+.val-main{font-size:13px;font-weight:700}
+.pct-tag{font-size:11px;font-weight:700;color:${volColor};margin-right:4px}
+.bar-track{width:100%;height:8px;background:rgba(128,128,128,0.18);border-radius:4px;overflow:hidden;margin-bottom:8px}
+.bar-fill{height:100%;width:${volRemainPct}%;background:${volColor};border-radius:4px}
+.sec-sub{display:flex;justify-content:space-between;font-size:11px;color:var(--tg-theme-hint-color,#888)}
+.sec-sub strong{color:var(--tg-theme-text-color);font-weight:600;direction:ltr;display:inline-block}
+.time-grid{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px}
+.exp-info{display:flex;flex-direction:column;gap:3px}
+.exp-date{font-size:12px;font-weight:700;color:var(--tg-theme-text-color)}
+.timers{display:flex;gap:6px;direction:ltr}
+.t-box{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.12));border:1px solid ${timeColor}44;border-radius:8px;padding:4px 8px;min-width:46px;text-align:center}
+.t-num{font-size:13px;font-weight:800;color:${timeColor};line-height:1.1;display:block}
+.t-unit{font-size:9px;color:var(--tg-theme-hint-color,#888);display:block}
 </style>
 <div class="card">
   <div class="hdr">
-    <div><span class="nm">${d.name}</span><span class="ord">#${d.orderId}</span></div>
+    <div class="title-grp">
+      <span class="nm">${d.name}</span>
+      <span class="ord">#${d.orderId}</span>
+    </div>
     <span class="bdg">${d.status}</span>
   </div>
-  <div class="rings">
-    <div class="ring-box">
-      <div class="svg-wrap">
-        <svg viewBox="0 0 36 36">
-          <path class="track" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-          <path class="fill-vol" stroke-dasharray="${volRemainPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-        </svg>
-        <div class="center-txt"><span class="pct">${volRemainPct}%</span></div>
-      </div>
-      <div class="info">
-        <span class="r-title">حجم مانده</span>
-        <span class="r-val">${d.remain}</span>
+
+  <div class="sec">
+    <div class="sec-top">
+      <span class="lbl">حجم باقی‌مانده</span>
+      <div>
+        <span class="val-main" style="direction:ltr;display:inline-block">${d.remain}</span>
+        <span class="pct-tag">(${volRemainPct}%)</span>
       </div>
     </div>
-    <div class="ring-box">
-      <div class="svg-wrap">
-        <svg viewBox="0 0 36 36">
-          <path class="track" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-          <path class="fill-time" stroke-dasharray="${timeRemainPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-        </svg>
-        <div class="center-txt"><span class="pct">${d.daysNum}d</span></div>
-      </div>
-      <div class="info">
-        <span class="r-title">اعتبار</span>
-        <span class="r-val">${d.days}</span>
-      </div>
+    <div class="bar-track"><div class="bar-fill"></div></div>
+    <div class="sec-sub">
+      <span>مصرف‌شده: <strong>${d.used}</strong></span>
+      <span>حجم کل: <strong>${d.total}</strong></span>
     </div>
   </div>
-  <div class="meta">
-    <div class="m-item"><span class="m-lbl">مصرف:</span><span class="m-val">${d.used}</span></div>
-    <div class="m-item"><span class="m-lbl">کل حجم:</span><span class="m-val">${d.total}</span></div>
+
+  <div class="time-grid">
+    <div class="exp-info">
+      <span class="lbl">تاریخ انقضای سرویس</span>
+      <span class="exp-date">${d.expDateStr}</span>
+    </div>
+    <div class="timers">
+      <div class="t-box">
+        <span class="t-num">${d.daysOnly}</span>
+        <span class="t-unit">روز</span>
+      </div>
+      <div class="t-box">
+        <span class="t-num">${d.hoursOnly}</span>
+        <span class="t-unit">ساعت</span>
+      </div>
+    </div>
   </div>
 </div>
 <script>if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.ready();}</script>`;
     }
 
-    // --- تابع استخراج دقیق اطلاعات ترافیک و زمان برای نمودار دایره‌ای ---
+    // --- استخراج دقیق اطلاعات ترافیک + شمارنده روز/ساعت و تاریخ شمسی ---
     async function getServiceWidgetData(conf, targetServer) {
         const traffic = await getClientTraffic(conf.email, targetServer);
         let status = 'حذف شده', total = 'نامحدود', used = '0 GB', remain = 'نامحدود', days = 'نامحدود';
-        let isActive = false, pct = 0, timePct = 100, daysNum = '∞';
+        let isActive = false, pct = 0;
+        let daysOnly = '∞', hoursOnly = '∞', expDateStr = 'بدون محدودیت زمانی';
 
         if (traffic) {
             const totalGB = traffic.total / 1073741824;
@@ -2673,25 +2678,32 @@ svg{width:54px;height:54px;transform:rotate(-90deg)}
             if (exp > 0 && exp < 1e12) exp *= 1000;
 
             if (exp > 0) {
+                expDateStr = new Date(exp).toLocaleDateString('fa-IR', {
+                    timeZone: 'Asia/Tehran',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                });
+
                 const diffMs = exp - Date.now();
                 if (diffMs > 0) {
                     const d = Math.floor(diffMs / 86400000);
                     const h = Math.floor((diffMs % 86400000) / 3600000);
                     days = `${d} روز و ${h} ساعت`;
-                    daysNum = String(d);
-                    // محاسبه درصد زمان باقی‌مانده نسبت به دوره ۳۰ روزه
-                    timePct = Math.min(100, Math.max(3, Math.round((diffMs / (30 * 86400000)) * 100)));
+                    daysOnly = String(d);
+                    hoursOnly = String(h);
                 } else {
                     days = 'منقضی شده';
-                    daysNum = '0';
-                    timePct = 0;
+                    daysOnly = '0';
+                    hoursOnly = '0';
+                    expDateStr += ' (منقضی)';
                 }
             }
 
             const isVolEnd = traffic.total > 0 && usedGB >= totalGB;
             const isTimeEnd = exp > 0 && exp < Date.now();
             isActive = !isVolEnd && !isTimeEnd;
-            status = isActive ? '🟢 فعال' : '🔴 منقضی';
+            status = isActive ? 'فعال' : 'منقضی';
         }
 
         return {
@@ -2705,9 +2717,10 @@ svg{width:54px;height:54px;transform:rotate(-90deg)}
                 used,
                 remain,
                 days,
-                daysNum,
+                daysOnly,
+                hoursOnly,
+                expDateStr,
                 pct,
-                timePct,
                 isActive
             }
         };
@@ -2740,10 +2753,9 @@ svg{width:54px;height:54px;transform:rotate(-90deg)}
                            `⏳ <b>اعتبار:</b> ${chatData.days} | 🧾 <b>سفارش:</b> <code>${chatData.orderId}</code>`;
 
         try {
-            await ctx.deleteMessage().catch(() => {});
             await ctx.telegram.callApi('sendWidget', {
                 chat_id: ctx.chat.id,
-                height: 175,
+                height: 190,
                 html: buildServiceWidgetHtml(chatData),
                 caption: captionMsg,
                 parse_mode: 'HTML',
