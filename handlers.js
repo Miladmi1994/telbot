@@ -2614,7 +2614,7 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
 .sec-sub strong{color:var(--tg-theme-text-color);font-weight:700;direction:ltr;unicode-bidi:isolate;display:inline-block}
 .pct-tag{font-size:11px;font-weight:700;color:${volColor};margin-right:3px;direction:ltr;unicode-bidi:isolate;display:inline-block}
 
-.time-row{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px}
+.time-row{display:flex;flex-direction:row;align-items:center;justify-content: flex-end;gap:12px;background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px}
 .exp-info{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
 .lbl{font-size:11px;color:var(--tg-theme-hint-color,#888)}
 .exp-date{font-size:12px;font-weight:700;color:var(--tg-theme-text-color)}
