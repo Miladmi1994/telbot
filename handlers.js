@@ -2581,7 +2581,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
     function buildServiceWidgetHtml(d) {
         const volUsedPct = Math.max(0, Math.min(100, Number(d.pct) || 0));
         const volColor = volUsedPct >= 85 ? '#ef4444' : (volUsedPct >= 65 ? '#f59e0b' : '#10b981');
-        
+
         // رنگ وضعیت زمان بر اساس روزهای باقی‌مانده
         const dNum = parseInt(d.daysOnly, 10);
         const timeColor = !d.isActive ? '#ef4444' : (!isNaN(dNum) && dNum <= 3 ? '#ef4444' : (!isNaN(dNum) && dNum <= 7 ? '#f59e0b' : '#3b82f6'));
@@ -2590,31 +2590,32 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
         return `<style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--tg-theme-text-color,#fafafa);background:transparent}
-.card{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.08));border:1px solid rgba(128,128,128,0.14);border-radius:12px;padding:12px}
-.hdr{display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid rgba(128,128,128,0.12)}
+html,body{direction:rtl;text-align:right}
+body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Tahoma,sans-serif;color:var(--tg-theme-text-color,#fafafa);background:transparent}
+.card{direction:rtl;text-align:right;background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.08));border:1px solid rgba(128,128,128,0.14);border-radius:12px;padding:12px}
+.hdr{display:flex;flex-direction:row;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid rgba(128,128,128,0.12)}
 .title-grp{display:flex;align-items:center;gap:6px}
 .nm{font-weight:700;font-size:14px}
-.ord{font-size:11px;color:var(--tg-theme-hint-color,#888);direction:ltr}
+.ord{font-size:11px;color:var(--tg-theme-hint-color,#888);direction:ltr;unicode-bidi:isolate}
 .bdg{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;background:${badgeBg};color:${badgeColor};border:1px solid ${badgeColor}33}
 .sec{background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:10px;margin-bottom:8px}
 .sec-top{display:flex;justify-content:flex-start;align-items:baseline;margin-bottom:8px;font-size:11px;color:var(--tg-theme-hint-color,#888)}
-.sec-top strong{color:var(--tg-theme-text-color);font-size:12px;font-weight:700;direction:ltr;display:inline-block;margin-right:4px}
-.bar-track{width:100%;height:8px;background:rgba(128,128,128,0.18);border-radius:4px;overflow:hidden;margin-bottom:8px}
+.sec-top strong{color:var(--tg-theme-text-color);font-size:12px;font-weight:700;direction:ltr;unicode-bidi:isolate;display:inline-block;margin-right:4px}
+.bar-track{width:100%;height:8px;background:rgba(128,128,128,0.18);border-radius:4px;overflow:hidden;margin-bottom:8px;direction:rtl}
 .bar-fill{height:100%;width:${volUsedPct}%;background:${volColor};border-radius:4px}
 .sec-sub{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;color:var(--tg-theme-hint-color,#888)}
-.sec-sub strong{color:var(--tg-theme-text-color);font-weight:700;direction:ltr;display:inline-block}
-.pct-tag{font-size:11px;font-weight:700;color:${volColor};margin-right:3px;direction:ltr;display:inline-block}
-.time-row{display:flex;align-items:center;justify-content:flex-start;gap:12px;background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px}
+.sec-sub strong{color:var(--tg-theme-text-color);font-weight:700;direction:ltr;unicode-bidi:isolate;display:inline-block}
+.pct-tag{font-size:11px;font-weight:700;color:${volColor};margin-right:3px;direction:ltr;unicode-bidi:isolate;display:inline-block}
+.time-row{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px}
+.exp-info{display:flex;flex-direction:column;gap:3px;text-align:right;direction:rtl}
+.lbl{font-size:11px;color:var(--tg-theme-hint-color,#888)}
+.exp-date{font-size:12px;font-weight:700;color:var(--tg-theme-text-color);direction:rtl;unicode-bidi:isolate;text-align:right}
 .timers{display:flex;gap:6px;direction:rtl}
 .t-box{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.12));border:1px solid ${timeColor}44;border-radius:8px;padding:4px 8px;min-width:46px;text-align:center}
 .t-num{font-size:13px;font-weight:800;color:${timeColor};line-height:1.1;display:block}
 .t-unit{font-size:9px;color:var(--tg-theme-hint-color,#888);display:block}
-.exp-info{display:flex;flex-direction:column;gap:3px;text-align:right}
-.lbl{font-size:11px;color:var(--tg-theme-hint-color,#888)}
-.exp-date{font-size:12px;font-weight:700;color:var(--tg-theme-text-color)}
 </style>
-<div class="card">
+<div class="card" dir="rtl">
   <div class="hdr">
     <div class="title-grp">
       <span class="nm">${d.name}</span>
@@ -2635,6 +2636,10 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
   </div>
 
   <div class="time-row">
+    <div class="exp-info">
+      <span class="lbl">تاریخ انقضای سرویس</span>
+      <span class="exp-date">${d.expDateStr}</span>
+    </div>
     <div class="timers">
       <div class="t-box">
         <span class="t-num">${d.daysOnly}</span>
@@ -2645,14 +2650,10 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
         <span class="t-unit">ساعت</span>
       </div>
     </div>
-    <div class="exp-info">
-      <span class="lbl">تاریخ انقضای سرویس</span>
-      <span class="exp-date">${d.expDateStr}</span>
-    </div>
   </div>
 </div>
 <script>if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.ready();}</script>`;
-    }
+}
 
     // --- استخراج دقیق اطلاعات ترافیک + شمارنده روز/ساعت و تاریخ شمسی ---
     async function getServiceWidgetData(conf, targetServer) {
