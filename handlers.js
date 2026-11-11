@@ -2644,13 +2644,13 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
       <span class="exp-date">${d.expDateStr}</span>
     </div>
     <div class="timers">
+    <div class="t-box">
+        <span class="t-num">${d.hoursOnly}</span>
+        <span class="t-unit">ساعت</span>
+      </div>
       <div class="t-box">
         <span class="t-num">${d.daysOnly}</span>
         <span class="t-unit">روز</span>
-      </div>
-      <div class="t-box">
-        <span class="t-num">${d.hoursOnly}</span>
-        <span class="t-unit">ساعت</span>
       </div>
     </div>
   </div>
