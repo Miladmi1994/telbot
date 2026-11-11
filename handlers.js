@@ -2578,6 +2578,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
     });
 
     // --- ساخت ویجت گرافیکی مدرن با نمودارهای دایره‌ای (SVG Donut Charts) ---
+    // --- ساخت ویجت گرافیکی جمع‌وجور و استاندارد برای موبایل ---
     function buildServiceWidgetHtml(d) {
         const volRemainPct = Math.max(0, Math.min(100, 100 - (Number(d.pct) || 0)));
         const timeRemainPct = Math.max(0, Math.min(100, Number(d.timePct) || 0));
@@ -2589,76 +2590,68 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
         return `<style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{padding:14px 14px 28px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--tg-theme-text-color,#fafafa);background:transparent}
-.card{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.08));border:1px solid rgba(128,128,128,0.14);border-radius:14px;padding:14px}
-.hdr{display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:12px;border-bottom:1px solid rgba(128,128,128,0.12)}
-.title-wrap{display:flex;flex-direction:column;gap:2px}
-.nm{font-weight:700;font-size:15px;color:var(--tg-theme-text-color)}
-.ord{font-size:11px;color:var(--tg-theme-hint-color,#888)}
-.bdg{font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;background:${badgeBg};color:${badgeColor}}
-.rings{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-.ring-box{background:var(--tg-theme-bg-color,rgba(0,0,0,0.15));border:1px solid rgba(128,128,128,0.1);border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center}
-.svg-wrap{position:relative;width:76px;height:76px;margin-bottom:6px}
-svg{width:76px;height:76px;transform:rotate(-90deg)}
-.track{fill:none;stroke:rgba(128,128,128,0.16);stroke-width:3.6}
-.fill-vol{fill:none;stroke:${volColor};stroke-width:3.6;stroke-linecap:round;transition:stroke-dasharray .4s ease}
-.fill-time{fill:none;stroke:${timeColor};stroke-width:3.6;stroke-linecap:round;transition:stroke-dasharray .4s ease}
+body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,sans-serif;color:var(--tg-theme-text-color,#fafafa);background:transparent}
+.card{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.08));border:1px solid rgba(128,128,128,0.14);border-radius:12px;padding:10px}
+.hdr{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(128,128,128,0.12)}
+.nm{font-weight:700;font-size:14px;color:var(--tg-theme-text-color)}
+.ord{font-size:10px;color:var(--tg-theme-hint-color,#888);margin-right:6px}
+.bdg{font-size:10px;font-weight:600;padding:3px 8px;border-radius:12px;background:${badgeBg};color:${badgeColor}}
+.rings{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.ring-box{background:var(--tg-theme-bg-color,rgba(0,0,0,0.15));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 6px;display:flex;align-items:center;gap:8px}
+.svg-wrap{position:relative;width:54px;height:54px;flex-shrink:0}
+svg{width:54px;height:54px;transform:rotate(-90deg)}
+.track{fill:none;stroke:rgba(128,128,128,0.16);stroke-width:3.8}
+.fill-vol{fill:none;stroke:${volColor};stroke-width:3.8;stroke-linecap:round}
+.fill-time{fill:none;stroke:${timeColor};stroke-width:3.8;stroke-linecap:round}
 .center-txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.pct{font-size:14px;font-weight:800;line-height:1.1}
-.sub{font-size:9px;color:var(--tg-theme-hint-color,#888)}
-.r-title{font-size:11px;color:var(--tg-theme-hint-color,#888);margin-bottom:2px}
-.r-val{font-size:12px;font-weight:700}
+.pct{font-size:12px;font-weight:800;line-height:1}
+.info{display:flex;flex-direction:column;text-align:right;overflow:hidden}
+.r-title{font-size:10px;color:var(--tg-theme-hint-color,#888);margin-bottom:2px}
+.r-val{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.m-item{background:var(--tg-theme-bg-color,rgba(0,0,0,0.15));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center}
-.m-lbl{font-size:11px;color:var(--tg-theme-hint-color,#888)}
-.m-val{font-size:12px;font-weight:700;direction:ltr}
+.m-item{background:var(--tg-theme-bg-color,rgba(0,0,0,0.15));border:1px solid rgba(128,128,128,0.1);border-radius:8px;padding:6px 8px;display:flex;justify-content:space-between;align-items:center}
+.m-lbl{font-size:10px;color:var(--tg-theme-hint-color,#888)}
+.m-val{font-size:11px;font-weight:700;direction:ltr}
 </style>
 <div class="card">
   <div class="hdr">
-    <div class="title-wrap">
-      <span class="nm" id="nm">${d.name}</span>
-      <span class="ord">شناسه سفارش: #${d.orderId}</span>
-    </div>
-    <span class="bdg" id="st">${d.status}</span>
+    <div><span class="nm">${d.name}</span><span class="ord">#${d.orderId}</span></div>
+    <span class="bdg">${d.status}</span>
   </div>
   <div class="rings">
     <div class="ring-box">
       <div class="svg-wrap">
         <svg viewBox="0 0 36 36">
           <path class="track" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-          <path id="v-ring" class="fill-vol" stroke-dasharray="${volRemainPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+          <path class="fill-vol" stroke-dasharray="${volRemainPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
         </svg>
-        <div class="center-txt">
-          <span class="pct" id="v-pct">${volRemainPct}%</span>
-          <span class="sub">باقی‌مانده</span>
-        </div>
+        <div class="center-txt"><span class="pct">${volRemainPct}%</span></div>
       </div>
-      <div class="r-title">حجم باقی‌مانده</div>
-      <div class="r-val" id="rem">${d.remain}</div>
+      <div class="info">
+        <span class="r-title">حجم مانده</span>
+        <span class="r-val">${d.remain}</span>
+      </div>
     </div>
     <div class="ring-box">
       <div class="svg-wrap">
         <svg viewBox="0 0 36 36">
           <path class="track" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-          <path id="t-ring" class="fill-time" stroke-dasharray="${timeRemainPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+          <path class="fill-time" stroke-dasharray="${timeRemainPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
         </svg>
-        <div class="center-txt">
-          <span class="pct" id="t-days">${d.daysNum}</span>
-          <span class="sub">روز</span>
-        </div>
+        <div class="center-txt"><span class="pct">${d.daysNum}d</span></div>
       </div>
-      <div class="r-title">اعتبار زمانی</div>
-      <div class="r-val" id="exp">${d.days}</div>
+      <div class="info">
+        <span class="r-title">اعتبار</span>
+        <span class="r-val">${d.days}</span>
+      </div>
     </div>
   </div>
   <div class="meta">
-    <div class="m-item"><span class="m-lbl">مصرف‌شده:</span><span class="m-val" id="us">${d.used}</span></div>
-    <div class="m-item"><span class="m-lbl">حجم کل:</span><span class="m-val" id="tot">${d.total}</span></div>
+    <div class="m-item"><span class="m-lbl">مصرف:</span><span class="m-val">${d.used}</span></div>
+    <div class="m-item"><span class="m-lbl">کل حجم:</span><span class="m-val">${d.total}</span></div>
   </div>
 </div>
-<script>
-if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.ready();}
-</script>`;
+<script>if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.ready();}</script>`;
     }
 
     // --- تابع استخراج دقیق اطلاعات ترافیک و زمان برای نمودار دایره‌ای ---
@@ -2747,14 +2740,15 @@ if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.rea
                            `⏳ <b>اعتبار:</b> ${chatData.days} | 🧾 <b>سفارش:</b> <code>${chatData.orderId}</code>`;
 
         try {
+            await ctx.deleteMessage().catch(() => {});
             await ctx.telegram.callApi('sendWidget', {
                 chat_id: ctx.chat.id,
+                height: 175,
                 html: buildServiceWidgetHtml(chatData),
                 caption: captionMsg,
                 parse_mode: 'HTML',
                 reply_markup: { inline_keyboard: buttons }
             });
-            await ctx.deleteMessage().catch(() => {});
         } catch (err) {
             const msg = `📝 <b>نام کانفیگ:</b> ${conf.name}\n👤 <b>شناسه کاربر:</b> <code>${ctx.from.id}</code>\n🧾 <b>شناسه خرید:</b> <code>${chatData.orderId}</code>\nوضعیت: ${chatData.status}\n\n🔸 <b>کل حجم:</b> ${chatData.total}\n🔹 <b>مصرف شده:</b> ${chatData.used}\n🟢 <b>باقی‌مانده:</b> ${chatData.remain}\n⏳ <b>زمان باقی‌مانده:</b> ${chatData.days}`;
             try {
