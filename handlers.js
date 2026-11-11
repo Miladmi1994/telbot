@@ -2606,14 +2606,14 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
 .sec-sub{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;color:var(--tg-theme-hint-color,#888)}
 .sec-sub strong{color:var(--tg-theme-text-color);font-weight:700;direction:ltr;unicode-bidi:isolate;display:inline-block}
 .pct-tag{font-size:11px;font-weight:700;color:${volColor};margin-right:3px;direction:ltr;unicode-bidi:isolate;display:inline-block}
-.time-row{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px}
-.exp-info{display:flex;flex-direction:column;gap:3px;text-align:right;direction:rtl}
-.lbl{font-size:11px;color:var(--tg-theme-hint-color,#888)}
-.exp-date{font-size:12px;font-weight:700;color:var(--tg-theme-text-color);direction:rtl;unicode-bidi:isolate;text-align:right}
+.time-row{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;direction:rtl;background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px}
 .timers{display:flex;gap:6px;direction:rtl}
 .t-box{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.12));border:1px solid ${timeColor}44;border-radius:8px;padding:4px 8px;min-width:46px;text-align:center}
 .t-num{font-size:13px;font-weight:800;color:${timeColor};line-height:1.1;display:block}
 .t-unit{font-size:9px;color:var(--tg-theme-hint-color,#888);display:block}
+.exp-info{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:right;direction:rtl}
+.lbl{font-size:11px;color:var(--tg-theme-hint-color,#888)}
+.exp-date{font-size:12px;font-weight:700;color:var(--tg-theme-text-color);direction:rtl;unicode-bidi:isolate;text-align:right}
 </style>
 <div class="card" dir="rtl">
   <div class="hdr">
@@ -2636,10 +2636,6 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
   </div>
 
   <div class="time-row">
-    <div class="exp-info">
-      <span class="lbl">تاریخ انقضای سرویس</span>
-      <span class="exp-date">${d.expDateStr}</span>
-    </div>
     <div class="timers">
       <div class="t-box">
         <span class="t-num">${d.daysOnly}</span>
@@ -2649,6 +2645,10 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
         <span class="t-num">${d.hoursOnly}</span>
         <span class="t-unit">ساعت</span>
       </div>
+    </div>
+    <div class="exp-info">
+      <span class="lbl">تاریخ انقضای سرویس</span>
+      <span class="exp-date">${d.expDateStr}</span>
     </div>
   </div>
 </div>
