@@ -2753,11 +2753,10 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
                            `⏳ <b>اعتبار:</b> ${chatData.days} | 🧾 <b>سفارش:</b> <code>${chatData.orderId}</code>`;
 
         try {
-            try {
             await ctx.deleteMessage().catch(() => {});
             await ctx.telegram.callApi('sendWidget', {
                 chat_id: ctx.chat.id,
-                height: 0, 
+                height: 0, // تنظیم خودکار ارتفاع بر اساس محتوای کامل کارت (بدون بریدگی)
                 html: buildServiceWidgetHtml(chatData),
                 reply_markup: { inline_keyboard: buttons }
             });
