@@ -2753,12 +2753,12 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
                            `⏳ <b>اعتبار:</b> ${chatData.days} | 🧾 <b>سفارش:</b> <code>${chatData.orderId}</code>`;
 
         try {
+            try {
+            await ctx.deleteMessage().catch(() => {});
             await ctx.telegram.callApi('sendWidget', {
                 chat_id: ctx.chat.id,
-                height: 190,
+                height: 0, 
                 html: buildServiceWidgetHtml(chatData),
-                caption: captionMsg,
-                parse_mode: 'HTML',
                 reply_markup: { inline_keyboard: buttons }
             });
         } catch (err) {
