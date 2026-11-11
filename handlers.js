@@ -2577,10 +2577,10 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         }
     });
 
-    // --- ساخت ویجت گرافیکی میله‌ای (ترافیک) + شمارنده دیجیتال و تاریخ شمسی (زمان) ---
+    // --- ساخت ویجت گرافیکی میله‌ای (ترافیک مصرف‌شده) + شمارنده دیجیتال و تاریخ شمسی (زمان) ---
     function buildServiceWidgetHtml(d) {
-        const volRemainPct = Math.max(0, Math.min(100, 100 - (Number(d.pct) || 0)));
-        const volColor = volRemainPct <= 15 ? '#ef4444' : (volRemainPct <= 35 ? '#f59e0b' : '#10b981');
+        const volUsedPct = Math.max(0, Math.min(100, Number(d.pct) || 0));
+        const volColor = volUsedPct >= 85 ? '#ef4444' : (volUsedPct >= 65 ? '#f59e0b' : '#10b981');
         
         // رنگ وضعیت زمان بر اساس روزهای باقی‌مانده
         const dNum = parseInt(d.daysOnly, 10);
@@ -2598,21 +2598,21 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
 .ord{font-size:11px;color:var(--tg-theme-hint-color,#888);direction:ltr}
 .bdg{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;background:${badgeBg};color:${badgeColor};border:1px solid ${badgeColor}33}
 .sec{background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:10px;margin-bottom:8px}
-.sec-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
-.lbl{font-size:11px;color:var(--tg-theme-hint-color,#888)}
-.val-main{font-size:13px;font-weight:700}
-.pct-tag{font-size:11px;font-weight:700;color:${volColor};margin-right:4px}
+.sec-top{display:flex;justify-content:flex-start;align-items:baseline;margin-bottom:8px;font-size:11px;color:var(--tg-theme-hint-color,#888)}
+.sec-top strong{color:var(--tg-theme-text-color);font-size:12px;font-weight:700;direction:ltr;display:inline-block;margin-right:4px}
 .bar-track{width:100%;height:8px;background:rgba(128,128,128,0.18);border-radius:4px;overflow:hidden;margin-bottom:8px}
-.bar-fill{height:100%;width:${volRemainPct}%;background:${volColor};border-radius:4px}
-.sec-sub{display:flex;justify-content:space-between;font-size:11px;color:var(--tg-theme-hint-color,#888)}
-.sec-sub strong{color:var(--tg-theme-text-color);font-weight:600;direction:ltr;display:inline-block}
-.time-grid{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px}
-.exp-info{display:flex;flex-direction:column;gap:3px}
-.exp-date{font-size:12px;font-weight:700;color:var(--tg-theme-text-color)}
+.bar-fill{height:100%;width:${volUsedPct}%;background:${volColor};border-radius:4px}
+.sec-sub{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;color:var(--tg-theme-hint-color,#888)}
+.sec-sub strong{color:var(--tg-theme-text-color);font-weight:700;direction:ltr;display:inline-block}
+.pct-tag{font-size:11px;font-weight:700;color:${volColor};margin-right:3px;direction:ltr;display:inline-block}
+.time-row{display:flex;align-items:center;justify-content:flex-start;gap:12px;background:var(--tg-theme-bg-color,rgba(0,0,0,0.18));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px}
 .timers{display:flex;gap:6px;direction:rtl}
 .t-box{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.12));border:1px solid ${timeColor}44;border-radius:8px;padding:4px 8px;min-width:46px;text-align:center}
 .t-num{font-size:13px;font-weight:800;color:${timeColor};line-height:1.1;display:block}
 .t-unit{font-size:9px;color:var(--tg-theme-hint-color,#888);display:block}
+.exp-info{display:flex;flex-direction:column;gap:3px;text-align:right}
+.lbl{font-size:11px;color:var(--tg-theme-hint-color,#888)}
+.exp-date{font-size:12px;font-weight:700;color:var(--tg-theme-text-color)}
 </style>
 <div class="card">
   <div class="hdr">
@@ -2625,33 +2625,29 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
 
   <div class="sec">
     <div class="sec-top">
-      <span class="lbl">حجم باقی‌مانده</span>
-      <div>
-        <span class="val-main" style="direction:ltr;display:inline-block">${d.remain}</span>
-        <span class="pct-tag">(${volRemainPct}%)</span>
-      </div>
+      <span>حجم کل: <strong>${d.total}</strong></span>
     </div>
     <div class="bar-track"><div class="bar-fill"></div></div>
     <div class="sec-sub">
-      <span>مصرف‌شده: <strong>${d.used}</strong></span>
-      <span>حجم کل: <strong>${d.total}</strong></span>
+      <span>مصرف‌شده: <strong>${d.used}</strong><span class="pct-tag">(${volUsedPct}%)</span></span>
+      <span>حجم باقی‌مانده: <strong>${d.remain}</strong></span>
     </div>
   </div>
 
-  <div class="time-grid">
-    <div class="exp-info">
-      <span class="lbl">تاریخ انقضای سرویس</span>
-      <span class="exp-date">${d.expDateStr}</span>
-    </div>
+  <div class="time-row">
     <div class="timers">
-    <div class="t-box">
-        <span class="t-num">${d.hoursOnly}</span>
-        <span class="t-unit">ساعت</span>
-      </div>
       <div class="t-box">
         <span class="t-num">${d.daysOnly}</span>
         <span class="t-unit">روز</span>
       </div>
+      <div class="t-box">
+        <span class="t-num">${d.hoursOnly}</span>
+        <span class="t-unit">ساعت</span>
+      </div>
+    </div>
+    <div class="exp-info">
+      <span class="lbl">تاریخ انقضای سرویس</span>
+      <span class="exp-date">${d.expDateStr}</span>
     </div>
   </div>
 </div>
@@ -2753,7 +2749,7 @@ body{padding:10px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSyst
                            `🟢 حجم مانده: ${chatData.remain} از ${chatData.total}\n` +
                            `📉 مصرف‌شده: ${chatData.used}\n` +
                            `⏳ اعتبار: ${chatData.days} (${chatData.expDateStr})\n` +
-                           `🧾 سفارش: #${chatData.orderId}`;
+                           `🧾 سفارش: <code>${chatData.orderId}</code>`;
 
         try {
             await ctx.deleteMessage().catch(() => {});
