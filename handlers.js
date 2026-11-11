@@ -2550,8 +2550,9 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ctx.editMessageText('🔴 <b>لیست اکانت‌های منقضی و حذف شده شما:</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: expiredButtons } });
     });
 
-    // --- تابع کمکی ساخت HTML ویجت وضعیت سرویس ---
-    function buildServiceWidgetHtml() {
+    // --- تابع ساخت HTML ویجت وضعیت سرویس (با تزریق مستقیم دیتا + دکمه‌های داخلی) ---
+    function buildServiceWidgetHtml(d, isActive, isTest) {
+        const barColor = d.pct > 85 ? '#ef4444' : (d.pct > 65 ? '#f59e0b' : 'var(--tg-theme-button-color,#2481cc)');
         return `<style>
 *{box-sizing:border-box}
 body{margin:0;padding:12px 12px 26px;direction:rtl;font-family:system-ui,-apple-system,sans-serif;color:var(--tg-theme-text-color,#fff)}
@@ -2563,44 +2564,217 @@ body{margin:0;padding:12px 12px 26px;direction:rtl;font-family:system-ui,-apple-
 .lbl{font-size:11px;color:var(--tg-theme-hint-color,#999);margin-bottom:3px}
 .val{font-size:13px;font-weight:700}
 .bar-bg{height:8px;background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,.2));border-radius:4px;overflow:hidden;margin-bottom:8px}
-.bar-fill{height:100%;background:var(--tg-theme-button-color,#2481cc);transition:width .3s}
-.exp{font-size:12px;color:var(--tg-theme-hint-color,#999);margin-bottom:10px}
-.btn{width:100%;padding:8px;border:none;border-radius:8px;background:var(--tg-theme-button-color,#2481cc);color:var(--tg-theme-button-text-color,#fff);font-weight:600;font-size:12px;cursor:pointer}
+.bar-fill{height:100%;transition:width .3s}
+.exp{font-size:12px;color:var(--tg-theme-hint-color,#999);margin-bottom:12px}
+.btns{display:flex;flex-direction:column;gap:6px}
+.row{display:flex;gap:6px}
+.btn{flex:1;padding:8px;border:none;border-radius:8px;background:var(--tg-theme-button-color,#2481cc);color:var(--tg-theme-button-text-color,#fff);font-weight:600;font-size:12px;cursor:pointer;text-align:center}
+.btn-sec{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,.18));color:var(--tg-theme-text-color,#fff)}
 </style>
-<div class="hd"><span class="nm" id="nm">-</span><span class="bdg" id="st">-</span></div>
+<div class="hd"><span class="nm" id="nm">${d.name}</span><span class="bdg" id="st">${d.status}</span></div>
 <div class="grid">
-  <div class="bx"><div class="lbl">مصرف‌شده / کل</div><div class="val"><span id="us">0</span> / <span id="tot">0</span></div></div>
-  <div class="bx"><div class="lbl">حجم باقی‌مانده</div><div class="val" id="rem">0</div></div>
+  <div class="bx"><div class="lbl">مصرف‌شده / کل</div><div class="val"><span id="us">${d.used}</span> / <span id="tot">${d.total}</span></div></div>
+  <div class="bx"><div class="lbl">حجم باقی‌مانده</div><div class="val" id="rem">${d.remain}</div></div>
 </div>
-<div class="bar-bg"><div class="bar-fill" id="bar" style="width:0%"></div></div>
-<div class="exp">⏳ اعتبار: <strong id="exp" style="color:var(--tg-theme-text-color)">-</strong></div>
-<button class="btn" id="rbtn" onclick="doRef()">🔄 بروزرسانی زنده ترافیک</button>
+<div class="bar-bg"><div class="bar-fill" id="bar" style="width:${d.pct}%;background:${barColor}"></div></div>
+<div class="exp">⏳ اعتبار: <strong id="exp" style="color:var(--tg-theme-text-color)">${d.days}</strong></div>
+<div class="btns">
+  <button class="btn" id="rbtn" onclick="act('ref:${d.uuid}',this)">🔄 بروزرسانی زنده ترافیک</button>
+  <div class="row">
+    ${isActive ? `<button class="btn btn-sec" onclick="act('cfg:${d.uuid}',this)">📥 دریافت کانفیگ</button>` : ''}
+    ${!isTest ? `<button class="btn btn-sec" onclick="act('ren:${d.uuid}',this)">🔄 تمدید سرویس</button>` : ''}
+  </div>
+  <button class="btn btn-sec" onclick="act('bck:${isActive ? 'act' : 'exp'}',this)">🔙 بازگشت به لیست</button>
+</div>
 <script>
-function render(d){
-  if(!d)return;
-  document.getElementById('nm').textContent=d.name||'';
-  document.getElementById('st').textContent=d.status||'';
-  document.getElementById('us').textContent=d.used||'0';
-  document.getElementById('tot').textContent=d.total||'0';
-  document.getElementById('rem').textContent=d.remain||'0';
-  document.getElementById('exp').textContent=d.days||'-';
+function parseData(raw){
+  if(!raw)return null;
+  if(typeof raw==='string'){try{return JSON.parse(raw);}catch(e){return null;}}
+  return raw;
+}
+function render(raw){
+  var d=parseData(raw);
+  if(!d||!d.name)return;
+  document.getElementById('nm').textContent=d.name;
+  document.getElementById('st').textContent=d.status;
+  document.getElementById('us').textContent=d.used;
+  document.getElementById('tot').textContent=d.total;
+  document.getElementById('rem').textContent=d.remain;
+  document.getElementById('exp').textContent=d.days;
   var p=Number(d.pct)||0;
   var b=document.getElementById('bar');
   b.style.width=p+'%';
   b.style.background=p>85?'#ef4444':(p>65?'#f59e0b':'var(--tg-theme-button-color,#2481cc)');
 }
-function doRef(){
-  var u=(TelegramWidget.chatData&&TelegramWidget.chatData.uuid)||'';
-  if(!u)return;
-  var btn=document.getElementById('rbtn');
-  btn.textContent='⏳ در حال دریافت...';
-  TelegramWidget.request('ref:'+u,function(){btn.textContent='🔄 بروزرسانی زنده ترافیک';});
+function act(cmd,btn){
+  var old=btn.textContent;
+  btn.textContent='⏳...';
+  TelegramWidget.request(cmd,function(){btn.textContent=old;});
 }
 TelegramWidget.onEvent('chatDataChanged',function(){render(TelegramWidget.chatData);});
 render(TelegramWidget.chatData);
 TelegramWidget.ready();
 </script>`;
     }
+
+    // --- تابع کمکی استخراج دیتای سرویس برای ویجت ---
+    async function getServiceWidgetData(conf, targetServer) {
+        const traffic = await getClientTraffic(conf.email, targetServer);
+        let status = '🔴 حذف شده', total = 'نامحدود', used = '0 GB', remain = 'نامحدود', days = 'نامحدود';
+        let isActive = false, pct = 0;
+
+        if (traffic) {
+            const totalGB = traffic.total / 1073741824;
+            const usedGB = (traffic.up + traffic.down) / 1073741824;
+            pct = traffic.total > 0 ? Math.min(100, Math.round((usedGB / totalGB) * 100)) : 5;
+
+            total = traffic.total === 0 ? 'نامحدود' : totalGB.toFixed(2) + ' GB';
+            used = usedGB.toFixed(2) + ' GB';
+            remain = traffic.total === 0 ? 'نامحدود' : Math.max(0, totalGB - usedGB).toFixed(2) + ' GB';
+
+            let exp = traffic.expiryTime;
+            if (exp > 0 && exp < 1e12) exp *= 1000;
+
+            if (exp > 0) {
+                const diffMs = exp - Date.now();
+                if (diffMs > 0) {
+                    const d = Math.floor(diffMs / 86400000);
+                    const h = Math.floor((diffMs % 86400000) / 3600000);
+                    days = `${d} روز و ${h} ساعت`;
+                } else {
+                    days = 'منقضی شده ❌';
+                }
+            }
+
+            const isVolEnd = traffic.total > 0 && usedGB >= totalGB;
+            const isTimeEnd = exp > 0 && exp < Date.now();
+            isActive = !isVolEnd && !isTimeEnd;
+            status = isActive ? '🟢 فعال' : '🔴 منقضی شده';
+        }
+
+        return {
+            isActive,
+            chatData: { uuid: conf.uuid, name: conf.name, status, total, used, remain, days, pct }
+        };
+    }
+
+    // --- هندلر نمایش جزئیات سرویس با ویجت ---
+    bot.action(/dash_detail_(.+)/, async (ctx) => {
+        const uuid = ctx.match[1];
+        await ctx.answerCbQuery('در حال دریافت اطلاعات...', { show_alert: false });
+        
+        const db = readDb();
+        const conf = (db.users[ctx.from.id] || []).find(c => c.uuid === uuid);
+        if (!conf) return ctx.editMessageText('❌ اکانت یافت نشد.');
+
+        const targetServer = getTargetServer(db, conf);
+        const { isActive, chatData } = await getServiceWidgetData(conf, targetServer);
+        const isTest = conf.name.includes('Test') || conf.name.includes('تست');
+        const orderIdText = conf.orderId ? conf.orderId : 'ندارد';
+
+        try {
+            await ctx.telegram.callApi('sendWidget', {
+                chat_id: ctx.chat.id,
+                html: buildServiceWidgetHtml(chatData, isActive, isTest),
+                allow_queries: true,
+                chat_data: JSON.stringify(chatData)
+            });
+            await ctx.deleteMessage().catch(() => {});
+        } catch (err) {
+            let buttons = [];
+            if (isActive) buttons.push([Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${conf.uuid}`)]);
+            if (!isTest) buttons.push([Markup.button.callback('🔄 تمدید سرویس', `init_renew_${conf.email}`)]);
+            buttons.push([Markup.button.callback('🔙 بازگشت', isActive ? 'dash_active' : 'dash_expired')]);
+
+            const msg = `📝 <b>نام کانفیگ:</b> ${conf.name}\n👤 <b>شناسه کاربر:</b> <code>${ctx.from.id}</code>\n🧾 <b>شناسه خرید:</b> <code>${orderIdText}</code>\nوضعیت: ${chatData.status}\n\n🔸 <b>کل حجم:</b> ${chatData.total}\n🔹 <b>مصرف شده:</b> ${chatData.used}\n🟢 <b>باقی‌مانده:</b> ${chatData.remain}\n⏳ <b>زمان باقی‌مانده:</b> ${chatData.days}`;
+            await ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
+        }
+    });
+
+    // --- هندلر تمام دکمه‌های داخل ویجت ---
+    bot.on('widget_query', async (ctx) => {
+        const wq = ctx.update.widget_query;
+        if (!wq || !wq.data) return;
+        const userId = wq.from.id;
+        const chatId = wq.message?.chat?.id || userId;
+        const msgId = wq.message?.message_id;
+
+        // ۱. بروزرسانی زنده ترافیک درجا روی ویجت
+        if (wq.data.startsWith('ref:')) {
+            const uuid = wq.data.slice(4);
+            const db = readDb();
+            const conf = (db.users[userId] || []).find(c => c.uuid === uuid);
+            if (!conf) return ctx.telegram.callApi('answerWidgetQuery', { widget_query_id: wq.id }).catch(() => {});
+
+            const targetServer = getTargetServer(db, conf);
+            const { chatData } = await getServiceWidgetData(conf, targetServer);
+
+            return ctx.telegram.callApi('answerWidgetQuery', {
+                widget_query_id: wq.id,
+                chat_data: JSON.stringify(chatData)
+            }).catch(() => {});
+        }
+
+        // ۲. دکمه بازگشت به لیست اکانت‌ها
+        if (wq.data.startsWith('bck:')) {
+            const mode = wq.data.slice(4); // 'act' یا 'exp'
+            await ctx.telegram.callApi('answerWidgetQuery', { widget_query_id: wq.id }).catch(() => {});
+            if (msgId) await ctx.telegram.deleteMessage(chatId, msgId).catch(() => {});
+
+            const results = await fetchUserConfigsStatus(userId);
+            if (mode === 'act') {
+                let activeButtons = results.filter(r => r.status === 'active').map(r => [Markup.button.callback(r.conf.name, `dash_detail_${r.conf.uuid}`)]);
+                activeButtons.push([Markup.button.callback('🔙 بازگشت', 'dash_main')]);
+                return ctx.telegram.sendMessage(chatId, '🟢 <b>لیست اکانت‌های فعال شما:</b>\nبرای مشاهده جزئیات روی نام کانفیگ کلیک کنید.', { parse_mode: 'HTML', reply_markup: { inline_keyboard: activeButtons } });
+            } else {
+                let expiredButtons = results.filter(r => r.status !== 'active').map(r => [Markup.button.callback(`${r.status === 'deleted' ? '❌' : '🔴'} ${r.conf.name}`, `dash_detail_${r.conf.uuid}`)]);
+                expiredButtons.push([Markup.button.callback('🔙 بازگشت', 'dash_main')]);
+                return ctx.telegram.sendMessage(chatId, '🔴 <b>لیست اکانت‌های منقضی و حذف شده شما:</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: expiredButtons } });
+            }
+        }
+
+        // ۳. دکمه تمدید سرویس از داخل ویجت
+        if (wq.data.startsWith('ren:')) {
+            const uuid = wq.data.slice(4);
+            await ctx.telegram.callApi('answerWidgetQuery', { widget_query_id: wq.id }).catch(() => {});
+            const db = readDb();
+            const conf = (db.users[userId] || []).find(c => c.uuid === uuid);
+            if (!conf) return;
+            if (msgId) await ctx.telegram.deleteMessage(chatId, msgId).catch(() => {});
+            return triggerRenewPlanMenu({ from: wq.from, chat: { id: chatId }, reply: (t, extra) => ctx.telegram.sendMessage(chatId, t, extra) }, conf.email, conf.name);
+        }
+
+        // ۴. دکمه دریافت کانفیگ از داخل ویجت
+        if (wq.data.startsWith('cfg:')) {
+            const uuid = wq.data.slice(4);
+            await ctx.telegram.callApi('answerWidgetQuery', { widget_query_id: wq.id }).catch(() => {});
+            const db = readDb();
+            const conf = (db.users[userId] || []).find(c => c.uuid === uuid);
+            if (!conf) return;
+
+            const targetServer = getTargetServer(db, conf);
+            const activeInboundIds = await getClientActiveInboundIds(conf.email, targetServer);
+            let tempServer = JSON.parse(JSON.stringify(targetServer));
+            if (tempServer.inbounds) {
+                if (activeInboundIds && activeInboundIds.length > 0) {
+                    tempServer.inbounds = tempServer.inbounds.filter(inb => activeInboundIds.includes(inb.id));
+                }
+                if (db.settings?.inboundTierMode) {
+                    const isVipConf = !!(conf.isVip || conf.name?.includes('VIP'));
+                    const tierFiltered = tempServer.inbounds.filter(inb => {
+                        const t = inb.tier || 'both';
+                        return t === 'both' || (isVipConf ? t === 'vip' : t === 'normal');
+                    });
+                    if (tierFiltered.length > 0) tempServer.inbounds = tierFiltered;
+                }
+            }
+            const configs = generateAllConfigs(uuid, conf.name || "CypherNET💎", tempServer);
+            for (let i = 0; i < configs.length; i++) {
+                const safeConfig = configs[i].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                await ctx.telegram.sendMessage(chatId, `⚙️ <b>کانفیگ ${i + 1}:</b>\n👇 <i>برای کپی روی لینک کانفیگ ضربه بزنید:</i>\n<blockquote expandable><code>${safeConfig}</code></blockquote>`, { parse_mode: 'HTML' });
+            }
+        }
+    });
 
     // --- تابع کمکی استخراج دیتای سرویس برای ویجت ---
     async function getServiceWidgetData(conf, targetServer) {
