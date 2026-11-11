@@ -2437,7 +2437,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         await ctx.answerCbQuery('در حال بروزرسانی اطلاعات...', { show_alert: false });
         
         const results = await fetchUserConfigsStatus(ctx.from.id);
-        
         const activeCount = results.filter(r => r.status === 'active').length;
         const expiredCount = results.filter(r => r.status === 'expired').length;
         
@@ -2447,7 +2446,7 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     `🔴 تعداد اکانت‌های منقضی شده: <b>${expiredCount}</b>\n\n` +
                     `👇 لطفا یک بخش را انتخاب کنید:`;
 
-        await ctx.editMessageText(msg, {
+        const extra = {
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
@@ -2455,10 +2454,17 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                     [Markup.button.callback('🔴 اکانت‌های منقضی شده', 'dash_expired')]
                 ]
             }
-        });
+        };
+
+        try {
+            await ctx.editMessageText(msg, extra);
+        } catch (e) {
+            await ctx.deleteMessage().catch(() => {});
+            await ctx.reply(msg, extra);
+        }
     });
 
-   async function fetchUserConfigsStatus(userId) {
+    async function fetchUserConfigsStatus(userId) {
         const db = readDb();
         let userConfigs = [...(db.users[userId] || [])];
 
@@ -2469,7 +2475,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             return tsB - tsA; 
         });
 
-        // گروه‌بندی کانفیگ‌ها بر اساس سرور
         const configsByServer = {};
         for (const conf of userConfigs) {
             const targetServer = getTargetServer(db, conf);
@@ -2482,7 +2487,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
 
         const trafficDataByEmail = {};
 
-        // دریافت یکجای اطلاعات از هر سرور با سرعت بالا
         for (const srvId in configsByServer) {
             const { server, configs } = configsByServer[srvId];
             const trafficMap = await getServerTrafficMap(server);
@@ -2491,7 +2495,6 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
                 if (trafficMap && trafficMap[conf.email] !== undefined) {
                     trafficDataByEmail[conf.email] = trafficMap[conf.email];
                 } else {
-                    // لایه اطمینان (Fallback): اگر به هر دلیلی در لیست نبود، استعلام تکی بزن
                     trafficDataByEmail[conf.email] = await getClientTraffic(conf.email, server);
                 }
             }
@@ -2529,12 +2532,24 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         const results = await fetchUserConfigsStatus(ctx.from.id);
         let activeButtons = results
             .filter(r => r.status === 'active')
-            .map(r => [Markup.button.callback(r.conf.name, `dash_detail_${r.conf.uuid}`)]);
+            .map(r => [Markup.button.callback(`🟢 ${r.conf.name}`, `dash_detail_${r.conf.uuid}`)]);
 
-        if (activeButtons.length === 0) return ctx.editMessageText('🟢 شما هیچ اکانت فعالی ندارید.', { reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'dash_main')]] } });
+        if (activeButtons.length === 0) {
+            const emptyExtra = { reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'dash_main')]] } };
+            try { return await ctx.editMessageText('🟢 شما هیچ اکانت فعالی ندارید.', emptyExtra); }
+            catch (e) { await ctx.deleteMessage().catch(() => {}); return await ctx.reply('🟢 شما هیچ اکانت فعالی ندارید.', emptyExtra); }
+        }
         
-        activeButtons.push([Markup.button.callback('🔙 بازگشت', 'dash_main')]);
-        ctx.editMessageText('🟢 <b>لیست اکانت‌های فعال شما:</b>\nبرای مشاهده جزئیات روی نام کانفیگ کلیک کنید.', { parse_mode: 'HTML', reply_markup: { inline_keyboard: activeButtons } });
+        activeButtons.push([Markup.button.callback('🔙 بازگشت به داشبورد', 'dash_main')]);
+        const msg = '🟢 <b>لیست اکانت‌های فعال شما:</b>\nبرای مشاهده نمودار وضعیت روی نام سرویس کلیک کنید:';
+        const extra = { parse_mode: 'HTML', reply_markup: { inline_keyboard: activeButtons } };
+
+        try {
+            await ctx.editMessageText(msg, extra);
+        } catch (e) {
+            await ctx.deleteMessage().catch(() => {});
+            await ctx.reply(msg, extra);
+        }
     });
 
     bot.action('dash_expired', async (ctx) => {
@@ -2544,89 +2559,118 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
             .filter(r => r.status !== 'active')
             .map(r => [Markup.button.callback(`${r.status === 'deleted' ? '❌' : '🔴'} ${r.conf.name}`, `dash_detail_${r.conf.uuid}`)]);
 
-        if (expiredButtons.length === 0) return ctx.editMessageText('🔴 شما هیچ اکانت منقضی شده‌ای ندارید.', { reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'dash_main')]] } });
+        if (expiredButtons.length === 0) {
+            const emptyExtra = { reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'dash_main')]] } };
+            try { return await ctx.editMessageText('🔴 شما هیچ اکانت منقضی شده‌ای ندارید.', emptyExtra); }
+            catch (e) { await ctx.deleteMessage().catch(() => {}); return await ctx.reply('🔴 شما هیچ اکانت منقضی شده‌ای ندارید.', emptyExtra); }
+        }
         
-        expiredButtons.push([Markup.button.callback('🔙 بازگشت', 'dash_main')]);
-        ctx.editMessageText('🔴 <b>لیست اکانت‌های منقضی و حذف شده شما:</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: expiredButtons } });
+        expiredButtons.push([Markup.button.callback('🔙 بازگشت به داشبورد', 'dash_main')]);
+        const msg = '🔴 <b>لیست اکانت‌های منقضی و حذف شده شما:</b>';
+        const extra = { parse_mode: 'HTML', reply_markup: { inline_keyboard: expiredButtons } };
+
+        try {
+            await ctx.editMessageText(msg, extra);
+        } catch (e) {
+            await ctx.deleteMessage().catch(() => {});
+            await ctx.reply(msg, extra);
+        }
     });
 
-    // --- تابع ساخت HTML ویجت وضعیت سرویس (با تزریق مستقیم دیتا + دکمه‌های داخلی) ---
-    function buildServiceWidgetHtml(d, isActive, isTest) {
-        const barColor = d.pct > 85 ? '#ef4444' : (d.pct > 65 ? '#f59e0b' : 'var(--tg-theme-button-color,#2481cc)');
+    // --- ساخت ویجت گرافیکی مدرن با نمودارهای دایره‌ای (SVG Donut Charts) ---
+    function buildServiceWidgetHtml(d) {
+        const volRemainPct = Math.max(0, Math.min(100, 100 - (Number(d.pct) || 0)));
+        const timeRemainPct = Math.max(0, Math.min(100, Number(d.timePct) || 0));
+
+        const volColor = volRemainPct <= 15 ? '#ef4444' : (volRemainPct <= 35 ? '#f59e0b' : '#10b981');
+        const timeColor = timeRemainPct <= 15 ? '#ef4444' : (timeRemainPct <= 35 ? '#f59e0b' : '#3b82f6');
+        const badgeBg = d.isActive ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
+        const badgeColor = d.isActive ? '#10b981' : '#ef4444';
+
         return `<style>
-*{box-sizing:border-box}
-body{margin:0;padding:12px 12px 26px;direction:rtl;font-family:system-ui,-apple-system,sans-serif;color:var(--tg-theme-text-color,#fff)}
-.hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-.nm{font-weight:700;font-size:15px}
-.bdg{font-size:11px;padding:3px 8px;border-radius:6px;background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,.15))}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
-.bx{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,.12));padding:8px;border-radius:8px}
-.lbl{font-size:11px;color:var(--tg-theme-hint-color,#999);margin-bottom:3px}
-.val{font-size:13px;font-weight:700}
-.bar-bg{height:8px;background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,.2));border-radius:4px;overflow:hidden;margin-bottom:8px}
-.bar-fill{height:100%;transition:width .3s}
-.exp{font-size:12px;color:var(--tg-theme-hint-color,#999);margin-bottom:12px}
-.btns{display:flex;flex-direction:column;gap:6px}
-.row{display:flex;gap:6px}
-.btn{flex:1;padding:8px;border:none;border-radius:8px;background:var(--tg-theme-button-color,#2481cc);color:var(--tg-theme-button-text-color,#fff);font-weight:600;font-size:12px;cursor:pointer;text-align:center}
-.btn-sec{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,.18));color:var(--tg-theme-text-color,#fff)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{padding:14px 14px 28px;direction:rtl;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--tg-theme-text-color,#fafafa);background:transparent}
+.card{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,0.08));border:1px solid rgba(128,128,128,0.14);border-radius:14px;padding:14px}
+.hdr{display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:12px;border-bottom:1px solid rgba(128,128,128,0.12)}
+.title-wrap{display:flex;flex-direction:column;gap:2px}
+.nm{font-weight:700;font-size:15px;color:var(--tg-theme-text-color)}
+.ord{font-size:11px;color:var(--tg-theme-hint-color,#888)}
+.bdg{font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;background:${badgeBg};color:${badgeColor}}
+.rings{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.ring-box{background:var(--tg-theme-bg-color,rgba(0,0,0,0.15));border:1px solid rgba(128,128,128,0.1);border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center}
+.svg-wrap{position:relative;width:76px;height:76px;margin-bottom:6px}
+svg{width:76px;height:76px;transform:rotate(-90deg)}
+.track{fill:none;stroke:rgba(128,128,128,0.16);stroke-width:3.6}
+.fill-vol{fill:none;stroke:${volColor};stroke-width:3.6;stroke-linecap:round;transition:stroke-dasharray .4s ease}
+.fill-time{fill:none;stroke:${timeColor};stroke-width:3.6;stroke-linecap:round;transition:stroke-dasharray .4s ease}
+.center-txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.pct{font-size:14px;font-weight:800;line-height:1.1}
+.sub{font-size:9px;color:var(--tg-theme-hint-color,#888)}
+.r-title{font-size:11px;color:var(--tg-theme-hint-color,#888);margin-bottom:2px}
+.r-val{font-size:12px;font-weight:700}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.m-item{background:var(--tg-theme-bg-color,rgba(0,0,0,0.15));border:1px solid rgba(128,128,128,0.1);border-radius:10px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center}
+.m-lbl{font-size:11px;color:var(--tg-theme-hint-color,#888)}
+.m-val{font-size:12px;font-weight:700;direction:ltr}
 </style>
-<div class="hd"><span class="nm" id="nm">${d.name}</span><span class="bdg" id="st">${d.status}</span></div>
-<div class="grid">
-  <div class="bx"><div class="lbl">مصرف‌شده / کل</div><div class="val"><span id="us">${d.used}</span> / <span id="tot">${d.total}</span></div></div>
-  <div class="bx"><div class="lbl">حجم باقی‌مانده</div><div class="val" id="rem">${d.remain}</div></div>
-</div>
-<div class="bar-bg"><div class="bar-fill" id="bar" style="width:${d.pct}%;background:${barColor}"></div></div>
-<div class="exp">⏳ اعتبار: <strong id="exp" style="color:var(--tg-theme-text-color)">${d.days}</strong></div>
-<div class="btns">
-  <button class="btn" id="rbtn" onclick="act('ref:${d.uuid}',this)">🔄 بروزرسانی زنده ترافیک</button>
-  <div class="row">
-    ${isActive ? `<button class="btn btn-sec" onclick="act('cfg:${d.uuid}',this)">📥 دریافت کانفیگ</button>` : ''}
-    ${!isTest ? `<button class="btn btn-sec" onclick="act('ren:${d.uuid}',this)">🔄 تمدید سرویس</button>` : ''}
+<div class="card">
+  <div class="hdr">
+    <div class="title-wrap">
+      <span class="nm" id="nm">${d.name}</span>
+      <span class="ord">شناسه سفارش: #${d.orderId}</span>
+    </div>
+    <span class="bdg" id="st">${d.status}</span>
   </div>
-  <button class="btn btn-sec" onclick="act('bck:${isActive ? 'act' : 'exp'}',this)">🔙 بازگشت به لیست</button>
+  <div class="rings">
+    <div class="ring-box">
+      <div class="svg-wrap">
+        <svg viewBox="0 0 36 36">
+          <path class="track" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+          <path id="v-ring" class="fill-vol" stroke-dasharray="${volRemainPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+        </svg>
+        <div class="center-txt">
+          <span class="pct" id="v-pct">${volRemainPct}%</span>
+          <span class="sub">باقی‌مانده</span>
+        </div>
+      </div>
+      <div class="r-title">حجم باقی‌مانده</div>
+      <div class="r-val" id="rem">${d.remain}</div>
+    </div>
+    <div class="ring-box">
+      <div class="svg-wrap">
+        <svg viewBox="0 0 36 36">
+          <path class="track" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+          <path id="t-ring" class="fill-time" stroke-dasharray="${timeRemainPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+        </svg>
+        <div class="center-txt">
+          <span class="pct" id="t-days">${d.daysNum}</span>
+          <span class="sub">روز</span>
+        </div>
+      </div>
+      <div class="r-title">اعتبار زمانی</div>
+      <div class="r-val" id="exp">${d.days}</div>
+    </div>
+  </div>
+  <div class="meta">
+    <div class="m-item"><span class="m-lbl">مصرف‌شده:</span><span class="m-val" id="us">${d.used}</span></div>
+    <div class="m-item"><span class="m-lbl">حجم کل:</span><span class="m-val" id="tot">${d.total}</span></div>
+  </div>
 </div>
 <script>
-function parseData(raw){
-  if(!raw)return null;
-  if(typeof raw==='string'){try{return JSON.parse(raw);}catch(e){return null;}}
-  return raw;
-}
-function render(raw){
-  var d=parseData(raw);
-  if(!d||!d.name)return;
-  document.getElementById('nm').textContent=d.name;
-  document.getElementById('st').textContent=d.status;
-  document.getElementById('us').textContent=d.used;
-  document.getElementById('tot').textContent=d.total;
-  document.getElementById('rem').textContent=d.remain;
-  document.getElementById('exp').textContent=d.days;
-  var p=Number(d.pct)||0;
-  var b=document.getElementById('bar');
-  b.style.width=p+'%';
-  b.style.background=p>85?'#ef4444':(p>65?'#f59e0b':'var(--tg-theme-button-color,#2481cc)');
-}
-function act(cmd,btn){
-  var old=btn.textContent;
-  btn.textContent='⏳...';
-  TelegramWidget.request(cmd,function(){btn.textContent=old;});
-}
-TelegramWidget.onEvent('chatDataChanged',function(){render(TelegramWidget.chatData);});
-render(TelegramWidget.chatData);
-TelegramWidget.ready();
+if(typeof TelegramWidget!=='undefined'&&TelegramWidget.ready){TelegramWidget.ready();}
 </script>`;
     }
 
-    // --- تابع کمکی استخراج دیتای سرویس برای ویجت ---
+    // --- تابع استخراج دقیق اطلاعات ترافیک و زمان برای نمودار دایره‌ای ---
     async function getServiceWidgetData(conf, targetServer) {
         const traffic = await getClientTraffic(conf.email, targetServer);
-        let status = '🔴 حذف شده', total = 'نامحدود', used = '0 GB', remain = 'نامحدود', days = 'نامحدود';
-        let isActive = false, pct = 0;
+        let status = 'حذف شده', total = 'نامحدود', used = '0 GB', remain = 'نامحدود', days = 'نامحدود';
+        let isActive = false, pct = 0, timePct = 100, daysNum = '∞';
 
         if (traffic) {
             const totalGB = traffic.total / 1073741824;
             const usedGB = (traffic.up + traffic.down) / 1073741824;
-            pct = traffic.total > 0 ? Math.min(100, Math.round((usedGB / totalGB) * 100)) : 5;
+            pct = traffic.total > 0 ? Math.min(100, Math.round((usedGB / totalGB) * 100)) : 0;
 
             total = traffic.total === 0 ? 'نامحدود' : totalGB.toFixed(2) + ' GB';
             used = usedGB.toFixed(2) + ' GB';
@@ -2641,239 +2685,84 @@ TelegramWidget.ready();
                     const d = Math.floor(diffMs / 86400000);
                     const h = Math.floor((diffMs % 86400000) / 3600000);
                     days = `${d} روز و ${h} ساعت`;
+                    daysNum = String(d);
+                    // محاسبه درصد زمان باقی‌مانده نسبت به دوره ۳۰ روزه
+                    timePct = Math.min(100, Math.max(3, Math.round((diffMs / (30 * 86400000)) * 100)));
                 } else {
-                    days = 'منقضی شده ❌';
+                    days = 'منقضی شده';
+                    daysNum = '0';
+                    timePct = 0;
                 }
             }
 
             const isVolEnd = traffic.total > 0 && usedGB >= totalGB;
             const isTimeEnd = exp > 0 && exp < Date.now();
             isActive = !isVolEnd && !isTimeEnd;
-            status = isActive ? '🟢 فعال' : '🔴 منقضی شده';
+            status = isActive ? '🟢 فعال' : '🔴 منقضی';
         }
 
         return {
             isActive,
-            chatData: { uuid: conf.uuid, name: conf.name, status, total, used, remain, days, pct }
+            chatData: {
+                uuid: conf.uuid,
+                name: conf.name,
+                orderId: conf.orderId || 'ندارد',
+                status,
+                total,
+                used,
+                remain,
+                days,
+                daysNum,
+                pct,
+                timePct,
+                isActive
+            }
         };
     }
 
-    // --- هندلر نمایش جزئیات سرویس با ویجت ---
+    // --- هندلر نمایش و بروزرسانی کارت سرویس ---
     bot.action(/dash_detail_(.+)/, async (ctx) => {
         const uuid = ctx.match[1];
-        await ctx.answerCbQuery('در حال دریافت اطلاعات...', { show_alert: false });
+        await ctx.answerCbQuery('⏳ در حال دریافت آخرین وضعیت از سرور...', { show_alert: false });
         
         const db = readDb();
         const conf = (db.users[ctx.from.id] || []).find(c => c.uuid === uuid);
-        if (!conf) return ctx.editMessageText('❌ اکانت یافت نشد.');
+        if (!conf) return ctx.reply('❌ اکانت یافت نشد.');
 
         const targetServer = getTargetServer(db, conf);
         const { isActive, chatData } = await getServiceWidgetData(conf, targetServer);
         const isTest = conf.name.includes('Test') || conf.name.includes('تست');
-        const orderIdText = conf.orderId ? conf.orderId : 'ندارد';
 
-        try {
-            await ctx.telegram.callApi('sendWidget', {
-                chat_id: ctx.chat.id,
-                html: buildServiceWidgetHtml(chatData, isActive, isTest),
-                allow_queries: true,
-                chat_data: JSON.stringify(chatData)
-            });
-            await ctx.deleteMessage().catch(() => {});
-        } catch (err) {
-            let buttons = [];
-            if (isActive) buttons.push([Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${conf.uuid}`)]);
-            if (!isTest) buttons.push([Markup.button.callback('🔄 تمدید سرویس', `init_renew_${conf.email}`)]);
-            buttons.push([Markup.button.callback('🔙 بازگشت', isActive ? 'dash_active' : 'dash_expired')]);
-
-            const msg = `📝 <b>نام کانفیگ:</b> ${conf.name}\n👤 <b>شناسه کاربر:</b> <code>${ctx.from.id}</code>\n🧾 <b>شناسه خرید:</b> <code>${orderIdText}</code>\nوضعیت: ${chatData.status}\n\n🔸 <b>کل حجم:</b> ${chatData.total}\n🔹 <b>مصرف شده:</b> ${chatData.used}\n🟢 <b>باقی‌مانده:</b> ${chatData.remain}\n⏳ <b>زمان باقی‌مانده:</b> ${chatData.days}`;
-            await ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
-        }
-    });
-
-    // --- هندلر تمام دکمه‌های داخل ویجت ---
-    bot.on('widget_query', async (ctx) => {
-        const wq = ctx.update.widget_query;
-        if (!wq || !wq.data) return;
-        const userId = wq.from.id;
-        const chatId = wq.message?.chat?.id || userId;
-        const msgId = wq.message?.message_id;
-
-        // ۱. بروزرسانی زنده ترافیک درجا روی ویجت
-        if (wq.data.startsWith('ref:')) {
-            const uuid = wq.data.slice(4);
-            const db = readDb();
-            const conf = (db.users[userId] || []).find(c => c.uuid === uuid);
-            if (!conf) return ctx.telegram.callApi('answerWidgetQuery', { widget_query_id: wq.id }).catch(() => {});
-
-            const targetServer = getTargetServer(db, conf);
-            const { chatData } = await getServiceWidgetData(conf, targetServer);
-
-            return ctx.telegram.callApi('answerWidgetQuery', {
-                widget_query_id: wq.id,
-                chat_data: JSON.stringify(chatData)
-            }).catch(() => {});
-        }
-
-        // ۲. دکمه بازگشت به لیست اکانت‌ها
-        if (wq.data.startsWith('bck:')) {
-            const mode = wq.data.slice(4); // 'act' یا 'exp'
-            await ctx.telegram.callApi('answerWidgetQuery', { widget_query_id: wq.id }).catch(() => {});
-            if (msgId) await ctx.telegram.deleteMessage(chatId, msgId).catch(() => {});
-
-            const results = await fetchUserConfigsStatus(userId);
-            if (mode === 'act') {
-                let activeButtons = results.filter(r => r.status === 'active').map(r => [Markup.button.callback(r.conf.name, `dash_detail_${r.conf.uuid}`)]);
-                activeButtons.push([Markup.button.callback('🔙 بازگشت', 'dash_main')]);
-                return ctx.telegram.sendMessage(chatId, '🟢 <b>لیست اکانت‌های فعال شما:</b>\nبرای مشاهده جزئیات روی نام کانفیگ کلیک کنید.', { parse_mode: 'HTML', reply_markup: { inline_keyboard: activeButtons } });
-            } else {
-                let expiredButtons = results.filter(r => r.status !== 'active').map(r => [Markup.button.callback(`${r.status === 'deleted' ? '❌' : '🔴'} ${r.conf.name}`, `dash_detail_${r.conf.uuid}`)]);
-                expiredButtons.push([Markup.button.callback('🔙 بازگشت', 'dash_main')]);
-                return ctx.telegram.sendMessage(chatId, '🔴 <b>لیست اکانت‌های منقضی و حذف شده شما:</b>', { parse_mode: 'HTML', reply_markup: { inline_keyboard: expiredButtons } });
-            }
-        }
-
-        // ۳. دکمه تمدید سرویس از داخل ویجت
-        if (wq.data.startsWith('ren:')) {
-            const uuid = wq.data.slice(4);
-            await ctx.telegram.callApi('answerWidgetQuery', { widget_query_id: wq.id }).catch(() => {});
-            const db = readDb();
-            const conf = (db.users[userId] || []).find(c => c.uuid === uuid);
-            if (!conf) return;
-            if (msgId) await ctx.telegram.deleteMessage(chatId, msgId).catch(() => {});
-            return triggerRenewPlanMenu({ from: wq.from, chat: { id: chatId }, reply: (t, extra) => ctx.telegram.sendMessage(chatId, t, extra) }, conf.email, conf.name);
-        }
-
-        // ۴. دکمه دریافت کانفیگ از داخل ویجت
-        if (wq.data.startsWith('cfg:')) {
-            const uuid = wq.data.slice(4);
-            await ctx.telegram.callApi('answerWidgetQuery', { widget_query_id: wq.id }).catch(() => {});
-            const db = readDb();
-            const conf = (db.users[userId] || []).find(c => c.uuid === uuid);
-            if (!conf) return;
-
-            const targetServer = getTargetServer(db, conf);
-            const activeInboundIds = await getClientActiveInboundIds(conf.email, targetServer);
-            let tempServer = JSON.parse(JSON.stringify(targetServer));
-            if (tempServer.inbounds) {
-                if (activeInboundIds && activeInboundIds.length > 0) {
-                    tempServer.inbounds = tempServer.inbounds.filter(inb => activeInboundIds.includes(inb.id));
-                }
-                if (db.settings?.inboundTierMode) {
-                    const isVipConf = !!(conf.isVip || conf.name?.includes('VIP'));
-                    const tierFiltered = tempServer.inbounds.filter(inb => {
-                        const t = inb.tier || 'both';
-                        return t === 'both' || (isVipConf ? t === 'vip' : t === 'normal');
-                    });
-                    if (tierFiltered.length > 0) tempServer.inbounds = tierFiltered;
-                }
-            }
-            const configs = generateAllConfigs(uuid, conf.name || "CypherNET💎", tempServer);
-            for (let i = 0; i < configs.length; i++) {
-                const safeConfig = configs[i].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                await ctx.telegram.sendMessage(chatId, `⚙️ <b>کانفیگ ${i + 1}:</b>\n👇 <i>برای کپی روی لینک کانفیگ ضربه بزنید:</i>\n<blockquote expandable><code>${safeConfig}</code></blockquote>`, { parse_mode: 'HTML' });
-            }
-        }
-    });
-
-    // --- تابع کمکی استخراج دیتای سرویس برای ویجت ---
-    async function getServiceWidgetData(conf, targetServer) {
-        const traffic = await getClientTraffic(conf.email, targetServer);
-        let status = '🔴 حذف شده', total = 'نامحدود', used = '0 GB', remain = 'نامحدود', days = 'نامحدود';
-        let isActive = false, pct = 0;
-
-        if (traffic) {
-            const totalGB = traffic.total / 1073741824;
-            const usedGB = (traffic.up + traffic.down) / 1073741824;
-            pct = traffic.total > 0 ? Math.min(100, Math.round((usedGB / totalGB) * 100)) : 5;
-
-            total = traffic.total === 0 ? 'نامحدود' : totalGB.toFixed(2) + ' GB';
-            used = usedGB.toFixed(2) + ' GB';
-            remain = traffic.total === 0 ? 'نامحدود' : Math.max(0, totalGB - usedGB).toFixed(2) + ' GB';
-
-            let exp = traffic.expiryTime;
-            if (exp > 0 && exp < 1e12) exp *= 1000;
-
-            if (exp > 0) {
-                const diffMs = exp - Date.now();
-                if (diffMs > 0) {
-                    const d = Math.floor(diffMs / 86400000);
-                    const h = Math.floor((diffMs % 86400000) / 3600000);
-                    days = `${d} روز و ${h} ساعت`;
-                } else {
-                    days = 'منقضی شده ❌';
-                }
-            }
-
-            const isVolEnd = traffic.total > 0 && usedGB >= totalGB;
-            const isTimeEnd = exp > 0 && exp < Date.now();
-            isActive = !isVolEnd && !isTimeEnd;
-            status = isActive ? '🟢 فعال' : '🔴 منقضی شده';
-        }
-
-        return {
-            isActive,
-            chatData: { uuid: conf.uuid, name: conf.name, status, total, used, remain, days, pct }
-        };
-    }
-
-    // --- هندلر نمایش جزئیات سرویس با ویجت ---
-    bot.action(/dash_detail_(.+)/, async (ctx) => {
-        const uuid = ctx.match[1];
-        await ctx.answerCbQuery('در حال دریافت اطلاعات...', { show_alert: false });
-        
-        const db = readDb();
-        const conf = (db.users[ctx.from.id] || []).find(c => c.uuid === uuid);
-        if (!conf) return ctx.editMessageText('❌ اکانت یافت نشد.');
-
-        const targetServer = getTargetServer(db, conf);
-        const { isActive, chatData } = await getServiceWidgetData(conf, targetServer);
-        const isTest = conf.name.includes('Test') || conf.name.includes('تست');
-        const orderIdText = conf.orderId ? conf.orderId : 'ندارد';
-
+        // چیدمان تمیز دکمه‌های شیشه‌ای استاندارد زیر کارت گرافیکی (تضمین کارکرد ۱۰۰٪)
         let buttons = [];
-        if (isActive) buttons.push([Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${conf.uuid}`)]);
-        if (!isTest) buttons.push([Markup.button.callback('🔄 تمدید سرویس', `init_renew_${conf.email}`)]);
-        buttons.push([Markup.button.callback('🔙 بازگشت', isActive ? 'dash_active' : 'dash_expired')]);
+        buttons.push([Markup.button.callback('🔄 بروزرسانی زنده وضعیت', `dash_detail_${conf.uuid}`)]);
+        
+        let actionRow = [];
+        if (isActive) actionRow.push(Markup.button.callback('📥 دریافت کانفیگ‌ها', `get_configs_${conf.uuid}`));
+        if (!isTest) actionRow.push(Markup.button.callback('⚡ تمدید سرویس', `init_renew_${conf.email}`));
+        if (actionRow.length > 0) buttons.push(actionRow);
+
+        buttons.push([Markup.button.callback('🔙 بازگشت به لیست سرویس‌ها', isActive ? 'dash_active' : 'dash_expired')]);
 
         try {
-            // ارسال ویجت گرافیکی و حذف پیام قبلی منو
             await ctx.telegram.callApi('sendWidget', {
                 chat_id: ctx.chat.id,
-                html: buildServiceWidgetHtml(),
-                allow_queries: true,
-                chat_data: JSON.stringify(chatData),
+                html: buildServiceWidgetHtml(chatData),
                 reply_markup: { inline_keyboard: buttons }
             });
             await ctx.deleteMessage().catch(() => {});
         } catch (err) {
-            // پشتیبان خودکار (Fallback): اگر تلگرام یا سرور از ویجت پشتیبانی نکرد، متن عادی بفرستد
-            const msg = `📝 <b>نام کانفیگ:</b> ${conf.name}\n👤 <b>شناسه کاربر:</b> <code>${ctx.from.id}</code>\n🧾 <b>شناسه خرید:</b> <code>${orderIdText}</code>\nوضعیت: ${chatData.status}\n\n🔸 <b>کل حجم:</b> ${chatData.total}\n🔹 <b>مصرف شده:</b> ${chatData.used}\n🟢 <b>باقی‌مانده:</b> ${chatData.remain}\n⏳ <b>زمان باقی‌مانده:</b> ${chatData.days}`;
-            await ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
-        }
-    });
-
-    // --- هندلر دکمه «بروزرسانی زنده» داخل خود ویجت ---
-    bot.on('widget_query', async (ctx) => {
-        const wq = ctx.update.widget_query;
-        if (!wq || !wq.data) return;
-
-        if (wq.data.startsWith('ref:')) {
-            const uuid = wq.data.split(':')[1];
-            const db = readDb();
-            const conf = (db.users[wq.from.id] || []).find(c => c.uuid === uuid);
-            if (!conf) {
-                return ctx.telegram.callApi('answerWidgetQuery', { widget_query_id: wq.id }).catch(() => {});
+            const msg = `📝 <b>نام کانفیگ:</b> ${conf.name}\n👤 <b>شناسه کاربر:</b> <code>${ctx.from.id}</code>\n🧾 <b>شناسه خرید:</b> <code>${chatData.orderId}</code>\nوضعیت: ${chatData.status}\n\n🔸 <b>کل حجم:</b> ${chatData.total}\n🔹 <b>مصرف شده:</b> ${chatData.used}\n🟢 <b>باقی‌مانده:</b> ${chatData.remain}\n⏳ <b>زمان باقی‌مانده:</b> ${chatData.days}`;
+            try {
+                await ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
+            } catch (e) {
+                await ctx.deleteMessage().catch(() => {});
+                await ctx.reply(msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
             }
-            const targetServer = getTargetServer(db, conf);
-            const { chatData } = await getServiceWidgetData(conf, targetServer);
-
-            await ctx.telegram.callApi('answerWidgetQuery', {
-                widget_query_id: wq.id,
-                chat_data: JSON.stringify(chatData)
-            }).catch(() => {});
         }
     });
+
+   
 
     bot.hears('🔄 تمدید سرویس', async (ctx) => {
         userSteps.delete(ctx.from.id);
