@@ -2,7 +2,7 @@ const { Markup } = require('telegraf');
 const { GROUP_ID, TOPIC_TEST, TOPIC_PAYMENT, TOPIC_ERROR, TOPIC_SUPPORT, ADMIN_IDS, IGNORE_FINANCE_IDS, userSteps, adminSteps } = require('./config');
 const { mainKeyboard, chatKeyboard, rulesKeyboard, getPlansKeyboard, receiptKeyboard, supportMenuKeyboard, getAdminKeyboard, adminVipMenu, adminUsersMenu, adminFinanceMenu, getAdminServersMenu, getAdminMarketingMenu, adminAccountingMenu, getServerManageMenu, getInboundsMenu, getSingleInboundMenu, getAdminPlansMenu, getSinglePlanMenu} = require('./keyboards');
 const { readDb, writeDb } = require('./db');
-const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap, adminModifyClient, deleteClientByEmailAndUuid } = require('./api');
+const { createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, testServerConnection, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap, adminModifyClient, deleteClientByEmailAndUuid, updateClientVolumeOnly, setClientEnable} = require('./api');
 const fs = require('fs');
 const path = require('path');
 
@@ -176,23 +176,64 @@ function setupHandlers(bot) {
     }
 
 
+    // --- تابع مشترک و سریع برای استخراج کاربران دارای اکانت فعال (۱ درخواست به ازای هر سرور) ---
+    async function getActiveUsersSnapshot(db) {
+        const now = Date.now();
+        const serverMaps = {};
+        for (const srv of (db.servers || [])) {
+            serverMaps[srv.id] = await getServerTrafficMap(srv);
+        }
+
+        const activeUserIds = new Set();
+        const activeByServer = {};
+
+        for (const [uid, configs] of Object.entries(db.users || {})) {
+            if (!Array.isArray(configs)) continue;
+            for (const conf of configs) {
+                if (!conf || conf.deletedFromPanel || conf.name === 'سرویس قبلی' || conf.email?.startsWith('Test_') || conf.name?.includes('تست')) {
+                    continue;
+                }
+                const targetServer = getTargetServer(db, conf);
+                if (!targetServer) continue;
+
+                const t = serverMaps[targetServer.id]?.[conf.email];
+                if (!t) continue;
+
+                let exp = t.expiryTime || 0;
+                if (exp > 0 && exp < 1e12) exp *= 1000;
+                const used = (t.up || 0) + (t.down || 0);
+
+                const isTimeExpired = exp > 0 && exp <= now;
+                const isVolExpired = t.total > 0 && used >= t.total;
+                const isDisabled = t.enable === false;
+
+                if (!isTimeExpired && !isVolExpired && !isDisabled) {
+                    activeUserIds.add(String(uid));
+                    if (!activeByServer[targetServer.id]) activeByServer[targetServer.id] = new Set();
+                    activeByServer[targetServer.id].add(String(uid));
+                }
+            }
+        }
+        return { activeUserIds, activeByServer };
+    }
+
+    // --- ۱. پیام همگانی با فیلتر نوع کاربر و وضعیت اکانت ---
     bot.action('admin_broadcast', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
         const db = readDb();
         const servers = db.servers || [];
         
         let buttons = [
-            [Markup.button.callback('👤 کاربران عادی', 'broadcast_target_normal'), Markup.button.callback('👑 کاربران VIP', 'broadcast_target_vip')],
-            [Markup.button.callback('🌐 همه کاربران', 'broadcast_target_all')]
+            [Markup.button.callback('👤 کاربران عادی', 'bc_scope_normal'), Markup.button.callback('👑 کاربران VIP', 'bc_scope_vip')],
+            [Markup.button.callback('🌐 همه کاربران (کلی)', 'bc_scope_all')]
         ];
 
-        // اگر سروری ثبت شده بود دکمه تفکیک سرور را نشان بده
         if (servers.length > 0) {
             buttons.push([Markup.button.callback('🖥 تفکیک بر اساس سرور', 'broadcast_select_server')]);
         }
         buttons.push([Markup.button.callback('❌ لغو ارسال', 'cancel_broadcast')]);
 
-        ctx.editMessageText('📢 لطفاً گروه هدف برای ارسال پیام را انتخاب کنید:', { 
+        ctx.editMessageText('📢 <b>گام ۱: انتخاب گروه هدف</b>\nلطفاً دسته مخاطبان پیام همگانی را انتخاب کنید:', { 
             parse_mode: 'HTML',
             reply_markup: { inline_keyboard: buttons }
         });
@@ -204,33 +245,107 @@ function setupHandlers(bot) {
         const db = readDb();
         const servers = db.servers || [];
         
-        let buttons = servers.map(s => [Markup.button.callback(`🖥 ${s.name}`, `broadcast_srv_${s.id}`)]);
+        let buttons = servers.map(s => [Markup.button.callback(`🖥 ${s.name}`, `bc_scope_srv_${s.id}`)]);
         buttons.push([Markup.button.callback('🔙 بازگشت', 'admin_broadcast')]);
 
-        ctx.editMessageText('🖥 <b>انتخاب سرور مقصد</b>\nپیام شما فقط به کاربرانی ارسال می‌شود که حداقل یک اکانت روی این سرور دارند:', {
+        ctx.editMessageText('🖥 <b>انتخاب سرور مقصد:</b>', {
             parse_mode: 'HTML',
             reply_markup: { inline_keyboard: buttons }
         });
+        ctx.answerCbQuery();
     });
 
-    bot.action(/broadcast_srv_(.+)/, (ctx) => {
+    bot.action(/^bc_scope_(all|vip|normal|srv_.+)$/, (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
-        const serverId = ctx.match[1];
+        const scope = ctx.match[1];
         const db = readDb();
-        const server = (db.servers || []).find(s => s.id === serverId);
-        const serverName = server ? server.name : 'انتخابی';
 
-        adminSteps.set(ctx.from.id, { step: 'WAITING_BROADCAST_MESSAGE', target: 'server', serverId: serverId });
-        
-        ctx.editMessageText(`📢 لطفاً پیام خود را برای کاربران سرور <b>${serverName}</b> بفرستید.\n\n(پشتیبانی از متن، عکس، ویدیو و کپشن)`, { 
-            parse_mode: 'HTML',
-            reply_markup: {
-                inline_keyboard: [
-                    [Markup.button.callback('❌ لغو ارسال', 'cancel_broadcast')]
-                ]
+        let scopeLabel = 'همه کاربران (کلی)';
+        if (scope === 'vip') scopeLabel = 'کاربران VIP';
+        else if (scope === 'normal') scopeLabel = 'کاربران عادی';
+        else if (scope.startsWith('srv_')) {
+            const srv = (db.servers || []).find(s => s.id === scope);
+            scopeLabel = `سرور ${srv ? srv.name : scope}`;
+        }
+
+        ctx.editMessageText(
+            `📢 <b>گام ۲: فیلتر وضعیت اکانت</b>\n🎯 گروه انتخابی: <b>${scopeLabel}</b>\n\nپیام برای کدام افراد این دسته ارسال شود؟`,
+            {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [
+                        [Markup.button.callback('🟢 فقط دارای اکانت فعال', `bc_run_active_${scope}`)],
+                        [Markup.button.callback('👥 همه کاربران این دسته (فعال و غیرفعال)', `bc_run_all_${scope}`)],
+                        [Markup.button.callback('🔙 بازگشت', 'admin_broadcast')]
+                    ]
+                }
             }
-        });
+        );
         ctx.answerCbQuery();
+    });
+
+    bot.action(/^bc_run_(active|all)_(.+)$/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const statusMode = ctx.match[1]; // active | all
+        const scope = ctx.match[2];      // all | vip | normal | srv_xxx
+
+        await ctx.answerCbQuery('⏳ در حال محاسبه تعداد گیرندگان...');
+        const db = readDb();
+        const vipSet = new Set((db.vipUsers || []).map(String));
+
+        const allUsersSet = new Set();
+        Object.keys(db.users || {}).forEach(uid => { if (!uid.startsWith('sim_')) allUsersSet.add(String(uid)); });
+        Object.keys(db.userStats || {}).forEach(uid => { if (!uid.startsWith('sim_')) allUsersSet.add(String(uid)); });
+        vipSet.forEach(uid => allUsersSet.add(uid));
+
+        let recipients = Array.from(allUsersSet);
+
+        if (scope === 'vip') {
+            recipients = recipients.filter(uid => vipSet.has(uid));
+        } else if (scope === 'normal') {
+            recipients = recipients.filter(uid => !vipSet.has(uid));
+        } else if (scope.startsWith('srv_')) {
+            recipients = recipients.filter(uid => {
+                const userConfigs = db.users[uid] || [];
+                return userConfigs.some(conf => {
+                    const srv = getTargetServer(db, conf);
+                    return srv && srv.id === scope;
+                });
+            });
+        }
+
+        if (statusMode === 'active') {
+            const { activeUserIds, activeByServer } = await getActiveUsersSnapshot(db);
+            if (scope.startsWith('srv_')) {
+                const srvActive = activeByServer[scope] || new Set();
+                recipients = recipients.filter(uid => srvActive.has(uid));
+            } else {
+                recipients = recipients.filter(uid => activeUserIds.has(uid));
+            }
+        }
+
+        if (recipients.length === 0) {
+            return ctx.editMessageText('⚠️ هیچ کاربری با این فیلتر یافت نشد.', {
+                reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'admin_broadcast')]] }
+            });
+        }
+
+        let scopeLabel = scope === 'vip' ? 'کاربران VIP' : scope === 'normal' ? 'کاربران عادی' : scope === 'all' ? 'همه کاربران' : `سرور ${(db.servers || []).find(s => s.id === scope)?.name || scope}`;
+        let modeLabel = statusMode === 'active' ? 'فقط اکانت‌های فعال 🟢' : 'همه اعضای دسته 👥';
+
+        adminSteps.set(ctx.from.id, { step: 'WAITING_BROADCAST_MESSAGE', recipients });
+
+        ctx.editMessageText(
+            `📢 <b>آماده ارسال پیام همگانی</b>\n\n` +
+            `🎯 گروه: <b>${scopeLabel}</b>\n` +
+            `🔎 فیلتر: <b>${modeLabel}</b>\n` +
+            `👥 تعداد گیرندگان دقیق: <b>${recipients.length} نفر</b>\n\n` +
+            `لطفاً پیام خود را ارسال کنید (متن، عکس، ویدیو یا فایل):`,
+            {
+                parse_mode: 'HTML',
+                reply_markup: { inline_keyboard: [[Markup.button.callback('❌ لغو ارسال', 'cancel_broadcast')]] }
+            }
+        );
     });
 
     bot.action('cancel_broadcast', (ctx) => {
@@ -240,29 +355,65 @@ function setupHandlers(bot) {
         ctx.answerCbQuery();
     });
 
-    bot.action(/broadcast_target_(.*)/, (ctx) => {
+    // --- ۲. لیست اعضای VIP و عادی همراه با آمار اکانت‌های فعال ---
+    bot.action('admin_members_list', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
-        const target = ctx.match[1];
-        adminSteps.set(ctx.from.id, { step: 'WAITING_BROADCAST_MESSAGE', target: target });
-        
-        let targetName = target === 'vip' ? 'کاربران VIP' : target === 'normal' ? 'کاربران عادی' : 'همه کاربران';
-        
-        ctx.editMessageText(`📢 لطفاً پیام خود را برای <b>${targetName}</b> بفرستید.\n\n(پشتیبانی از متن، عکس، ویدیو و کپشن)`, { 
+        ctx.editMessageText('📋 <b>لیست کاربران ربات</b>\nکدام دسته را می‌خواهید مشاهده کنید؟', {
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
-                    [Markup.button.callback('❌ لغو ارسال', 'cancel_broadcast')]
+                    [Markup.button.callback('👑 اعضای VIP', 'members_list_vip'), Markup.button.callback('👤 اعضای عادی', 'members_list_normal')],
+                    [Markup.button.callback('🔙 بازگشت', 'admin_marketing_menu')]
                 ]
             }
         });
         ctx.answerCbQuery();
     });
 
-    bot.action('cancel_broadcast', (ctx) => {
+    bot.action(/^members_list_(vip|normal)$/, async (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
-        adminSteps.delete(ctx.from.id);
-        ctx.editMessageText('❌ عملیات ارسال همگانی لغو شد.');
-        ctx.answerCbQuery();
+        const type = ctx.match[1];
+        await ctx.answerCbQuery('⏳ در حال استعلام اکانت‌های فعال از سرور...');
+
+        const db = readDb();
+        const vipSet = new Set((db.vipUsers || []).map(String));
+        const allUsersSet = new Set();
+        Object.keys(db.users || {}).forEach(uid => { if (!uid.startsWith('sim_')) allUsersSet.add(String(uid)); });
+        Object.keys(db.userStats || {}).forEach(uid => { if (!uid.startsWith('sim_')) allUsersSet.add(String(uid)); });
+        vipSet.forEach(uid => allUsersSet.add(uid));
+
+        const list = Array.from(allUsersSet).filter(uid => type === 'vip' ? vipSet.has(uid) : !vipSet.has(uid));
+        const { activeUserIds } = await getActiveUsersSnapshot(db);
+
+        const activeList = list.filter(uid => activeUserIds.has(uid));
+        const inactiveList = list.filter(uid => !activeUserIds.has(uid));
+        const sortedList = [...activeList, ...inactiveList];
+
+        const title = type === 'vip' ? '👑 لیست اعضای VIP' : '👤 لیست کاربران عادی';
+        const header = `${title}\n\n` +
+                       `👥 کل اعضای این دسته: <b>${list.length}</b> نفر\n` +
+                       `🟢 دارای اکانت فعال: <b>${activeList.length}</b> نفر\n` +
+                       `⚪️ بدون اکانت فعال: <b>${inactiveList.length}</b> نفر\n\n`;
+
+        const lines = sortedList.map(uid => `${activeUserIds.has(uid) ? '🟢' : '⚪️'} <code>${uid}</code>`);
+        const fullText = header + (lines.length ? lines.join('\n') : 'موردی یافت نشد.');
+
+        const backKb = { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'admin_members_list')]] };
+
+        if (fullText.length <= 3900) {
+            await ctx.editMessageText(fullText, { parse_mode: 'HTML', reply_markup: backKb }).catch(() => {});
+        } else {
+            await ctx.editMessageText(
+                header + `📎 به دلیل تعداد بالای کاربران، لیست کامل شناسه‌ها در فایل متنی زیر ارسال شد.`,
+                { parse_mode: 'HTML', reply_markup: backKb }
+            ).catch(() => {});
+
+            const fileContent = sortedList.map(uid => `${uid} | ${activeUserIds.has(uid) ? 'ACTIVE' : 'INACTIVE'}`).join('\n');
+            await ctx.replyWithDocument({
+                source: Buffer.from(fileContent, 'utf8'),
+                filename: `${type}_members_${Date.now()}.txt`
+            });
+        }
     });
 
     bot.on('message', async (ctx, next) => {
@@ -275,33 +426,7 @@ function setupHandlers(bot) {
                 return ctx.reply('ارسال همگانی لغو شد.');
             }
             
-            const db = readDb();
-            const allUsers = new Set();
-            Object.keys(db.users || {}).forEach(uid => allUsers.add(uid));
-            Object.keys(db.userStats || {}).forEach(uid => allUsers.add(uid));
-            
-            // --- تغییرات مربوط به جداسازی کاربران ---
-            const target = adminState.target || 'all';
-            const vipUsers = db.vipUsers || [];
-            
-            let usersArray = Array.from(allUsers);
-            if (target === 'vip') {
-                usersArray = usersArray.filter(uid => vipUsers.includes(uid));
-            } else if (target === 'normal') {
-                usersArray = usersArray.filter(uid => !vipUsers.includes(uid));
-            } else if (target === 'server') {
-                const targetServerId = adminState.serverId;
-                usersArray = usersArray.filter(uid => {
-                    const userConfigs = db.users[uid] || [];
-                    return userConfigs.some(conf => {
-                        let cSrvId = conf.serverId;
-                        // اگر سرور در کانفیگ ثبت نشده بود، از سرور پیش‌فرض استفاده می‌کنیم
-                        if (!cSrvId) cSrvId = conf.isVip ? db.settings.activeVipServerId : db.settings.activeServerId;
-                        return cSrvId === targetServerId;
-                    });
-                });
-            }
-            // ----------------------------------------
+            const usersArray = adminState.recipients || [];
             
             ctx.reply(`⏳ در حال ارسال پیام به ${usersArray.length} کاربر...\nلطفاً صبور باشید.`);
             adminSteps.delete(ctx.from.id);
@@ -766,10 +891,13 @@ function setupHandlers(bot) {
 
         let statusStr = '🟢 فعال';
         let totalStr = 'نامحدود', usedStr = '0 GB', remainStr = 'نامحدود', daysStr = 'نامحدود';
+        let isEnabledInPanel = false;
+        let isActiveAccount = false;
 
         if (!traffic) {
             statusStr = '🔴 موجود نیست (حذف شده از پنل)';
         } else {
+            isEnabledInPanel = traffic.enable !== false;
             const totalGB = traffic.total / 1073741824;
             const usedGB = (traffic.up + traffic.down) / 1073741824;
             const remainGB = Math.max(0, totalGB - usedGB);
@@ -794,10 +922,15 @@ function setupHandlers(bot) {
 
             const volDone = traffic.total > 0 && usedGB >= totalGB;
             const timeDone = exp > 0 && exp <= Date.now();
-            if (volDone || timeDone) {
+
+            if (!isEnabledInPanel) {
+                statusStr = '⏸ غیرفعال در پنل';
+            } else if (volDone || timeDone) {
                 statusStr = conf.exhaustedAt
                     ? `🟠 منقضی (در صف حذف ۴۸ ساعته)`
                     : `🔴 منقضی شده`;
+            } else {
+                isActiveAccount = true;
             }
         }
 
@@ -816,11 +949,27 @@ function setupHandlers(bot) {
             [
                 Markup.button.callback('🔋 افزودن/کسر حجم (GB)', `usr_mod_gb_${targetId}_${confIdx}`),
                 Markup.button.callback('⏳ افزودن/کسر زمان (روز)', `usr_mod_days_${targetId}_${confIdx}`)
-            ],
-            [Markup.button.callback('🗑 حذف کامل این اکانت از سرور', `usr_del_ask_${targetId}_${confIdx}`)],
-            [Markup.button.callback('🔄 بروزرسانی اطلاعات', `usr_svc_${targetId}_${confIdx}`)],
-            [Markup.button.callback('🔙 بازگشت به پرونده کاربر', `usr_back_${targetId}`)]
+            ]
         ];
+
+        if (traffic) {
+            buttons.push([
+                Markup.button.callback(
+                    isEnabledInPanel ? '⏸ غیرفعال‌سازی در پنل' : '▶️ فعال‌سازی در پنل',
+                    `usr_toggle_${targetId}_${confIdx}`
+                )
+            ]);
+        }
+
+        if (isActiveAccount) {
+            buttons.push([
+                Markup.button.callback('📤 ارسال کانفیگ برای کاربر', `usr_sendcfg_ask_${targetId}_${confIdx}`)
+            ]);
+        }
+
+        buttons.push([Markup.button.callback('🗑 حذف کامل این اکانت از سرور', `usr_del_ask_${targetId}_${confIdx}`)]);
+        buttons.push([Markup.button.callback('🔄 بروزرسانی اطلاعات', `usr_svc_${targetId}_${confIdx}`)]);
+        buttons.push([Markup.button.callback('🔙 بازگشت به پرونده کاربر', `usr_back_${targetId}`)]);
 
         const extra = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
         if (isEdit && ctx.callbackQuery) await ctx.editMessageText(text, extra).catch(() => {});
@@ -884,6 +1033,139 @@ function setupHandlers(bot) {
         writeDb(db);
 
         await renderAdminSingleService(ctx, targetId, confIdx, true);
+    });
+
+    // --- تغییر وضعیت فعال/غیرفعال کلاینت در پنل ---
+    bot.action(/^usr_toggle_(\d+)_(\d+)$/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const targetId = ctx.match[1];
+        const confIdx = parseInt(ctx.match[2], 10);
+        const db = readDb();
+        const conf = db.users?.[targetId]?.[confIdx];
+        if (!conf) return ctx.answerCbQuery('❌ سرویس یافت نشد.', { show_alert: true });
+
+        const targetServer = getTargetServer(db, conf);
+        if (!targetServer) return ctx.answerCbQuery('❌ سرور یافت نشد.', { show_alert: true });
+
+        const traffic = await getClientTraffic(conf.email, targetServer);
+        if (!traffic) return ctx.answerCbQuery('❌ کلاینت در پنل موجود نیست.', { show_alert: true });
+
+        const nextEnable = traffic.enable === false;
+        const res = await setClientEnable(conf.email, conf.uuid, nextEnable, targetServer);
+        if (!res.success) {
+            return ctx.answerCbQuery(`❌ خطا: ${res.msg}`, { show_alert: true });
+        }
+
+        await ctx.answerCbQuery(nextEnable ? '▶️ اکانت در پنل فعال شد.' : '⏸ اکانت در پنل غیرفعال شد.');
+        await renderAdminSingleService(ctx, targetId, confIdx, true);
+    });
+
+    // --- گام ۱: درخواست تایید برای ارسال کانفیگ به کاربر ---
+    bot.action(/^usr_sendcfg_ask_(\d+)_(\d+)$/, (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const targetId = ctx.match[1];
+        const confIdx = parseInt(ctx.match[2], 10);
+        const db = readDb();
+        const conf = db.users?.[targetId]?.[confIdx];
+        if (!conf) return ctx.answerCbQuery('❌ سرویس یافت نشد.', { show_alert: true });
+
+        ctx.editMessageText(
+            `📤 <b>تایید ارسال کانفیگ برای کاربر</b>\n\n` +
+            `👤 شناسه کاربر: <code>${targetId}</code>\n` +
+            `🏷 نام سرویس: <b>${conf.name}</b>\n\n` +
+            `آیا مطمئن هستید که کانفیگ‌های این حساب فعال برای کاربر ارسال شود؟`,
+            {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [
+                        [Markup.button.callback('✅ بله، ارسال شود', `usr_sendcfg_exec_${targetId}_${confIdx}`)],
+                        [Markup.button.callback('🔙 انصراف', `usr_svc_${targetId}_${confIdx}`)]
+                    ]
+                }
+            }
+        ).catch(() => {});
+        ctx.answerCbQuery();
+    });
+
+    // --- گام ۲: ارسال واقعی کانفیگ‌های سرویس فعال به چت کاربر ---
+    bot.action(/^usr_sendcfg_exec_(\d+)_(\d+)$/, async (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const targetId = ctx.match[1];
+        const confIdx = parseInt(ctx.match[2], 10);
+        const db = readDb();
+        const conf = db.users?.[targetId]?.[confIdx];
+        if (!conf) return ctx.answerCbQuery('❌ سرویس یافت نشد.', { show_alert: true });
+
+        const targetServer = getTargetServer(db, conf);
+        if (!targetServer) return ctx.answerCbQuery('❌ سرور یافت نشد.', { show_alert: true });
+
+        await ctx.answerCbQuery('⏳ در حال ارسال کانفیگ‌ها برای کاربر...');
+
+        const traffic = await getClientTraffic(conf.email, targetServer);
+        let exp = traffic?.expiryTime || 0;
+        if (exp > 0 && exp < 1e12) exp *= 1000;
+        const used = traffic ? (traffic.up || 0) + (traffic.down || 0) : 0;
+        const isActive = traffic && traffic.enable !== false && !(traffic.total > 0 && used >= traffic.total) && !(exp > 0 && exp <= Date.now());
+
+        if (!isActive) {
+            return ctx.editMessageText('❌ این حساب در حال حاضر فعال نیست و امکان ارسال کانفیگ وجود ندارد.', {
+                reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت به سرویس', `usr_svc_${targetId}_${confIdx}`)]] }
+            }).catch(() => {});
+        }
+
+        const activeInboundIds = await getClientActiveInboundIds(conf.email, targetServer);
+        let tempServer = JSON.parse(JSON.stringify(targetServer));
+        if (tempServer.inbounds) {
+            if (activeInboundIds && activeInboundIds.length > 0) {
+                tempServer.inbounds = tempServer.inbounds.filter(inb => activeInboundIds.includes(inb.id));
+            }
+            if (db.settings?.inboundTierMode) {
+                const isVipConf = !!(conf.isVip || conf.name?.includes('VIP'));
+                const tierFiltered = tempServer.inbounds.filter(inb => {
+                    const t = inb.tier || 'both';
+                    return t === 'both' || (isVipConf ? t === 'vip' : t === 'normal');
+                });
+                if (tierFiltered.length > 0) tempServer.inbounds = tierFiltered;
+            }
+        }
+
+        const configs = generateAllConfigs(conf.uuid, conf.name || 'CypherNET💎', tempServer);
+        if (!configs || configs.length === 0) {
+            return ctx.editMessageText('❌ هیچ کانفیگ فعالی برای این سرویس تولید نشد.', {
+                reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت به سرویس', `usr_svc_${targetId}_${confIdx}`)]] }
+            }).catch(() => {});
+        }
+
+        try {
+            await ctx.telegram.sendMessage(
+                targetId,
+                `📥 <b>کانفیگ‌های سرویس «${conf.name}» توسط پشتیبانی برای شما ارسال شد:</b>`,
+                { parse_mode: 'HTML' }
+            );
+            for (let i = 0; i < configs.length; i++) {
+                const safeConfig = configs[i].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                await ctx.telegram.sendMessage(
+                    targetId,
+                    `⚙️ <b>کانفیگ ${i + 1}:</b>\n👇 <i>برای کپی روی لینک کانفیگ ضربه بزنید:</i>\n<blockquote expandable><code>${safeConfig}</code></blockquote>`,
+                    { parse_mode: 'HTML' }
+                );
+            }
+            await ctx.editMessageText(
+                `✅ تعداد <b>${configs.length} کانفیگ</b> برای سرویس <b>${conf.name}</b> با موفقیت به کاربر <code>${targetId}</code> ارسال شد.`,
+                {
+                    parse_mode: 'HTML',
+                    reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت به سرویس', `usr_svc_${targetId}_${confIdx}`)]] }
+                }
+            ).catch(() => {});
+        } catch (err) {
+            await ctx.editMessageText(
+                `❌ ارسال ناموفق بود (احتمالاً کاربر <code>${targetId}</code> ربات را مسدود کرده است).`,
+                {
+                    parse_mode: 'HTML',
+                    reply_markup: { inline_keyboard: [[Markup.button.callback('🔙 بازگشت به سرویس', `usr_svc_${targetId}_${confIdx}`)]] }
+                }
+            ).catch(() => {});
+        }
     });
 
     bot.action('admin_servers_menu', (ctx) => {
@@ -2160,7 +2442,21 @@ bot.action(/^toggle_special_ws_(.+)_(\d+)$/, async (ctx) => {
         ctx.answerCbQuery();
     });
 
-
+    // -- درخواست حجم جدید برای بسته VIP --
+    bot.action('edit_vip_gb', (ctx) => {
+        if (!isUserAdmin(ctx.from.id.toString())) return;
+        const db = readDb();
+        const currentGb = db.settings?.vipGb || 100;
+        adminSteps.set(ctx.from.id, { step: 'EDIT_VIP_GB' });
+        ctx.reply(
+            `👑 <b>ویرایش حجم بسته VIP</b>\n\n` +
+            `📦 حجم فعلی: <b>${currentGb} گیگابایت</b>\n\n` +
+            `لطفاً حجم جدید را به عدد (گیگابایت) ارسال کنید (مثلاً <code>150</code>):\n` +
+            `<i>⚠️ پس از ثبت، اختلاف حجم به صورت خودکار فقط روی اکانت‌های VIP فعال (بدون تغییر مصرف و زمان) اعمال می‌شود.</i>`,
+            { parse_mode: 'HTML' }
+        );
+        ctx.answerCbQuery();
+    });
 
     bot.action('reset_finance', (ctx) => {
         if (!isUserAdmin(ctx.from.id.toString())) return;
@@ -2829,7 +3125,8 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
         let buttons = [];
         
         if (isThisConfigVip) {
-            buttons.push([Markup.button.callback('👑 VIP: 100G - 1 ماهه (قیمت 1$)', 'renew_plan_vip')]);
+            const vipGb = db.settings?.vipGb || 100;
+            buttons.push([Markup.button.callback(`👑 VIP: ${vipGb}G - 1 ماهه (قیمت 1$)`, 'renew_plan_vip')]);
         } else {
             let availablePlans = plans.filter(p => p.showInRenew !== false);
             availablePlans.sort((a, b) => (a.order || 99) - (b.order || 99));
@@ -2965,7 +3262,8 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
             if (!isVip) return ctx.answerCbQuery('❌ فقط اعضای VIP می‌توانند این پلن را انتخاب کنند.', { show_alert: true });
             
             vipPrice = await getUsdtRate();
-            planName = '100G  VIP - یک ماهه';
+            const vipGb = db.settings?.vipGb || 100;
+            planName = `${vipGb}G VIP - یک ماهه`;
             
             if (vipPrice) {
                 priceStr = vipPrice.toString();
@@ -3261,7 +3559,8 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
         const hasAnyVipConfig = (db.users[userId] || []).some(c => c.isVip);
 
         if (isVipUser && !hasAnyVipConfig) {
-            buttons.unshift([Markup.button.callback('👑 100 گیگ VIP - یک ماهه (1$)', 'plan_vip')]);
+            const vipGb = db.settings?.vipGb || 100;
+            buttons.unshift([Markup.button.callback(`👑 ${vipGb} گیگ VIP - یک ماهه (1$)`, 'plan_vip')]);
         }
         
         // نمایش دکمه بسته دلخواه فقط در صورت فعال بودن در تنظیمات
@@ -3304,11 +3603,12 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
             if (usdtRate && usdtRate > 0) vipPrice = usdtRate;
         } catch (e) {}
         
+        const vipGb = db.settings?.vipGb || 100;
         const orderId = generateOrderId();
         userSteps.set(ctx.from.id, { 
             step: 'WAITING_NAME', 
             planId: 'vip', 
-            planName: '100 گیگ VIP - یک ماهه',
+            planName: `${vipGb} گیگ VIP - یک ماهه`,
             price: vipPrice.toString(),
             vipPrice: vipPrice,
             orderId, 
@@ -3316,7 +3616,7 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
         });
         
         ctx.editMessageText(
-            `👑 <b>پلن VIP</b>\n\n📦 حجم: 100 گیگابایت\n⏰ مدت: 30 روز\n💰 قیمت: <code>${vipPrice.toLocaleString('en-US')}</code> تومان (1$)\n🧾 شماره سفارش: <code>${orderId}</code>\n\nیک اسم دلخواه برای این کانفیگ بنویس:`,
+            `👑 <b>پلن VIP</b>\n\n📦 حجم: ${vipGb} گیگابایت\n⏰ مدت: 30 روز\n💰 قیمت: <code>${vipPrice.toLocaleString('en-US')}</code> تومان (1$)\n🧾 شماره سفارش: <code>${orderId}</code>\n\nیک اسم دلخواه برای این کانفیگ بنویس:`,
             { 
                 parse_mode: 'HTML', 
                 reply_markup: { 
@@ -5018,6 +5318,108 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
                 return;
             }
 
+            if (adminState.step === 'EDIT_VIP_GB') {
+                const newGb = parseInt(input, 10);
+                if (isNaN(newGb) || newGb <= 0) {
+                    return ctx.reply('❌ لطفاً یک عدد معتبر بزرگ‌تر از صفر وارد کنید.');
+                }
+
+                const db = readDb();
+                const oldGb = db.settings?.vipGb || 100;
+                const deltaGB = newGb - oldGb;
+
+                db.settings.vipGb = newGb;
+                writeDb(db);
+                adminSteps.delete(ctx.from.id);
+
+                if (deltaGB === 0) {
+                    return ctx.reply(`ℹ️ حجم بسته VIP از قبل روی ${newGb} گیگابایت تنظیم بود.`);
+                }
+
+                await ctx.reply(
+                    `✅ حجم بسته VIP از <b>${oldGb} GB</b> به <b>${newGb} GB</b> تغییر یافت.\n` +
+                    `⏳ در حال اعمال تغییر (<b>${deltaGB > 0 ? '+' : ''}${deltaGB} GB</b>) روی اکانت‌های VIP فعال در پس‌زمینه...`,
+                    { parse_mode: 'HTML' }
+                );
+
+                (async () => {
+                    const snapDb = readDb();
+                    const vipUserIds = (snapDb.vipUsers || []).map(String);
+                    let updatedCount = 0;
+                    let skippedInactive = 0;
+                    let failCount = 0;
+
+                    for (const uid of vipUserIds) {
+                        const configs = snapDb.users?.[uid] || [];
+                        for (const conf of configs) {
+                            if (!conf.isVip || conf.deletedFromPanel || conf.name === 'سرویس قبلی' || conf.email.startsWith('Test_')) {
+                                continue;
+                            }
+
+                            const targetServer = getTargetServer(snapDb, conf);
+                            if (!targetServer) continue;
+
+                            try {
+                                const traffic = await getClientTraffic(conf.email, targetServer);
+                                if (!traffic) {
+                                    skippedInactive++;
+                                    continue;
+                                }
+
+                                let exp = traffic.expiryTime || 0;
+                                if (exp > 0 && exp < 1e12) exp *= 1000;
+
+                                const used = (traffic.up || 0) + (traffic.down || 0);
+                                const isTimeExpired = exp > 0 && exp <= Date.now();
+                                const isVolExpired = traffic.total > 0 && used >= traffic.total;
+                                const isDisabled = traffic.enable === false;
+
+                                // شرط قطعی: فقط اکانت‌های فعال
+                                if (isTimeExpired || isVolExpired || isDisabled || traffic.total <= 0) {
+                                    skippedInactive++;
+                                    continue;
+                                }
+
+                                const res = await updateClientVolumeOnly(conf.email, conf.uuid, deltaGB, targetServer);
+                                if (res.success) {
+                                    updatedCount++;
+                                    const freshDb = readDb();
+                                    const freshConf = (freshDb.users?.[uid] || []).find(c => c.email === conf.email);
+                                    if (freshConf) {
+                                        if (!freshConf.panelStats) {
+                                            freshConf.panelStats = { total: res.newTotal, used, expiry: exp, email: conf.email };
+                                        } else {
+                                            freshConf.panelStats.total = res.newTotal;
+                                        }
+                                        if (deltaGB > 0 && freshConf.notified) {
+                                            freshConf.notified.gb85 = false;
+                                            freshConf.notified.gb1 = false;
+                                        }
+                                        writeDb(freshDb);
+                                    }
+                                } else {
+                                    failCount++;
+                                }
+                            } catch (err) {
+                                failCount++;
+                            }
+                            await new Promise(r => setTimeout(r, 150));
+                        }
+                    }
+
+                    await ctx.telegram.sendMessage(
+                        ctx.from.id,
+                        `✅ <b>بروزرسانی حجم اعضای VIP فعال تکمیل شد.</b>\n\n` +
+                        `📦 حجم جدید پلن VIP: <b>${newGb} GB</b>\n` +
+                        `🟢 اکانت‌های فعال آپدیت‌شده: <b>${updatedCount}</b>\n` +
+                        `⚪️ اکانت‌های غیرفعال/منقضی (رد شده): <b>${skippedInactive}</b>\n` +
+                        `🔴 ناموفق: <b>${failCount}</b>`,
+                        { parse_mode: 'HTML' }
+                    );
+                })();
+                return;
+            }
+
             // --- ویزارد افزودن پکیج جدید گام‌به‌گام ---
             if (adminState.step === 'WIZ_PLAN_NAME') {
                 adminSteps.set(ctx.from.id, { ...adminState, step: 'WIZ_PLAN_GB', name: input });
@@ -5146,7 +5548,8 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
                 const plans = db.settings.plans || [];
                 
                 let buttons = plans.map(p => [Markup.button.callback(`📦 ${p.name}`, `manual_p_${p.id}`)]);
-                buttons.push([Markup.button.callback('👑 100 گیگ VIP (1 ماهه)', 'manual_p_vip')]);
+                const vipGb = db.settings?.vipGb || 100;
+                buttons.push([Markup.button.callback(`👑 ${vipGb} گیگ VIP (1 ماهه)`, 'manual_p_vip')]);
                 
                 return ctx.reply('📦 حالا پلن را انتخاب کنید:', { 
                     reply_markup: { inline_keyboard: buttons } 
@@ -5166,7 +5569,7 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
                 let planPrice = 0; 
                 
                 if (planId === 'vip') {
-                    totalGB = 100;
+                    totalGB = db.settings?.vipGb || 100;
                     expiryDays = 30;
                     isVip = true;
                     try {
@@ -5568,7 +5971,7 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
 
         let totalGB, expiryDays, isCustom = false;
         if (planId === 'vip') { 
-            totalGB = 100; 
+            totalGB = db.settings?.vipGb || 100; 
             expiryDays = 30; 
         } else if (planId.startsWith('custom_')) {
             // استخراج حجم و روز از آیدی پکیج دلخواه
@@ -5695,7 +6098,7 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
 
         let totalGB, expiryDays, isCustom = false;
         if (planId === 'vip') { 
-            totalGB = 100; 
+            totalGB = db.settings?.vipGb || 100; 
             expiryDays = 30; 
         } else if (planId.startsWith('custom_')) {
             isCustom = true;
@@ -5761,7 +6164,7 @@ body{padding:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe 
             }
         }
 
-        const finalGB = planId === 'vip' ? 100 : totalGB + remainGB;
+        const finalGB = planId === 'vip' ? totalGB : totalGB + remainGB;
 
         let finalDays;
         if (planId === 'vip') {

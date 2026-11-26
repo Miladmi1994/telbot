@@ -31,7 +31,8 @@ const getPlansKeyboard = (userId, db) => {
         const alreadyHasVip = userConfigs.some(c => c.isVip);
         
         if (!alreadyHasVip) {
-            buttons.push([Markup.button.callback('👑 100 گیگ VIP - 1 ماهه', 'plan_vip')]); 
+            const vipGb = db.settings?.vipGb || 100;
+            buttons.push([Markup.button.callback(`👑 ${vipGb} گیگ VIP - 1 ماهه`, 'plan_vip')]); 
         }
     }
 
@@ -74,6 +75,7 @@ const getAdminMarketingMenu = (db) => {
     
     return Markup.inlineKeyboard([
         [Markup.button.callback('👥 آمار کاربران', 'marketing_users'), Markup.button.callback('📈 آمار فروش', 'marketing_sales')],
+        [Markup.button.callback('📋 لیست اعضای VIP و عادی', 'admin_members_list')],
         [Markup.button.callback('🏆 برترین معرف‌ها (لیدربورد)', 'marketing_leaderboard')],
         [Markup.button.callback('🔍 جستجوی پیشرفته کاربر', 'marketing_search')],
         [Markup.button.callback('📢 ارسال پیام همگانی', 'admin_broadcast')],
@@ -175,9 +177,11 @@ const adminVipMenu = Markup.inlineKeyboard([
 const getAdminPlansMenu = (db) => {
     const plans = db.settings?.plans || [];
     const customStatus = db.settings?.customPlanEnabled ? '🟢 فعال' : '🔴 غیرفعال';
+    const vipGb = db.settings?.vipGb || 100;
     
     let buttons = plans.map(p => [Markup.button.callback(`📦 ${p.name} (${p.price.toLocaleString()}T)`, `edit_plan_${p.id}`)]);
     
+    buttons.unshift([Markup.button.callback(`👑 حجم بسته VIP: ${vipGb} GB (ویرایش)`, 'edit_vip_gb')]);
     buttons.push([Markup.button.callback('➕ افزودن پکیج جدید', 'admin_add_plan_wiz')]);
     buttons.push([Markup.button.callback(`✨ بسته دلخواه: ${customStatus}`, 'toggle_custom_plan')]);
     buttons.push([Markup.button.callback('🔙 بازگشت', 'back_admin')]);

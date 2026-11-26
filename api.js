@@ -194,6 +194,7 @@ async function getClientTraffic(email, server = null) {
         const obj = clientRes.data.obj;
         let total = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
         let expiryTime = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
+        const enable = obj.client?.enable !== undefined ? obj.client.enable : (obj.enable !== undefined ? obj.enable : true);
 
         let up = 0, down = 0;
         let trafficFound = false;
@@ -234,7 +235,7 @@ async function getClientTraffic(email, server = null) {
             } catch (fallbackErr) {}
         }
 
-        return { total, up, down, expiryTime };
+        return { total, up, down, expiryTime, enable };
     } catch (error) {
         // بازگرداندن undefined در صورت خطای شبکه برای جلوگیری از حذف اشتباه کاربران در ربات
         console.error(`⚠️ [Traffic] خطا در دریافت ترافیک ${email}:`, error.message);
@@ -697,7 +698,8 @@ async function getServerTrafficMap(server) {
                     up: t.up || 0,
                     down: t.down || 0,
                     total: t.total || item.totalGB || 0,
-                    expiryTime: t.expiryTime || item.expiryTime || 0
+                    expiryTime: t.expiryTime || item.expiryTime || 0,
+                    enable: item.enable !== undefined ? item.enable : true
                 };
             }
             return trafficMap;
@@ -780,5 +782,81 @@ async function deleteClientByEmailAndUuid(email, uuid, server) {
     return deleted;
 }
 
+// --- تغییر حجم کلاینت بدون تغییر در مصرف و زمان انقضا ---
+async function updateClientVolumeOnly(email, uuid, deltaGB, server) {
+    const apiClient = getApiClient(server);
+    try {
+        const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
+        if (!clientRes.data || !clientRes.data.success || !clientRes.data.obj) {
+            return { success: false, msg: 'کلاینت در پنل یافت نشد.' };
+        }
 
-module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap, adminModifyClient, deleteClientByEmailAndUuid };
+        const obj = clientRes.data.obj;
+        let currentTotal = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
+        let currentExpiry = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
+
+        if (currentTotal <= 0) {
+            return { success: false, msg: 'حجم نامحدود است.' };
+        }
+
+        const deltaBytes = Math.floor(deltaGB * 1073741824);
+        const newTotalByte = Math.max(1073741824, currentTotal + deltaBytes);
+
+        const updatePayload = {
+            id: String(uuid || obj.client?.id || ''),
+            email: email,
+            enable: obj.client?.enable !== undefined ? obj.client.enable : (obj.enable !== undefined ? obj.enable : true),
+            total: newTotalByte,
+            totalGB: newTotalByte,
+            expiryTime: currentExpiry,
+            limitIp: obj.client?.limitIp || obj.limitIp || 0,
+            tgId: obj.client?.tgId || obj.tgId || 0,
+            subId: obj.client?.subId || obj.subId || ''
+        };
+
+        const updateRes = await apiClient.post(`panel/api/clients/update/${encodeURIComponent(email)}`, updatePayload);
+        if (updateRes.data && updateRes.data.success) {
+            return { success: true, newTotal: newTotalByte };
+        }
+        return { success: false, msg: updateRes.data?.msg || 'خطای پنل در بروزرسانی' };
+    } catch (error) {
+        return { success: false, msg: error.message };
+    }
+}
+
+// --- فعال یا غیرفعال کردن کلاینت در پنل بدون تغییر حجم و زمان ---
+async function setClientEnable(email, uuid, enable, server) {
+    const apiClient = getApiClient(server);
+    try {
+        const clientRes = await apiClient.get(`panel/api/clients/get/${encodeURIComponent(email)}`);
+        if (!clientRes.data || !clientRes.data.success || !clientRes.data.obj) {
+            return { success: false, msg: 'کلاینت در پنل یافت نشد.' };
+        }
+
+        const obj = clientRes.data.obj;
+        const currentTotal = obj.totalGB || obj.total || (obj.client && (obj.client.total || obj.client.totalGB)) || 0;
+        const currentExpiry = obj.expiryTime || (obj.client && obj.client.expiryTime) || 0;
+
+        const updatePayload = {
+            id: String(uuid || obj.client?.id || ''),
+            email: email,
+            enable: Boolean(enable),
+            total: currentTotal,
+            totalGB: currentTotal,
+            expiryTime: currentExpiry,
+            limitIp: obj.client?.limitIp || obj.limitIp || 0,
+            tgId: obj.client?.tgId || obj.tgId || 0,
+            subId: obj.client?.subId || obj.subId || ''
+        };
+
+        const updateRes = await apiClient.post(`panel/api/clients/update/${encodeURIComponent(email)}`, updatePayload);
+        if (updateRes.data && updateRes.data.success) {
+            return { success: true };
+        }
+        return { success: false, msg: updateRes.data?.msg || 'خطای پنل در تغییر وضعیت' };
+    } catch (error) {
+        return { success: false, msg: error.message };
+    }
+}
+
+module.exports = { testServerConnection, createClient, deleteClient, renewClient, getClientTraffic, generateAllConfigs, getUsdtRate, getCloudflareZones, getDnsRecords, updateDnsRecord, getClientActiveInboundIds, addRewardToClient, applyGroupCompensation, getServerTrafficMap, adminModifyClient, deleteClientByEmailAndUuid, updateClientVolumeOnly, setClientEnable };
