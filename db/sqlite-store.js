@@ -23,6 +23,7 @@ function openDatabase(dbFilePath) {
     try { db.exec("ALTER TABLE servers ADD COLUMN ech_address TEXT NOT NULL DEFAULT 'ns3.crrc.ir';"); } catch (e) {}
     try { db.exec("ALTER TABLE servers ADD COLUMN ech_config TEXT NOT NULL DEFAULT 'cloudflare-ech.com+udp://1.1.1.1';"); } catch (e) {}
     try { db.exec("ALTER TABLE settings ADD COLUMN inbound_tier_mode INTEGER NOT NULL DEFAULT 0;"); } catch (e) {}
+    try { db.exec("ALTER TABLE settings ADD COLUMN vip_gb INTEGER NOT NULL DEFAULT 100;"); } catch (e) {}
     try { db.exec("ALTER TABLE server_inbounds ADD COLUMN tier TEXT NOT NULL DEFAULT 'both';"); } catch (e) {}
 
     // ساخت جدول اینباندها اگر وجود نداشت + ستون‌های جدید
@@ -263,7 +264,7 @@ function loadState(db) {
             activeVipServerId: settingsRow?.active_vip_server_id || undefined,
             adminExemptReferral: !!settingsRow?.admin_exempt_referral,
             customPlanEnabled: settingsRow?.custom_plan_enabled !== 0,
-            inboundTierMode: !!settingsRow?.inbound_tier_mode,
+            vipGb: settingsRow?.vip_gb || 100,
             plans
         },
         testUsers,
@@ -294,7 +295,8 @@ function loadState(db) {
                 active_vip_server_id = ?,
                 admin_exempt_referral = ?,
                 custom_plan_enabled = ?,
-                inbound_tier_mode = ?
+                inbound_tier_mode = ?,
+                vip_gb = ?
             WHERE id = 1
         `).run(
             data.settings?.salesOpen ? 1 : 0,
@@ -303,9 +305,10 @@ function loadState(db) {
             data.settings?.activeVipServerId || null,
             data.settings?.adminExemptReferral ? 1 : 0,
             data.settings?.customPlanEnabled === false ? 0 : 1,
-            data.settings?.inboundTierMode ? 1 : 0
+            data.settings?.inboundTierMode ? 1 : 0,
+            data.settings?.vipGb || 100
         );
-
+        
         db.prepare(`
             UPDATE global_stats SET
                 total_income = ?,

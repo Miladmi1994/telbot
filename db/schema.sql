@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS settings (
     active_vip_server_id TEXT,
     admin_exempt_referral INTEGER NOT NULL DEFAULT 0,
     custom_plan_enabled INTEGER NOT NULL DEFAULT 1,
-    inbound_tier_mode INTEGER NOT NULL DEFAULT 0
+    inbound_tier_mode INTEGER NOT NULL DEFAULT 0,
+    vip_gb INTEGER NOT NULL DEFAULT 100
 );
 
 CREATE TABLE IF NOT EXISTS plans (
