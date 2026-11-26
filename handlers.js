@@ -185,6 +185,7 @@ function setupHandlers(bot) {
         }
 
         const activeUserIds = new Set();
+        const activeVipUserIds = new Set();
         const activeByServer = {};
 
         for (const [uid, configs] of Object.entries(db.users || {})) {
@@ -209,12 +210,15 @@ function setupHandlers(bot) {
 
                 if (!isTimeExpired && !isVolExpired && !isDisabled) {
                     activeUserIds.add(String(uid));
+                    if (conf.isVip || conf.name?.includes('VIP')) {
+                        activeVipUserIds.add(String(uid));
+                    }
                     if (!activeByServer[targetServer.id]) activeByServer[targetServer.id] = new Set();
                     activeByServer[targetServer.id].add(String(uid));
                 }
             }
         }
-        return { activeUserIds, activeByServer };
+        return { activeUserIds, activeVipUserIds, activeByServer };
     }
 
     // --- ۱. پیام همگانی با فیلتر نوع کاربر و وضعیت اکانت ---
@@ -315,10 +319,12 @@ function setupHandlers(bot) {
         }
 
         if (statusMode === 'active') {
-            const { activeUserIds, activeByServer } = await getActiveUsersSnapshot(db);
+            const { activeUserIds, activeVipUserIds, activeByServer } = await getActiveUsersSnapshot(db);
             if (scope.startsWith('srv_')) {
                 const srvActive = activeByServer[scope] || new Set();
                 recipients = recipients.filter(uid => srvActive.has(uid));
+            } else if (scope === 'vip') {
+                recipients = recipients.filter(uid => activeVipUserIds.has(uid));
             } else {
                 recipients = recipients.filter(uid => activeUserIds.has(uid));
             }
@@ -383,10 +389,11 @@ function setupHandlers(bot) {
         vipSet.forEach(uid => allUsersSet.add(uid));
 
         const list = Array.from(allUsersSet).filter(uid => type === 'vip' ? vipSet.has(uid) : !vipSet.has(uid));
-        const { activeUserIds } = await getActiveUsersSnapshot(db);
+        const { activeUserIds, activeVipUserIds } = await getActiveUsersSnapshot(db);
+        const targetActiveSet = type === 'vip' ? activeVipUserIds : activeUserIds;
 
-        const activeList = list.filter(uid => activeUserIds.has(uid));
-        const inactiveList = list.filter(uid => !activeUserIds.has(uid));
+        const activeList = list.filter(uid => targetActiveSet.has(uid));
+        const inactiveList = list.filter(uid => !targetActiveSet.has(uid));
         const sortedList = [...activeList, ...inactiveList];
 
         const title = type === 'vip' ? '👑 لیست اعضای VIP' : '👤 لیست کاربران عادی';
@@ -395,7 +402,7 @@ function setupHandlers(bot) {
                        `🟢 دارای اکانت فعال: <b>${activeList.length}</b> نفر\n` +
                        `⚪️ بدون اکانت فعال: <b>${inactiveList.length}</b> نفر\n\n`;
 
-        const lines = sortedList.map(uid => `${activeUserIds.has(uid) ? '🟢' : '⚪️'} <code>${uid}</code>`);
+        const lines = sortedList.map(uid => `${targetActiveSet.has(uid) ? '🟢' : '⚪️'} <code>${uid}</code>`);
         const fullText = header + (lines.length ? lines.join('\n') : 'موردی یافت نشد.');
 
         const backKb = { inline_keyboard: [[Markup.button.callback('🔙 بازگشت', 'admin_members_list')]] };
@@ -408,7 +415,7 @@ function setupHandlers(bot) {
                 { parse_mode: 'HTML', reply_markup: backKb }
             ).catch(() => {});
 
-            const fileContent = sortedList.map(uid => `${uid} | ${activeUserIds.has(uid) ? 'ACTIVE' : 'INACTIVE'}`).join('\n');
+            const fileContent = sortedList.map(uid => `${uid} | ${targetActiveSet.has(uid) ? 'ACTIVE' : 'INACTIVE'}`).join('\n');
             await ctx.replyWithDocument({
                 source: Buffer.from(fileContent, 'utf8'),
                 filename: `${type}_members_${Date.now()}.txt`
